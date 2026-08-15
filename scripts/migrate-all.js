@@ -36,8 +36,18 @@ const MIGRATIONS = [
   // Reset tokens, plus sessions.user_id so a reset can end existing sessions.
   'migrate-add-password-resets',
 
-  // Keeps levels + questions in step with data/catalogue.js. Runs on every
-  // deploy so new questions ship with a `migrate` and nothing else.
+  // The master admin who runs the app, and signs in at /admin/.
+  'migrate-add-owner-role',
+
+  // Who did what in the admin area.
+  'migrate-add-audit-log',
+
+  // Couple-reported problems with a question. Also extends questions.source
+  // with 'import', so it MUST run before anything that writes that value.
+  'migrate-add-question-reports',
+
+  // FIRST-RUN SEED ONLY. Since v1.2.0 the admin area owns content, so this
+  // does nothing at all on a database that already has groups and questions.
   'migrate-seed-catalogue',
 ];
 

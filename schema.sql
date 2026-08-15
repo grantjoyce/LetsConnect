@@ -18,7 +18,11 @@ CREATE TABLE IF NOT EXISTS users (
   email           VARCHAR(191) NOT NULL,
   password_hash   VARCHAR(255) NOT NULL,
   display_name    VARCHAR(100) NOT NULL,
+  -- is_owner is the master admin who signs in at /admin/. is_admin predates it
+  -- and is kept rather than dropped: removing a column a running release still
+  -- selects is how a deploy breaks between the pull and the restart.
   is_admin        TINYINT(1) NOT NULL DEFAULT 0,
+  is_owner        TINYINT(1) NOT NULL DEFAULT 0,
   is_active       TINYINT(1) NOT NULL DEFAULT 1,
   created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   last_login_at   DATETIME NULL,
@@ -99,7 +103,7 @@ CREATE TABLE IF NOT EXISTS questions (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   ref         VARCHAR(40) NOT NULL,
   level_id    INT NOT NULL,
-  source      ENUM('catalogue','admin') NOT NULL DEFAULT 'catalogue',
+  source      ENUM('catalogue','admin','import') NOT NULL DEFAULT 'catalogue',
   text        TEXT NOT NULL,
   sort_order  INT NOT NULL DEFAULT 0,
   -- is_active belongs to the SEEDER. admin_hidden belongs to the ADMIN, and the
@@ -169,6 +173,69 @@ CREATE TABLE IF NOT EXISTS password_resets (
   KEY idx_password_resets_expiry (expires_at),
   CONSTRAINT fk_password_resets_user FOREIGN KEY (user_id)
     REFERENCES users (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Question reports
+--
+-- The app stores no answers, so the only quality signals it can ever have are
+-- the skip rate (a number) and a report (a reason). That makes `note` the most
+-- valuable content feedback the owner will get.
+--
+-- UNIQUE(question_id, couple_id) so one couple cannot lodge the same complaint
+-- twice from two phones. user_id is SET NULL on delete because the content
+-- problem is still real after the reporter has deleted their account.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS question_reports (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  question_id  INT NOT NULL,
+  couple_id    INT NOT NULL,
+  user_id      INT NULL,
+  reason       ENUM('unclear','upsetting','inappropriate','duplicate','other')
+                 NOT NULL DEFAULT 'other',
+  note         VARCHAR(500) NULL,
+  status       ENUM('open','actioned','dismissed') NOT NULL DEFAULT 'open',
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reviewed_at  DATETIME NULL,
+  reviewed_by  INT NULL,
+  UNIQUE KEY uq_report_question_couple (question_id, couple_id),
+  KEY idx_reports_status (status, created_at),
+  CONSTRAINT fk_reports_question FOREIGN KEY (question_id)
+    REFERENCES questions (id) ON DELETE CASCADE,
+  CONSTRAINT fk_reports_couple FOREIGN KEY (couple_id)
+    REFERENCES couples (id) ON DELETE CASCADE,
+  CONSTRAINT fk_reports_user FOREIGN KEY (user_id)
+    REFERENCES users (id) ON DELETE SET NULL,
+  CONSTRAINT fk_reports_reviewer FOREIGN KEY (reviewed_by)
+    REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Audit log
+--
+-- actor_email is denormalised deliberately: accounts can now be deleted
+-- outright, and a foreign key alone would blank the actor on every historic
+-- entry the moment somebody left - exactly when you most want to know who did
+-- what. The FK degrades actor_user_id to NULL; the readable record survives.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  actor_user_id INT NULL,
+  actor_email   VARCHAR(191) NULL,
+  action        VARCHAR(60) NOT NULL,
+  target_type   VARCHAR(40) NULL,
+  target_id     INT NULL,
+  target_label  VARCHAR(255) NULL,
+  detail        TEXT NULL,
+  ip            VARCHAR(64) NULL,
+  created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_audit_created (created_at),
+  KEY idx_audit_action (action),
+  KEY idx_audit_actor (actor_user_id),
+  CONSTRAINT fk_audit_actor FOREIGN KEY (actor_user_id)
+    REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------

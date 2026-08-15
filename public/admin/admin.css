@@ -1,0 +1,275 @@
+/* Admin-only styles, layered on top of the shared tokens in /styles.css.
+ *
+ * The couple app is phone-first and stays that way. This is the opposite: it is
+ * used at a desk, with tables and long lists, so it gets a wider shell and
+ * denser rows - while still collapsing to something usable on a phone, because
+ * "hide a bad question" is exactly the sort of thing you end up doing away from
+ * your desk. */
+
+.admin-shell {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.25rem 1.15rem 4rem;
+}
+
+.admin-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.admin-who {
+  font-size: 0.85rem;
+  color: var(--text-faint);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.admin-badge {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: var(--accent);
+  color: #fff;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+}
+
+.admin-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 820px) {
+  .admin-grid.two { grid-template-columns: 1fr 1fr; }
+}
+
+/* Tables ------------------------------------------------------------------ */
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  min-width: 560px;
+}
+
+table.data th {
+  text-align: left;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  font-weight: 800;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--bg-raised);
+}
+
+table.data td {
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+table.data tr:last-child td { border-bottom: none; }
+table.data tbody tr:hover { background: var(--surface); }
+
+table.data td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+table.data td.actions { white-space: nowrap; text-align: right; }
+
+.mini {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--text-dim);
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  margin-left: 0.3rem;
+}
+
+.mini:hover { background: rgba(255, 255, 255, 0.07); color: var(--text); }
+
+.mini.danger { border-color: rgba(226, 87, 76, 0.5); color: #ff9d94; }
+.mini.danger:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+.mini.go { border-color: var(--accent); color: var(--accent); }
+.mini.go:hover { background: var(--accent); color: #fff; }
+
+/* Skip-rate bar ----------------------------------------------------------- */
+
+.rate {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 130px;
+}
+
+.rate-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  min-width: 60px;
+}
+
+.rate-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--rate-colour, var(--accent));
+}
+
+.rate-num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.85rem;
+  width: 3.2rem;
+  text-align: right;
+}
+
+/* Group cards ------------------------------------------------------------- */
+
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-raised);
+}
+
+.group-row:first-child { border-top-left-radius: var(--radius); border-top-right-radius: var(--radius); }
+.group-row:last-child { border-bottom: none; border-bottom-left-radius: var(--radius); border-bottom-right-radius: var(--radius); }
+
+.group-swatch {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  flex: none;
+}
+
+.group-main { flex: 1; min-width: 0; }
+.group-main strong { display: block; font-size: 1rem; }
+
+.group-actions { display: flex; gap: 0.3rem; flex: none; align-items: center; }
+
+.order-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.order-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+.order-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+
+/* Import ------------------------------------------------------------------ */
+
+.dropzone {
+  border: 2px dashed var(--line-strong);
+  border-radius: var(--radius-lg);
+  padding: 2.2rem 1.2rem;
+  text-align: center;
+  background: var(--bg-raised);
+  transition: border-color 0.15s, background 0.15s;
+  cursor: pointer;
+}
+
+.dropzone:hover,
+.dropzone.is-over {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+.dropzone strong { display: block; font-size: 1.05rem; margin-bottom: 0.3rem; }
+.dropzone span { color: var(--text-faint); font-size: 0.9rem; }
+
+.import-summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.7rem;
+  margin: 1.2rem 0;
+}
+
+@media (min-width: 560px) {
+  .import-summary { grid-template-columns: repeat(4, 1fr); }
+}
+
+.problem-list {
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid rgba(226, 87, 76, 0.4);
+  background: rgba(226, 87, 76, 0.07);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.problem-list div { padding: 0.3rem 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.problem-list div:last-child { border-bottom: none; }
+.problem-list b { color: #ffb3ac; font-weight: 700; }
+
+/* Login ------------------------------------------------------------------- */
+
+.admin-login {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.admin-login .panel { width: 100%; max-width: 420px; }
+
+.log-line {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.9rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.88rem;
+}
+
+.log-line:last-child { border-bottom: none; }
+
+.log-when {
+  color: var(--text-faint);
+  font-size: 0.78rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.log-what strong { font-weight: 700; }
+.log-detail { grid-column: 2; color: var(--text-faint); font-size: 0.8rem; }

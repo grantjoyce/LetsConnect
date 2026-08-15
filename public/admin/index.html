@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin · Let's Connect</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#170A14">
+<meta name="color-scheme" content="dark">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
+</head>
+<body>
+
+<div id="app" class="app">
+  <div class="boot">
+    <div class="boot-mark" aria-hidden="true"></div>
+    <p class="boot-text">Loading&hellip;</p>
+  </div>
+</div>
+
+<script>
+// Deliberately NOT a PWA and deliberately no service worker.
+//
+// The admin app is a separate page with its own script, so a couple's browser
+// never downloads any of this. Registering a second service worker here would
+// also fight the one at / for the same scope, which is a good way to serve the
+// wrong app from cache.
+(function () {
+  var v = Date.now();
+  [['/styles.css?v=', 'css'], ['/admin/admin.css?v=', 'css']].forEach(function (pair) {
+    var el = document.createElement('link');
+    el.rel = 'stylesheet';
+    el.href = pair[0] + v;
+    document.head.appendChild(el);
+  });
+  var js = document.createElement('script');
+  js.src = '/admin/admin.js?v=' + v;
+  js.defer = true;
+  document.body.appendChild(js);
+})();
+</script>
+
+</body>
+</html>

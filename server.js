@@ -14,6 +14,7 @@ const crypto = require('crypto');
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
+const multer = require('multer');
 
 const { pool, query, queryOne } = require('./db');
 const APP_VERSION = require('./package.json').version;
@@ -302,6 +303,30 @@ async function sendMail({ to, subject, text, html }) {
   await transport.sendMail({ from: cfg.from, to, subject, text, html });
 }
 
+// ---------------------------------------------------------------------------
+// Branding
+//
+// Served to the couple app and the admin app alike so the same codebase can be
+// run under another name without a deploy. Falls back to the built-in values,
+// so an install that never touches this looks exactly as it always did.
+// ---------------------------------------------------------------------------
+
+const BRAND_DEFAULTS = {
+  app_name: "Let's Connect",
+  app_tagline: 'Questions for couples, one card at a time.',
+  brand_accent: '#D8327C',
+  brand_mark: '❤',
+};
+
+async function getBranding() {
+  const out = {};
+  for (const key of Object.keys(BRAND_DEFAULTS)) {
+    const v = await getSetting(key);
+    out[key] = v === undefined || v === null || v === '' ? BRAND_DEFAULTS[key] : v;
+  }
+  return out;
+}
+
 /** Base URL for links in emails. The setting wins; otherwise infer from the request. */
 async function appUrl(req) {
   const configured = await getSetting('app_url');
@@ -363,11 +388,38 @@ function noteFailure(key) {
 // Auth middleware
 // ---------------------------------------------------------------------------
 
+/**
+ * Records an admin action. Never throws - a failure to write the log must not
+ * fail the operation the user actually asked for, or the audit trail becomes a
+ * new way for the app to break.
+ */
+async function audit(req, action, { targetType, targetId, targetLabel, detail } = {}) {
+  try {
+    await query(
+      `INSERT INTO audit_log
+         (actor_user_id, actor_email, action, target_type, target_id, target_label, detail, ip)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        req.user ? req.user.id : null,
+        req.user ? req.user.email : null,
+        String(action).slice(0, 60),
+        targetType ? String(targetType).slice(0, 40) : null,
+        targetId || null,
+        targetLabel ? String(targetLabel).slice(0, 255) : null,
+        detail ? String(detail) : null,
+        String(req.ip || '').slice(0, 64),
+      ]
+    );
+  } catch (err) {
+    console.error('[audit] could not record', action, '-', err.message);
+  }
+}
+
 async function loadUser(req, res, next) {
   if (!req.session || !req.session.userId) return next();
   try {
     req.user = await queryOne(
-      'SELECT id, email, display_name, is_admin, is_active FROM users WHERE id = ?',
+      'SELECT id, email, display_name, is_admin, is_owner, is_active FROM users WHERE id = ?',
       [req.session.userId]
     );
     if (req.user && !req.user.is_active) req.user = null;
@@ -414,6 +466,15 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, version: APP_VERSION });
 });
 
+// Public: the sign-in screens need the app's name and colour before anyone has
+// authenticated. Nothing here is sensitive.
+app.get(
+  '/api/branding',
+  wrap(async (req, res) => {
+    res.json({ branding: await getBranding(), version: APP_VERSION });
+  })
+);
+
 app.post(
   '/api/auth/register',
   wrap(async (req, res) => {
@@ -432,14 +493,15 @@ app.post(
     if (existing) return fail(res, 409, 'There is already an account with that email.');
 
     const hash = await bcrypt.hash(password, 10);
-    // The very first account is the admin, so a fresh install has one without
-    // needing a setup screen.
+    // The very first account owns the app, so a fresh install can reach /admin/
+    // without a separate setup screen.
     const anyUser = await queryOne('SELECT id FROM users LIMIT 1');
-    const isAdmin = anyUser ? 0 : 1;
+    const isFirst = anyUser ? 0 : 1;
 
     const result = await query(
-      'INSERT INTO users (email, password_hash, display_name, is_admin, last_login_at) VALUES (?, ?, ?, ?, NOW())',
-      [email, hash, displayName, isAdmin]
+      `INSERT INTO users (email, password_hash, display_name, is_admin, is_owner, last_login_at)
+       VALUES (?, ?, ?, ?, ?, NOW())`,
+      [email, hash, displayName, isFirst, isFirst]
     );
 
     req.session.regenerate((err) => {
@@ -676,7 +738,9 @@ app.get(
         email: req.user.email,
         displayName: req.user.display_name,
         isAdmin: !!req.user.is_admin,
+        isOwner: !!req.user.is_owner,
       },
+      branding: await getBranding(),
       couple: couple
         ? {
             id: couple.id,
@@ -1003,7 +1067,180 @@ app.post(
   })
 );
 
+/**
+ * Report a problem with a question, from inside the deck.
+ *
+ * The app stores no answers, so a skip is a number and this is the only place
+ * a couple can say WHY something did not work. Upserted on
+ * (question_id, couple_id) so a second report from the other partner updates
+ * the first rather than being refused - the couple has one voice per question.
+ */
+app.post(
+  '/api/report',
+  requireAuth,
+  requireCouple,
+  wrap(async (req, res) => {
+    const questionId = Number(req.body.questionId);
+    const REASONS = ['unclear', 'upsetting', 'inappropriate', 'duplicate', 'other'];
+    const reason = REASONS.includes(req.body.reason) ? req.body.reason : 'other';
+    const note = String(req.body.note || '').trim().slice(0, 500) || null;
+
+    if (!Number.isInteger(questionId) || questionId <= 0) {
+      return fail(res, 400, 'Missing question.');
+    }
+    const question = await queryOne('SELECT id FROM questions WHERE id = ?', [questionId]);
+    if (!question) return fail(res, 404, 'That question no longer exists.');
+
+    await query(
+      `INSERT INTO question_reports (question_id, couple_id, user_id, reason, note)
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE reason = VALUES(reason), note = VALUES(note),
+                               user_id = VALUES(user_id), status = 'open',
+                               created_at = NOW()`,
+      [questionId, req.couple.id, req.user.id, reason, note]
+    );
+
+    res.json({ ok: true });
+  })
+);
+
 // ---- Account --------------------------------------------------------------
+
+/**
+ * Everything this account holds, as JSON. The "download my data" half of the
+ * erasure/portability pair.
+ *
+ * Includes the question TEXT alongside each decision - an export listing bare
+ * question ids would be technically complete and useless to the person reading
+ * it, which is not what portability means.
+ */
+app.get(
+  '/api/me/export',
+  requireAuth,
+  wrap(async (req, res) => {
+    const user = await queryOne(
+      'SELECT id, email, display_name, created_at, last_login_at FROM users WHERE id = ?',
+      [req.user.id]
+    );
+
+    const couple = await queryOne(
+      `SELECT c.id, c.couple_name, c.invite_code, c.created_at, m.member_role, m.joined_at
+         FROM couple_members m JOIN couples c ON c.id = m.couple_id
+        WHERE m.user_id = ?`,
+      [req.user.id]
+    );
+
+    let progress = [];
+    let partners = [];
+    if (couple) {
+      progress = await query(
+        `SELECT q.text, l.name AS level, s.status, s.decided_at,
+                s.decided_by_user_id = ? AS decidedByMe
+           FROM couple_question_status s
+           JOIN questions q ON q.id = s.question_id
+           JOIN levels l ON l.id = q.level_id
+          WHERE s.couple_id = ?
+          ORDER BY s.decided_at`,
+        [req.user.id, couple.id]
+      );
+      partners = await query(
+        `SELECT u.display_name FROM couple_members m JOIN users u ON u.id = m.user_id
+          WHERE m.couple_id = ? AND m.user_id <> ?`,
+        [couple.id, req.user.id]
+      );
+    }
+
+    const reports = await query(
+      `SELECT q.text AS question, r.reason, r.note, r.created_at
+         FROM question_reports r JOIN questions q ON q.id = r.question_id
+        WHERE r.user_id = ?`,
+      [req.user.id]
+    );
+
+    res.set('Content-Disposition', 'attachment; filename="lets-connect-my-data.json"');
+    res.json({
+      exportedAt: new Date().toISOString(),
+      note:
+        'This app never records your answers - only whether a question was marked ' +
+        'discussed or skipped. Progress below is shared with your partner.',
+      account: user,
+      couple: couple
+        ? {
+            name: couple.couple_name,
+            inviteCode: couple.invite_code,
+            yourRole: couple.member_role,
+            joinedAt: couple.joined_at,
+            partner: partners.map((p) => p.display_name),
+          }
+        : null,
+      progress,
+      reportsYouSent: reports,
+    });
+  })
+);
+
+/**
+ * Delete this account outright - the right-to-erasure half.
+ *
+ * Requires the current password. Deletion is irreversible and an unauthenticated
+ * session hijack should not be able to destroy somebody's account, so this asks
+ * for the one thing an attacker holding a stolen cookie does not have.
+ *
+ * Shared progress belongs to the COUPLE, not the person, so it is deliberately
+ * left behind: erasing it would silently delete the other partner's history
+ * too, which is somebody else's data. Once the last member leaves, the couple
+ * is marked dissolved and nothing identifies anyone.
+ */
+app.post(
+  '/api/me/delete',
+  requireAuth,
+  wrap(async (req, res) => {
+    const password = String(req.body.password || '');
+    const row = await queryOne('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
+    const ok = row && (await bcrypt.compare(password, row.password_hash));
+    if (!ok) return fail(res, 401, 'That password is not right.');
+
+    const owners = await queryOne(
+      'SELECT COUNT(*) AS n FROM users WHERE is_owner = 1 AND is_active = 1 AND id <> ?',
+      [req.user.id]
+    );
+    if (req.user.is_owner && Number(owners.n) === 0) {
+      return fail(
+        res,
+        400,
+        'You own this app and are the only owner. Make somebody else an owner before deleting your account.'
+      );
+    }
+
+    const membership = await queryOne(
+      'SELECT couple_id FROM couple_members WHERE user_id = ?',
+      [req.user.id]
+    );
+
+    await audit(req, 'account.delete', {
+      targetType: 'user',
+      targetId: req.user.id,
+      targetLabel: req.user.email,
+      detail: 'self-service deletion',
+    });
+
+    // Sessions carry no foreign key, so they need removing by hand.
+    await query('DELETE FROM sessions WHERE user_id = ?', [req.user.id]);
+    await query('DELETE FROM users WHERE id = ?', [req.user.id]);
+
+    if (membership) {
+      const left = await queryOne('SELECT COUNT(*) AS n FROM couple_members WHERE couple_id = ?', [
+        membership.couple_id,
+      ]);
+      if (Number(left.n) === 0) {
+        await query("UPDATE couples SET status = 'dissolved' WHERE id = ?", [membership.couple_id]);
+      }
+    }
+
+    if (req.session) req.session.destroy(() => {});
+    res.json({ ok: true });
+  })
+);
 
 app.patch(
   '/api/me',
@@ -1038,31 +1275,37 @@ app.post(
 );
 
 // ---------------------------------------------------------------------------
-// Admin
+// Owner (master admin)
 //
-// Gated as a whole namespace rather than per route. A new admin endpoint is
-// therefore closed by default and you opt in by putting it under /api/admin -
+// Gated as a whole namespace rather than per route. A new owner endpoint is
+// therefore closed by default and you opt in by putting it under /api/owner -
 // the opposite way round from remembering to add a check to each one, which is
 // how a single forgotten line leaks everything.
+//
+// The couple app has NO route into this. It is reached by signing in at
+// /admin/, which is a separate page with its own script - a couple's browser
+// never downloads the admin code at all.
 // ---------------------------------------------------------------------------
 
-function requireAdmin(req, res, next) {
+function requireOwner(req, res, next) {
   if (!req.user) return fail(res, 401, 'Please log in.');
-  if (!req.user.is_admin) return fail(res, 403, 'Admins only.');
+  if (!req.user.is_owner) return fail(res, 403, 'This area is for the app owner.');
   return next();
 }
 
-const admin = express.Router();
-app.use('/api/admin', requireAuth, requireAdmin, admin);
+const owner = express.Router();
+app.use('/api/owner', requireAuth, requireOwner, owner);
 
-admin.get(
+owner.get(
   '/overview',
   wrap(async (req, res) => {
     const [counts] = await query(
       `SELECT
          (SELECT COUNT(*) FROM users)                                    AS users,
          (SELECT COUNT(*) FROM users WHERE is_active = 1)                AS activeUsers,
-         (SELECT COUNT(*) FROM users WHERE is_admin = 1)                 AS admins,
+         (SELECT COUNT(*) FROM users WHERE is_owner = 1)                 AS owners,
+         (SELECT COUNT(*) FROM question_reports WHERE status = 'open')   AS openReports,
+         (SELECT COUNT(*) FROM levels WHERE is_active = 1)               AS groups,
          (SELECT COUNT(*) FROM couples WHERE status = 'active')          AS couples,
          (SELECT COUNT(*) FROM questions WHERE is_active = 1 AND admin_hidden = 0) AS liveQuestions,
          (SELECT COUNT(*) FROM questions WHERE source = 'admin')         AS adminQuestions,
@@ -1112,6 +1355,7 @@ function publicUser(u) {
     email: u.email,
     displayName: u.display_name,
     isAdmin: !!u.is_admin,
+    isOwner: !!u.is_owner,
     isActive: !!u.is_active,
     createdAt: u.created_at,
     lastLoginAt: u.last_login_at,
@@ -1120,13 +1364,13 @@ function publicUser(u) {
   };
 }
 
-admin.get(
+owner.get(
   '/users',
   wrap(async (req, res) => {
     const q = String(req.query.q || '').trim();
     const like = `%${q}%`;
     const rows = await query(
-      `SELECT u.id, u.email, u.display_name, u.is_admin, u.is_active, u.created_at,
+      `SELECT u.id, u.email, u.display_name, u.is_admin, u.is_owner, u.is_active, u.created_at,
               u.last_login_at, c.id AS couple_id, c.couple_name
          FROM users u
          LEFT JOIN couple_members m ON m.user_id = u.id
@@ -1160,27 +1404,27 @@ admin.get(
  * someone else), leaving the real lockout case guarded by nothing but a rule
  * that never fired.
  */
-admin.patch(
+owner.patch(
   '/users/:id',
   wrap(async (req, res) => {
     const id = Number(req.params.id);
     const target = await queryOne(
-      'SELECT id, is_admin, is_active FROM users WHERE id = ?',
+      'SELECT id, email, display_name, is_owner, is_active FROM users WHERE id = ?',
       [id]
     );
     if (!target) return fail(res, 404, 'No such user.');
 
-    const wantsAdmin = req.body.isAdmin === undefined ? !!target.is_admin : !!req.body.isAdmin;
+    const wantsOwner = req.body.isOwner === undefined ? !!target.is_owner : !!req.body.isOwner;
     const wantsActive = req.body.isActive === undefined ? !!target.is_active : !!req.body.isActive;
-    const losingAdmin = !!target.is_admin && (!wantsAdmin || !wantsActive);
+    const losingOwner = !!target.is_owner && (!wantsOwner || !wantsActive);
 
     if (id === req.user.id && !wantsActive) {
       return fail(res, 400, 'You cannot deactivate your own account.');
     }
 
-    if (losingAdmin) {
+    if (losingOwner) {
       const others = await queryOne(
-        'SELECT COUNT(*) AS n FROM users WHERE is_admin = 1 AND is_active = 1 AND id <> ?',
+        'SELECT COUNT(*) AS n FROM users WHERE is_owner = 1 AND is_active = 1 AND id <> ?',
         [id]
       );
       if (Number(others.n) === 0) {
@@ -1188,8 +1432,8 @@ admin.patch(
           res,
           400,
           id === req.user.id
-            ? 'You are the only admin. Make somebody else an admin before stepping down.'
-            : 'This is the only admin left. Promote someone else first.'
+            ? 'You are the only owner. Make somebody else an owner before stepping down.'
+            : 'This is the only owner left. Promote someone else first.'
         );
       }
     }
@@ -1198,12 +1442,30 @@ admin.patch(
       req.body.displayName === undefined ? null : String(req.body.displayName).trim();
     if (displayName !== null && !displayName) return fail(res, 400, 'Enter a name.');
 
+    // is_admin is kept in step with is_owner rather than left to rot. Nothing
+    // reads it any more, but a legacy column holding a value that contradicts
+    // the live one is a trap for whoever next writes a query against it.
     await query(
       `UPDATE users
-          SET display_name = COALESCE(?, display_name), is_admin = ?, is_active = ?
+          SET display_name = COALESCE(?, display_name), is_owner = ?, is_admin = ?, is_active = ?
         WHERE id = ?`,
-      [displayName, wantsAdmin ? 1 : 0, wantsActive ? 1 : 0, id]
+      [displayName, wantsOwner ? 1 : 0, wantsOwner ? 1 : 0, wantsActive ? 1 : 0, id]
     );
+
+    if (!!target.is_owner !== wantsOwner) {
+      await audit(req, wantsOwner ? 'user.promote' : 'user.demote', {
+        targetType: 'user',
+        targetId: id,
+        targetLabel: target.email,
+      });
+    }
+    if (!!target.is_active !== wantsActive) {
+      await audit(req, wantsActive ? 'user.reactivate' : 'user.deactivate', {
+        targetType: 'user',
+        targetId: id,
+        targetLabel: target.email,
+      });
+    }
 
     // A deactivated account must not keep working until its cookie happens to
     // expire. loadUser() already refuses an inactive user, but ending the
@@ -1211,7 +1473,7 @@ admin.patch(
     if (!wantsActive) await query('DELETE FROM sessions WHERE user_id = ?', [id]);
 
     const fresh = await queryOne(
-      `SELECT u.id, u.email, u.display_name, u.is_admin, u.is_active, u.created_at,
+      `SELECT u.id, u.email, u.display_name, u.is_admin, u.is_owner, u.is_active, u.created_at,
               u.last_login_at, c.id AS couple_id, c.couple_name
          FROM users u
          LEFT JOIN couple_members m ON m.user_id = u.id
@@ -1233,7 +1495,7 @@ admin.patch(
  * the alternative of typing a password FOR someone means the admin then knows
  * their password, which is worse.
  */
-admin.post(
+owner.post(
   '/users/:id/reset-link',
   wrap(async (req, res) => {
     const user = await queryOne(
@@ -1271,7 +1533,7 @@ admin.post(
   })
 );
 
-admin.get(
+owner.get(
   '/couples',
   wrap(async (req, res) => {
     const rows = await query(
@@ -1308,7 +1570,7 @@ admin.get(
   })
 );
 
-admin.get(
+owner.get(
   '/questions',
   wrap(async (req, res) => {
     const slug = String(req.query.level || '').trim();
@@ -1342,7 +1604,7 @@ admin.get(
   })
 );
 
-admin.post(
+owner.post(
   '/questions',
   wrap(async (req, res) => {
     const text = String(req.body.text || '').trim();
@@ -1379,7 +1641,7 @@ admin.post(
  * refused with a reason. Hiding it works on any question, because admin_hidden
  * is the one flag the seeder never touches.
  */
-admin.patch(
+owner.patch(
   '/questions/:id',
   wrap(async (req, res) => {
     const id = Number(req.params.id);
@@ -1432,7 +1694,7 @@ admin.patch(
 
 const TUNABLE_SETTINGS = ['skip_cooloff_days', 'deck_size', 'app_url'];
 
-admin.get(
+owner.get(
   '/settings',
   wrap(async (req, res) => {
     const mail = await getMailConfig();
@@ -1458,7 +1720,7 @@ admin.get(
   })
 );
 
-admin.put(
+owner.put(
   '/settings',
   wrap(async (req, res) => {
     const body = req.body || {};
@@ -1508,7 +1770,7 @@ admin.put(
   })
 );
 
-admin.post(
+owner.post(
   '/email/test',
   wrap(async (req, res) => {
     const to = String(req.body.to || req.user.email).trim();
@@ -1523,6 +1785,713 @@ admin.post(
     } catch (err) {
       res.status(400).json({ error: err.message });
     }
+  })
+);
+
+// ---- Groups (levels) ------------------------------------------------------
+
+function slugify(v) {
+  return String(v)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60);
+}
+
+owner.get(
+  '/levels',
+  wrap(async (req, res) => {
+    const rows = await query(
+      `SELECT l.id, l.slug, l.name, l.tagline, l.description, l.depth, l.accent,
+              l.sort_order, l.is_active,
+              COUNT(q.id) AS questions,
+              SUM(CASE WHEN q.admin_hidden = 1 THEN 1 ELSE 0 END) AS hidden
+         FROM levels l
+         LEFT JOIN questions q ON q.level_id = l.id AND q.is_active = 1
+        GROUP BY l.id, l.slug, l.name, l.tagline, l.description, l.depth, l.accent,
+                 l.sort_order, l.is_active
+        ORDER BY l.sort_order, l.id`
+    );
+    res.json({
+      levels: rows.map((r) => ({
+        id: r.id,
+        slug: r.slug,
+        name: r.name,
+        tagline: r.tagline,
+        description: r.description,
+        depth: r.depth,
+        accent: r.accent,
+        sortOrder: r.sort_order,
+        isActive: !!r.is_active,
+        questions: Number(r.questions) || 0,
+        hidden: Number(r.hidden) || 0,
+      })),
+    });
+  })
+);
+
+function readLevelBody(body) {
+  const name = String(body.name || '').trim();
+  const depth = Math.min(5, Math.max(1, Number(body.depth) || 1));
+  const accent = /^#[0-9a-f]{6}$/i.test(String(body.accent || '')) ? body.accent : '#D8327C';
+  return {
+    name,
+    depth,
+    accent,
+    tagline: String(body.tagline || '').trim().slice(0, 180),
+    description: String(body.description || '').trim() || null,
+  };
+}
+
+owner.post(
+  '/levels',
+  wrap(async (req, res) => {
+    const b = readLevelBody(req.body);
+    if (!b.name) return fail(res, 400, 'Give the group a name.');
+    if (b.name.length > 100) return fail(res, 400, 'That name is too long.');
+
+    let slug = slugify(req.body.slug || b.name);
+    if (!slug) return fail(res, 400, 'That name cannot be turned into a web address.');
+
+    // Slugs are permanent identifiers, so a clash is resolved rather than
+    // refused - the owner named the group, not the URL.
+    const base = slug;
+    for (let i = 2; i < 50; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const clash = await queryOne('SELECT id FROM levels WHERE slug = ?', [slug]);
+      if (!clash) break;
+      slug = `${base}-${i}`;
+    }
+
+    const [{ n }] = await query('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM levels');
+    const result = await query(
+      `INSERT INTO levels (slug, name, tagline, description, depth, accent, sort_order, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+      [slug, b.name, b.tagline, b.description, b.depth, b.accent, n]
+    );
+
+    await audit(req, 'group.create', { targetType: 'level', targetId: result.insertId, targetLabel: b.name });
+    res.status(201).json({ ok: true, id: result.insertId, slug });
+  })
+);
+
+owner.patch(
+  '/levels/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const level = await queryOne('SELECT id, name, is_active FROM levels WHERE id = ?', [id]);
+    if (!level) return fail(res, 404, 'No such group.');
+
+    const b = readLevelBody(req.body);
+    if (req.body.name !== undefined && !b.name) return fail(res, 400, 'Give the group a name.');
+
+    const isActive = req.body.isActive === undefined ? !!level.is_active : !!req.body.isActive;
+
+    await query(
+      `UPDATE levels
+          SET name = COALESCE(?, name), tagline = COALESCE(?, tagline),
+              description = COALESCE(?, description), depth = COALESCE(?, depth),
+              accent = COALESCE(?, accent), is_active = ?
+        WHERE id = ?`,
+      [
+        req.body.name === undefined ? null : b.name,
+        req.body.tagline === undefined ? null : b.tagline,
+        req.body.description === undefined ? null : b.description,
+        req.body.depth === undefined ? null : b.depth,
+        req.body.accent === undefined ? null : b.accent,
+        isActive ? 1 : 0,
+        id,
+      ]
+    );
+
+    await audit(req, 'group.update', { targetType: 'level', targetId: id, targetLabel: level.name });
+    const fresh = await queryOne('SELECT * FROM levels WHERE id = ?', [id]);
+    res.json({ ok: true, level: { id: fresh.id, slug: fresh.slug, name: fresh.name, isActive: !!fresh.is_active } });
+  })
+);
+
+/** Reorder groups. Takes the full ordered list of ids in one go. */
+owner.put(
+  '/levels/order',
+  wrap(async (req, res) => {
+    const ids = Array.isArray(req.body.order) ? req.body.order.map(Number).filter(Boolean) : [];
+    if (!ids.length) return fail(res, 400, 'Send the new order.');
+    for (let i = 0; i < ids.length; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await query('UPDATE levels SET sort_order = ? WHERE id = ?', [i + 1, ids[i]]);
+    }
+    await audit(req, 'group.reorder', { detail: ids.join(',') });
+    res.json({ ok: true });
+  })
+);
+
+/**
+ * Delete a group.
+ *
+ * Refused while it still holds questions. Deleting would cascade the questions
+ * away and, with them, every couple's record of having discussed them - a far
+ * bigger consequence than "remove this heading", and not one to infer from a
+ * single tap. Empty it or hide it instead.
+ */
+owner.delete(
+  '/levels/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const level = await queryOne('SELECT id, name FROM levels WHERE id = ?', [id]);
+    if (!level) return fail(res, 404, 'No such group.');
+
+    const [{ n }] = await query('SELECT COUNT(*) AS n FROM questions WHERE level_id = ?', [id]);
+    if (Number(n) > 0) {
+      return fail(
+        res,
+        400,
+        `"${level.name}" still holds ${n} question${Number(n) === 1 ? '' : 's'}. ` +
+          'Move or delete them first, or hide the group instead - deleting it would take ' +
+          'every couple\'s history of those questions with it.'
+      );
+    }
+
+    await query('DELETE FROM levels WHERE id = ?', [id]);
+    await audit(req, 'group.delete', { targetType: 'level', targetId: id, targetLabel: level.name });
+    res.json({ ok: true });
+  })
+);
+
+// ---- Questions: full control now that the database is the source of truth ---
+
+owner.delete(
+  '/questions/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const q = await queryOne('SELECT id, text FROM questions WHERE id = ?', [id]);
+    if (!q) return fail(res, 404, 'No such question.');
+
+    const [{ n }] = await query(
+      'SELECT COUNT(*) AS n FROM couple_question_status WHERE question_id = ?',
+      [id]
+    );
+
+    // Deleting throws away the record that couples discussed it. Hiding keeps
+    // that history and has the same effect on what gets served, so the API
+    // insists the caller says they meant it.
+    if (Number(n) > 0 && !req.body.confirmed) {
+      return fail(
+        res,
+        409,
+        `${n} couple${Number(n) === 1 ? ' has' : 's have'} already answered this. Deleting it ` +
+          'erases that from their history. Hiding it has the same effect and keeps the record.'
+      );
+    }
+
+    await query('DELETE FROM questions WHERE id = ?', [id]);
+    await audit(req, 'question.delete', {
+      targetType: 'question',
+      targetId: id,
+      targetLabel: q.text.slice(0, 120),
+      detail: `had ${n} answer record(s)`,
+    });
+    res.json({ ok: true, removedAnswerRecords: Number(n) });
+  })
+);
+
+/** Move a question to a different group. */
+owner.patch(
+  '/questions/:id/level',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const level = await queryOne('SELECT id, name FROM levels WHERE slug = ?', [
+      String(req.body.level || ''),
+    ]);
+    if (!level) return fail(res, 400, 'Choose a group.');
+    const q = await queryOne('SELECT id, text FROM questions WHERE id = ?', [id]);
+    if (!q) return fail(res, 404, 'No such question.');
+
+    await query('UPDATE questions SET level_id = ? WHERE id = ?', [level.id, id]);
+    await audit(req, 'question.move', {
+      targetType: 'question',
+      targetId: id,
+      targetLabel: q.text.slice(0, 120),
+      detail: `moved to ${level.name}`,
+    });
+    res.json({ ok: true });
+  })
+);
+
+// ---- Spreadsheet import / export ------------------------------------------
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
+
+const IMPORT_COLUMNS = ['group', 'question', 'ref'];
+
+/**
+ * Turn an uploaded workbook into rows, and say what is wrong with them.
+ *
+ * Deliberately forgiving about the header: people export from all sorts of
+ * places, so "Group"/"Level"/"Category" all mean the same thing and case and
+ * spacing are ignored. Being strict here would mean rejecting a perfectly good
+ * spreadsheet over a capital letter.
+ */
+function parseWorkbook(buffer, levelsBySlug, levelsByName) {
+  // eslint-disable-next-line global-require
+  const XLSX = require('xlsx');
+  const wb = XLSX.read(buffer, { type: 'buffer' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  if (!sheet) throw new Error('That file has no sheets in it.');
+
+  const raw = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false });
+  if (!raw.length) throw new Error('That sheet has no rows.');
+
+  const alias = (key) => {
+    const k = String(key).toLowerCase().replace(/[^a-z]/g, '');
+    if (['group', 'level', 'category', 'deck', 'section'].includes(k)) return 'group';
+    if (['question', 'text', 'questiontext', 'prompt'].includes(k)) return 'question';
+    if (['ref', 'reference', 'id', 'code'].includes(k)) return 'ref';
+    return null;
+  };
+
+  const rows = [];
+  raw.forEach((r, i) => {
+    const mapped = {};
+    Object.keys(r).forEach((key) => {
+      const a = alias(key);
+      if (a) mapped[a] = String(r[key] || '').trim();
+    });
+
+    const rowNo = i + 2; // +1 for zero-index, +1 for the header row
+    const text = mapped.question || '';
+    const groupName = mapped.group || '';
+    const ref = mapped.ref || '';
+
+    if (!text && !groupName) return; // genuinely blank line, not an error
+
+    let level = null;
+    if (groupName) {
+      level =
+        levelsBySlug.get(slugify(groupName)) ||
+        levelsByName.get(groupName.toLowerCase()) ||
+        null;
+    }
+
+    rows.push({
+      rowNo,
+      text,
+      groupName,
+      ref,
+      levelId: level ? level.id : null,
+      levelName: level ? level.name : null,
+      error: !text
+        ? 'No question text'
+        : text.length > 500
+          ? 'Question is longer than 500 characters'
+          : !groupName
+            ? 'No group given'
+            : !level
+              ? `No group called "${groupName}"`
+              : null,
+    });
+  });
+
+  return rows;
+}
+
+/**
+ * Import questions from .xlsx / .xls / .csv.
+ *
+ * DRY RUN BY DEFAULT. Nothing is written unless `commit` is set, so the owner
+ * always sees exactly what a file will do - how many rows are new, how many
+ * update an existing ref, and every row that cannot be used and why - before
+ * anything touches the database. A 300-row spreadsheet is precisely the sort of
+ * thing you do not want to find out about afterwards.
+ */
+owner.post(
+  '/questions/import',
+  upload.single('file'),
+  wrap(async (req, res) => {
+    if (!req.file) return fail(res, 400, 'Choose a file to upload.');
+
+    const levels = await query('SELECT id, slug, name FROM levels');
+    const bySlug = new Map(levels.map((l) => [l.slug, l]));
+    const byName = new Map(levels.map((l) => [l.name.toLowerCase(), l]));
+
+    let rows;
+    try {
+      rows = parseWorkbook(req.file.buffer, bySlug, byName);
+    } catch (err) {
+      return fail(res, 400, `Could not read that file: ${err.message}`);
+    }
+
+    if (!rows.length) return fail(res, 400, 'No usable rows found in that file.');
+
+    // Resolve what each valid row would do.
+    const valid = rows.filter((r) => !r.error);
+    const invalid = rows.filter((r) => r.error);
+
+    const seenRefs = new Set();
+    for (const r of valid) {
+      if (r.ref) {
+        if (seenRefs.has(r.ref)) {
+          r.error = `Duplicate ref "${r.ref}" earlier in this file`;
+          continue;
+        }
+        seenRefs.add(r.ref);
+        // eslint-disable-next-line no-await-in-loop
+        const existing = await queryOne('SELECT id, text FROM questions WHERE ref = ?', [r.ref]);
+        r.action = existing ? 'update' : 'create';
+        r.existingId = existing ? existing.id : null;
+        r.unchanged = !!existing && existing.text === r.text;
+      } else {
+        // No ref given: match on exact text within the group so re-uploading
+        // the same file twice does not duplicate everything.
+        // eslint-disable-next-line no-await-in-loop
+        const existing = await queryOne(
+          'SELECT id FROM questions WHERE level_id = ? AND text = ?',
+          [r.levelId, r.text]
+        );
+        r.action = existing ? 'skip' : 'create';
+        r.existingId = existing ? existing.id : null;
+      }
+    }
+
+    const usable = valid.filter((r) => !r.error);
+    const summary = {
+      totalRows: rows.length,
+      create: usable.filter((r) => r.action === 'create').length,
+      update: usable.filter((r) => r.action === 'update' && !r.unchanged).length,
+      unchanged: usable.filter((r) => r.unchanged || r.action === 'skip').length,
+      problems: rows.filter((r) => r.error).length,
+    };
+
+    if (!req.body.commit || req.body.commit === 'false') {
+      return res.json({
+        dryRun: true,
+        summary,
+        problems: rows.filter((r) => r.error).slice(0, 50).map((r) => ({
+          row: r.rowNo,
+          text: r.text.slice(0, 90),
+          error: r.error,
+        })),
+        sample: usable.slice(0, 10).map((r) => ({
+          row: r.rowNo,
+          action: r.unchanged ? 'unchanged' : r.action,
+          group: r.levelName,
+          text: r.text.slice(0, 90),
+        })),
+      });
+    }
+
+    let created = 0;
+    let updated = 0;
+    for (const r of usable) {
+      if (r.action === 'create') {
+        const ref = r.ref || `imp-${crypto.randomBytes(6).toString('hex')}`;
+        // eslint-disable-next-line no-await-in-loop
+        const [{ n }] = await query(
+          'SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM questions WHERE level_id = ?',
+          [r.levelId]
+        );
+        // eslint-disable-next-line no-await-in-loop
+        await query(
+          `INSERT INTO questions (ref, level_id, source, text, sort_order, is_active, admin_hidden)
+           VALUES (?, ?, 'import', ?, ?, 1, 0)`,
+          [ref, r.levelId, r.text, n]
+        );
+        created += 1;
+      } else if (r.action === 'update' && !r.unchanged) {
+        // eslint-disable-next-line no-await-in-loop
+        await query('UPDATE questions SET text = ?, level_id = ? WHERE id = ?', [
+          r.text,
+          r.levelId,
+          r.existingId,
+        ]);
+        updated += 1;
+      }
+    }
+
+    await audit(req, 'questions.import', {
+      detail: `${created} created, ${updated} updated, ${summary.problems} skipped, from ${req.file.originalname}`,
+    });
+
+    res.json({ dryRun: false, summary: { ...summary, created, updated } });
+  })
+);
+
+/** Export every question as .xlsx - the round trip, and the content backup. */
+owner.get(
+  '/questions/export',
+  wrap(async (req, res) => {
+    // eslint-disable-next-line global-require
+    const XLSX = require('xlsx');
+    const rows = await query(
+      `SELECT l.name AS "group", q.text AS question, q.ref,
+              q.source, q.admin_hidden AS hidden,
+              (SELECT COUNT(*) FROM couple_question_status s WHERE s.question_id = q.id) AS timesAnswered
+         FROM questions q JOIN levels l ON l.id = q.level_id
+        ORDER BY l.sort_order, q.sort_order`
+    );
+
+    const sheet = XLSX.utils.json_to_sheet(
+      rows.map((r) => ({
+        group: r.group,
+        question: r.question,
+        ref: r.ref,
+        source: r.source,
+        hidden: r.hidden ? 'yes' : '',
+        timesAnswered: Number(r.timesAnswered) || 0,
+      }))
+    );
+    sheet['!cols'] = [{ wch: 18 }, { wch: 80 }, { wch: 18 }, { wch: 10 }, { wch: 8 }, { wch: 14 }];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, 'Questions');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.set('Content-Disposition', 'attachment; filename="lets-connect-questions.xlsx"');
+    res.send(buf);
+  })
+);
+
+/** A blank workbook with the right headers, so nobody has to guess the format. */
+owner.get(
+  '/questions/template',
+  wrap(async (req, res) => {
+    // eslint-disable-next-line global-require
+    const XLSX = require('xlsx');
+    const levels = await query('SELECT name FROM levels WHERE is_active = 1 ORDER BY sort_order');
+    const example = levels.length ? levels[0].name : 'Icebreakers';
+
+    const sheet = XLSX.utils.json_to_sheet([
+      { group: example, question: 'What is the best meal we have ever eaten together?', ref: '' },
+      { group: example, question: 'Replace these rows with your own. Leave ref blank for new questions.', ref: '' },
+    ]);
+    sheet['!cols'] = [{ wch: 20 }, { wch: 80 }, { wch: 18 }];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, 'Questions');
+    const notes = XLSX.utils.aoa_to_sheet([
+      ['How this import works'],
+      [''],
+      ['group', 'Must match a group name that already exists. Create the group first.'],
+      ['question', 'The question text. Up to 500 characters.'],
+      ['ref', 'Leave blank for new questions. If you paste a ref from an export, that'],
+      ['', 'question is UPDATED rather than duplicated.'],
+      [''],
+      ['Uploading always shows a preview first. Nothing is saved until you confirm.'],
+      ['Column headings are flexible: Level/Category also work for group, Text for question.'],
+    ]);
+    notes['!cols'] = [{ wch: 14 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, notes, 'How to use');
+
+    res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.set('Content-Disposition', 'attachment; filename="lets-connect-import-template.xlsx"');
+    res.send(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+  })
+);
+
+// ---- Question quality -----------------------------------------------------
+
+/**
+ * Skip rate per question.
+ *
+ * Only questions with a meaningful number of answers are ranked: one couple
+ * skipping something is not a signal, and sorting purely by percentage would
+ * put every 1-of-1 skip at the top and bury the question that 40 couples have
+ * quietly passed over.
+ */
+owner.get(
+  '/insights',
+  wrap(async (req, res) => {
+    const minAnswers = Math.max(1, Number(req.query.min) || 3);
+
+    const worst = await query(
+      `SELECT q.id, q.text, l.name AS levelName, q.admin_hidden,
+              COUNT(s.id) AS answered,
+              SUM(CASE WHEN s.status = 'skipped' THEN 1 ELSE 0 END) AS skipped
+         FROM questions q
+         JOIN levels l ON l.id = q.level_id
+         JOIN couple_question_status s ON s.question_id = q.id
+        GROUP BY q.id, q.text, l.name, q.admin_hidden
+       -- The aggregates are repeated rather than referred to by alias:
+       -- MariaDB refuses an aggregate alias used inside an expression here
+       -- ("Reference 'skipped' not supported (reference to group function)").
+       HAVING COUNT(s.id) >= ?
+        ORDER BY (SUM(CASE WHEN s.status = 'skipped' THEN 1 ELSE 0 END) / COUNT(s.id)) DESC,
+                 COUNT(s.id) DESC
+        LIMIT 25`,
+      [minAnswers]
+    );
+
+    const byLevel = await query(
+      `SELECT l.name, l.accent,
+              COUNT(s.id) AS answered,
+              SUM(CASE WHEN s.status = 'skipped' THEN 1 ELSE 0 END) AS skipped
+         FROM levels l
+         LEFT JOIN questions q ON q.level_id = l.id
+         LEFT JOIN couple_question_status s ON s.question_id = q.id
+        WHERE l.is_active = 1
+        GROUP BY l.id, l.name, l.accent, l.sort_order
+        ORDER BY l.sort_order`
+    );
+
+    const never = await query(
+      `SELECT COUNT(*) AS n FROM questions q
+        WHERE q.is_active = 1 AND q.admin_hidden = 0
+          AND NOT EXISTS (SELECT 1 FROM couple_question_status s WHERE s.question_id = q.id)`
+    );
+
+    res.json({
+      minAnswers,
+      neverAnswered: Number(never[0].n) || 0,
+      worst: worst.map((r) => ({
+        id: r.id,
+        text: r.text,
+        levelName: r.levelName,
+        hidden: !!r.admin_hidden,
+        answered: Number(r.answered),
+        skipped: Number(r.skipped),
+        skipRate: Math.round((Number(r.skipped) / Number(r.answered)) * 100),
+      })),
+      byLevel: byLevel.map((r) => ({
+        name: r.name,
+        accent: r.accent,
+        answered: Number(r.answered) || 0,
+        skipped: Number(r.skipped) || 0,
+        skipRate: Number(r.answered) ? Math.round((Number(r.skipped) / Number(r.answered)) * 100) : 0,
+      })),
+    });
+  })
+);
+
+owner.get(
+  '/reports',
+  wrap(async (req, res) => {
+    const status = ['open', 'actioned', 'dismissed'].includes(String(req.query.status))
+      ? req.query.status
+      : 'open';
+    const rows = await query(
+      `SELECT r.id, r.reason, r.note, r.status, r.created_at,
+              q.id AS questionId, q.text AS questionText, q.admin_hidden,
+              l.name AS levelName, c.couple_name, u.display_name AS reporter
+         FROM question_reports r
+         JOIN questions q ON q.id = r.question_id
+         JOIN levels l ON l.id = q.level_id
+         JOIN couples c ON c.id = r.couple_id
+         LEFT JOIN users u ON u.id = r.user_id
+        WHERE r.status = ?
+        ORDER BY r.created_at DESC
+        LIMIT 200`,
+      [status]
+    );
+    res.json({
+      status,
+      reports: rows.map((r) => ({
+        id: r.id,
+        reason: r.reason,
+        note: r.note,
+        status: r.status,
+        createdAt: r.created_at,
+        questionId: r.questionId,
+        questionText: r.questionText,
+        questionHidden: !!r.admin_hidden,
+        levelName: r.levelName,
+        coupleName: r.couple_name,
+        reporter: r.reporter,
+      })),
+    });
+  })
+);
+
+owner.patch(
+  '/reports/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const status = ['open', 'actioned', 'dismissed'].includes(String(req.body.status))
+      ? req.body.status
+      : null;
+    if (!status) return fail(res, 400, 'Status must be open, actioned or dismissed.');
+
+    const report = await queryOne('SELECT id, question_id FROM question_reports WHERE id = ?', [id]);
+    if (!report) return fail(res, 404, 'No such report.');
+
+    // Hiding the question is the usual response to a report, so it is offered
+    // in the same call rather than as a second thing to remember.
+    if (req.body.hideQuestion !== undefined) {
+      await query('UPDATE questions SET admin_hidden = ? WHERE id = ?', [
+        req.body.hideQuestion ? 1 : 0,
+        report.question_id,
+      ]);
+    }
+
+    await query(
+      'UPDATE question_reports SET status = ?, reviewed_at = NOW(), reviewed_by = ? WHERE id = ?',
+      [status, req.user.id, id]
+    );
+    await audit(req, `report.${status}`, { targetType: 'report', targetId: id });
+    res.json({ ok: true });
+  })
+);
+
+// ---- Audit log ------------------------------------------------------------
+
+owner.get(
+  '/audit',
+  wrap(async (req, res) => {
+    const rows = await query(
+      `SELECT id, actor_email, action, target_type, target_id, target_label, detail, ip, created_at
+         FROM audit_log ORDER BY created_at DESC, id DESC LIMIT 300`
+    );
+    res.json({
+      entries: rows.map((r) => ({
+        id: r.id,
+        actor: r.actor_email || 'deleted account',
+        action: r.action,
+        targetType: r.target_type,
+        targetLabel: r.target_label,
+        detail: r.detail,
+        ip: r.ip,
+        createdAt: r.created_at,
+      })),
+    });
+  })
+);
+
+// ---- Branding -------------------------------------------------------------
+
+owner.get(
+  '/branding',
+  wrap(async (req, res) => {
+    res.json({ branding: await getBranding(), defaults: BRAND_DEFAULTS });
+  })
+);
+
+owner.put(
+  '/branding',
+  wrap(async (req, res) => {
+    const b = req.body || {};
+    if (b.app_name !== undefined) {
+      const v = String(b.app_name).trim().slice(0, 60);
+      if (!v) return fail(res, 400, 'The app needs a name.');
+      await setSetting('app_name', v);
+    }
+    if (b.app_tagline !== undefined) {
+      await setSetting('app_tagline', String(b.app_tagline).trim().slice(0, 160));
+    }
+    if (b.brand_accent !== undefined) {
+      const v = String(b.brand_accent).trim();
+      if (!/^#[0-9a-f]{6}$/i.test(v)) return fail(res, 400, 'The accent must be a colour like #D8327C.');
+      await setSetting('brand_accent', v);
+    }
+    if (b.brand_mark !== undefined) {
+      // One or two characters: this sits in a 30px circle and anything longer
+      // simply will not fit.
+      await setSetting('brand_mark', [...String(b.brand_mark).trim()].slice(0, 2).join(''));
+    }
+    await audit(req, 'branding.update');
+    res.json({ ok: true, branding: await getBranding() });
   })
 );
 

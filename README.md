@@ -139,52 +139,128 @@ reads settings.
 
 ---
 
-## Admin
+## The master admin
 
-**Admin → ** from the account screen, for accounts with `is_admin`. The first account
-registered on a fresh install gets it automatically.
+A **separate app at `/admin/`**, with its own sign-in. Couples never see a door to it, and
+their browser never downloads a line of its code.
 
-Gated as a **whole namespace** (`app.use('/api/admin', requireAuth, requireAdmin, …)`)
-rather than route by route, so a new admin endpoint is closed by default and you opt in by
-where you put it. Hiding the menu row is cosmetic; the namespace gate is the enforcement.
+It is a real static directory (`public/admin/`), not a route. With Plesk's document root at
+`public/`, nginx serves it directly — a `/admin` *route* would depend on nginx falling
+through to Passenger, which is one more thing to be wrong on deploy day.
+
+Access is `users.is_owner`. The first account registered on a fresh install becomes the
+owner automatically. The whole `/api/owner` namespace is gated in one place, so a new owner
+endpoint is closed by default and you opt in by where you put it.
 
 | Tab | What it does |
 |---|---|
-| **Overview** | Counts, per-level question and answer totals, newest accounts, email status |
-| **People** | Search, promote/demote, deactivate/reactivate, issue a reset link |
-| **Couples** | Every couple with members, invite code, progress and last activity |
-| **Questions** | Browse all 246, filter by level, hide any, write your own |
-| **Settings** | Cool-off, deck size, app URL, and SMTP |
+| **Overview** | Counts, per-group totals, newest accounts, outstanding reports, email status |
+| **Groups** | Create, rename, recolour, set depth, reorder, hide, delete |
+| **Questions** | Every question: search, filter, edit wording, move group, hide, delete |
+| **Import** | Upload .xlsx/.xls/.csv, export everything, download a blank template |
+| **Insights** | Skip rate per question and per group — the content quality signal |
+| **Reports** | What couples have flagged, with their own words, and what to do about it |
+| **People** | Search, make/remove owner, deactivate, issue a reset link |
+| **Couples** | Every couple with members, code, progress and last activity |
+| **Audit** | Everything done in here, newest first |
+| **Settings** | Branding, cool-off, deck size, app URL, SMTP |
+
+### Spreadsheet import
+
+Columns are `group`, `question` and an optional `ref`. Headings are matched forgivingly —
+`Level`/`Category`/`Deck` all mean `group`, `Text`/`Prompt` mean `question` — because
+rejecting a good spreadsheet over a capital letter helps nobody.
+
+**Every upload is a dry run first.** You see how many rows are new, how many update an
+existing question, how many are unchanged, and every row that cannot be used with its row
+number and the reason. Nothing is written until you confirm. A 300-row file is exactly the
+sort of thing you do not want to find out about afterwards.
+
+- Leave `ref` blank for new questions. Rows with no ref are matched on exact text within
+  the group, so **re-uploading the same file does not duplicate anything**.
+- Paste a `ref` from an export and that question is **updated in place**, keeping its id and
+  therefore every couple's record of having discussed it.
+- **Export is your content backup.** Content now lives only in the database, which is not in
+  git — see below.
+
+### Where content lives changed in v1.2.0
+
+Until v1.2.0, `data/catalogue.js` was the source of truth and the seeder rewrote every
+question on every deploy. Now the **database is authoritative** and the seeder is a
+**first-run seed only**: on a database that already has groups and questions it does
+nothing at all and says so.
+
+That reversal was necessary — with the admin able to edit content, the old behaviour would
+have rewritten every edit and switched off every addition on the next deploy. The
+consequences to know:
+
+- Editing `data/catalogue.js` after first run has **no effect** on an existing install.
+  Use the import.
+- Content is **not in git**. Export to Excel periodically; that is the backup.
+- `questions.source` (`catalogue` / `admin` / `import`) is now provenance rather than
+  ownership — useful for working out where a bad question came from.
+- `admin_hidden` remains separate from `is_active` so hiding is always the owner's call.
 
 ### Two guards on People, each scoped so it actually fires
 
 - **You cannot deactivate yourself.** No legitimate use — it signs you out on the spot.
-- **You cannot remove the last active admin.** This is what makes *stepping down* safe:
+- **You cannot remove the last active owner.** This is what makes *stepping down* safe:
   handing over and demoting yourself is a real thing, allowed exactly when somebody else
   holds the keys.
 
 An earlier version blocked all self-demotion, which read as safer and was worse: it made
-the last-admin check **unreachable** — the caller is always an active admin, so "another
-admin exists" was true whenever the target was someone else — leaving the real lockout case
+the last-owner check **unreachable** — the caller is always an active owner, so "another
+owner exists" was true whenever the target was someone else — leaving the real lockout case
 guarded by a rule that could never fire.
 
-### Editing questions, and why the curated ones are read-only
+### Deleting content asks for more than a tap
 
-The 245 curated questions are owned by `data/catalogue.js` and rewritten by every deploy.
-Two columns keep the admin out of a fight with the seeder:
+- A **group with questions in it** cannot be deleted at all. Deleting would cascade the
+  questions away and take every couple's record of discussing them with it — a much bigger
+  consequence than "remove this heading". Empty it, or hide it.
+- A **question somebody has answered** needs explicit confirmation, and the dialog says how
+  many couples are affected and points out that hiding does the same job without destroying
+  the record.
 
-- **`source`** (`catalogue` | `admin`). The seeder only ever touches `catalogue` rows.
-  Without it, the first question written in the app would be retired by the next `migrate`
-  — the seeder would find a row whose ref is not in the file and switch it off.
-- **`admin_hidden`**, separate from `is_active`. `is_active` belongs to the seeder, which
-  sets it back to 1 on any catalogue question it finds switched off. An admin hiding a
-  curated question via `is_active` would watch it quietly return on the next deploy.
-  `admin_hidden` is the admin's own switch and the seeder never reads or writes it.
+---
 
-So: **wording** of a curated question cannot be edited in the app — the API refuses with a
-reason, because a change that appears to save and then silently undoes itself is worse than
-one that is refused. **Hiding** works on anything, and questions written in the app are
-fully editable.
+## Question quality
+
+The app stores no answers, so there are exactly two signals about whether the content is any
+good, and the admin area is built around both.
+
+**Skip rate** (Insights). A question couples keep passing over is usually badly worded, too
+close to another one, or lands harder than its group implies. Only questions answered at
+least *N* times are ranked — sorting purely by percentage would put every 1-of-1 skip at the
+top and bury the question forty couples have quietly avoided.
+
+**Reports** (Reports). A "Report this question" option in the deck menu lets a couple say
+*why*, in their own words. One report per couple per question — a second one from the other
+partner updates the first rather than stacking. Resolving a report can hide the question in
+the same action, since that is the usual response.
+
+---
+
+## Privacy: export and deletion
+
+Both live in the couple app under **Account → Your data**.
+
+- **Download my data** returns everything the app holds as JSON, including the *text* of
+  each question alongside the decision. An export listing bare question ids would be
+  technically complete and useless to the person reading it, which is not what portability
+  means.
+- **Delete my account** is irreversible, needs a typed confirmation *and* the account
+  password. The password matters most: somebody who walked off leaving their phone unlocked
+  should not be one tap from destroying the account.
+
+Shared progress belongs to the **couple**, not the person, so deletion deliberately leaves
+it behind — erasing it would silently delete the partner's history too, and that is somebody
+else's data. The dialog says so. Once the last member goes, the couple is marked dissolved
+and nothing identifies anyone.
+
+The audit log keeps the actor's **email as recorded at the time**, so history survives the
+account being deleted. A foreign key alone would blank the actor on every historic entry at
+exactly the moment you most want to know who did what.
 
 ---
 
@@ -291,14 +367,25 @@ comes back unauthenticated.
 
 ## Versioning
 
-The version must be bumped in **two** files to the **same** value:
+Since v1.2.0 there are **three** stamps, not two, and they must all match:
 
-- `package.json` → `"version"`
-- `public/app.js` → `APP_VERSION`
+- `package.json` → `"version"` (the server)
+- `public/app.js` → `APP_VERSION` (the couple app)
+- `public/admin/admin.js` → `APP_VERSION` (the admin app)
 
-Verify before committing — both must match, or the in-app footer badge shows
-`vX ⚠ server vY` after deploy, which is a real bug rather than a cosmetic one (the served
-`app.js` is reporting a stale version).
+```bash
+grep -n "1\.2\.0" package.json public/app.js public/admin/admin.js
+```
+
+That must return **three** lines. A mismatch shows as `vX ⚠ server vY` in the footer of
+whichever app is stale — a real bug, not a cosmetic one, because the served script is
+reporting a version it is not.
+
+⚠️ **Do not edit these files with PowerShell.** In Windows PowerShell 5.1, `Get-Content`
+reads as ANSI rather than UTF-8, so a `Get-Content | … | Set-Content` round trip
+double-encodes every non-ASCII character in the file — `→` becomes `â†’`, `❤` becomes `â¤` —
+and adds a BOM. It happened here and corrupted both `server.js` and `public/app.js`. Use an
+editor, or `node -e` with explicit `utf8` reads and writes.
 
 Default to **patch**. Reserve **minor** for a genuinely new capability, a schema change,
 or a release that adds questions.
@@ -311,6 +398,13 @@ Worth being explicit about, so nobody goes looking:
 
 - **One couple per person.** Enforced by `UNIQUE(user_id)` on `couple_members`. Leaving is
   the way out.
+- **Content is not in git.** Since the database became authoritative, the only backup of
+  your groups and questions is the Excel export. Take one before anything risky.
+- **No privacy policy or terms pages.** Export and deletion are built; the documents that
+  usually accompany them are not, and a consumer app holding personal data is expected to
+  have both.
+- **The installed PWA icon is not brandable.** Name, tagline, colour and the logo character
+  are; the home-screen PNG is generated by `npm run make-icons` and needs a deploy.
 - **No email verification on sign-up.** Anyone can register with any address. The reset
   flow is safe regardless (it emails the address on the account), but nothing proves the
   address is yours at registration.
