@@ -1,0 +1,26 @@
+{
+  "name": "lets-connect",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Let's Connect - a PWA that gives couples curated questions to discuss, one card at a time.",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "init-db": "node scripts/init-db.js",
+    "migrate": "node scripts/migrate-all.js",
+    "migrate-seed-catalogue": "node scripts/migrate-seed-catalogue.js",
+    "check-schema": "node scripts/check-schema.js",
+    "make-icons": "node scripts/make-icons.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "mysql2": "^3.11.0"
+  }
+}

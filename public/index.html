@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Let's Connect</title>
+<meta name="description" content="Questions for couples, one card at a time.">
+
+<meta name="theme-color" content="#170A14">
+<meta name="color-scheme" content="dark">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Let's Connect">
+
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
+</head>
+<body>
+
+<div id="app" class="app">
+  <div class="boot">
+    <div class="boot-mark" aria-hidden="true"></div>
+    <p class="boot-text">Loading&hellip;</p>
+  </div>
+</div>
+
+<noscript>
+  <p style="padding:2rem;font-family:system-ui;color:#F6E9F0;background:#170A14">
+    Let's Connect needs JavaScript switched on.
+  </p>
+</noscript>
+
+<script>
+// Cache-busting loader.
+//
+// A deploy that the browser refuses to pick up is the most persistent class of
+// bug this stack produces: the new HTML arrives, the old app.js is reused from
+// cache, and it looks exactly like the fix was never shipped. Appending a
+// timestamp makes every page load request a URL the cache has never seen.
+(function () {
+  var v = Date.now();
+  var css = document.createElement('link');
+  css.rel = 'stylesheet';
+  css.href = '/styles.css?v=' + v;
+  document.head.appendChild(css);
+
+  var js = document.createElement('script');
+  js.src = '/app.js?v=' + v;
+  js.defer = true;
+  document.body.appendChild(js);
+})();
+
+// The service worker is what makes this installable and usable offline.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function (err) {
+      console.warn('Service worker registration failed:', err);
+    });
+  });
+}
+</script>
+
+</body>
+</html>
