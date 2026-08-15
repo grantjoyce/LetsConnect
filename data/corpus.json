@@ -8,8 +8,8 @@
   "chains": 81,
   "chainedQuestions": 359,
   "volatile": 22,
-  "quarantined": 34,
-  "flaggedForReview": 32,
+  "quarantined": 0,
+  "flaggedForReview": 34,
   "byDepth": {
    "D1": 126,
    "D2": 316,
@@ -3694,15 +3694,10 @@
    "chainName": "CYCLE",
    "chainPosition": 5,
    "chainTotal": 5,
-   "question": "What is the moment in that cycle where it could still be stopped?",
-   "context": "The last point where either of us could still change direction.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "not standalone: \"that cycle\" - no cycle has been described"
-    }
-   ],
-   "fatal": true
+   "question": "When an argument between us is building, where is the last point it could still be stopped?",
+   "context": "The moment before it stops being recoverable. Say what is happening then.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "EFT-178",
@@ -4315,15 +4310,10 @@
    "chainName": "APPROVAL",
    "chainPosition": 2,
    "chainTotal": 4,
-   "question": "What would change if you stopped needing that approval?",
-   "context": "Imagine the need for that approval gone. What changes.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "not standalone: \"that approval\" - whose approval is never named"
-    }
-   ],
-   "fatal": true
+   "question": "What would you do differently if you no longer needed anyone’s approval?",
+   "context": "Approval from anyone: family, friends, colleagues. What changes without it.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "SOL-222",
@@ -4941,15 +4931,10 @@
    "chainName": "MNNORIGIN",
    "chainPosition": 3,
    "chainTotal": 3,
-   "question": "Where do you see that pattern repeating with me?",
-   "context": "Where the childhood pattern shows up between us.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "not standalone: \"that pattern\" - no pattern has been described"
-    }
-   ],
-   "fatal": true
+   "question": "Which habit from the house you grew up in do you notice yourself repeating with me?",
+   "context": "A way of reacting you learned young and still use here.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "MNN-266",
@@ -6053,15 +6038,10 @@
    "chainName": "INHERIT",
    "chainPosition": 1,
    "chainTotal": 4,
-   "question": "What would healing that actually require of you?",
-   "context": "Practical. What would actually be involved in dealing with it.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "not standalone: \"healing that\" - what needs healing is never named"
-    }
-   ],
-   "fatal": true
+   "question": "What would it actually take from you to stop carrying what your family handed you?",
+   "context": "Practical. The work involved, not the wish for it.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "PHA-344",
@@ -8798,15 +8778,10 @@
    "chainName": "LIMITS",
    "chainPosition": 5,
    "chainTotal": 5,
-   "question": "What agreement do we need about that line?",
-   "context": "The agreement we need about that line.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "not standalone: \"that line\" - no line has been drawn"
-    }
-   ],
-   "fatal": true
+   "question": "What agreement do we need about where our limits sit?",
+   "context": "The understanding you want in place, said plainly.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "LEH-539",
@@ -10444,15 +10419,10 @@
    "chainName": "MONSCRIPT",
    "chainPosition": 2,
    "chainTotal": 5,
-   "question": "Was money a source of tension in your house growing up?",
+   "question": "What was the atmosphere around money in the house you grew up in?",
    "context": "Describe the atmosphere, not the amounts.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "MON-653",
@@ -10496,15 +10466,10 @@
    "chainName": "MONSCRIPT",
    "chainPosition": 5,
    "chainTotal": 5,
-   "question": "Which of those inherited attitudes are you still running?",
-   "context": "Say which ones survived into now.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "not standalone: \"those inherited attitudes\" - none have been listed"
-    }
-   ],
-   "fatal": true
+   "question": "Which attitude to money did you inherit and never question?",
+   "context": "Something you absorbed young and still act on.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "MON-656",
@@ -10707,15 +10672,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "Do you know what we actually spend each month?",
-   "context": "Whether you know, not whether you should.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "question": "How close is your sense of what we spend each month to the real figure?",
+   "context": "Your honest estimate against the actual number.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "MON-670",
@@ -10866,15 +10826,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "Do you compare our finances to other people's?",
-   "context": "Honest answer.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "question": "Whose financial situation do you find yourself measuring ours against?",
+   "context": "Friends, family, colleagues, or nobody. Honest answer.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "MON-681",
@@ -10885,15 +10840,10 @@
    "chainName": "MONPOWER",
    "chainPosition": 1,
    "chainTotal": 6,
-   "question": "Does earning more entitle someone to more say?",
+   "question": "How much should earning more entitle someone to more say?",
    "context": "Your genuine view, not the correct one.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "MON-682",
@@ -10904,15 +10854,10 @@
    "chainName": "MONPOWER",
    "chainPosition": 2,
    "chainTotal": 6,
-   "question": "Have you ever felt you had to justify a purchase to me?",
-   "context": "A specific instance.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "question": "When did you last feel you had to justify something you had bought?",
+   "context": "A specific instance, and what made it feel necessary.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "MON-683",
@@ -10937,15 +10882,10 @@
    "chainName": "MONPOWER",
    "chainPosition": 4,
    "chainTotal": 6,
-   "question": "Do you feel you have equal access to what we have?",
+   "question": "What does your access to our money look like day to day?",
    "context": "Access, not ownership.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "MON-685",
@@ -10956,15 +10896,15 @@
    "chainName": "MONPOWER",
    "chainPosition": 5,
    "chainTotal": 6,
-   "question": "Have you ever felt financially trapped in this relationship?",
+   "question": "When have you felt that money made leaving impossible, even briefly?",
    "context": "Trapped meaning unable to leave for money reasons.",
    "issues": [
     {
-     "level": "fatal",
-     "why": "answerable with yes or no"
+     "level": "review",
+     "why": "check \"that money\" reads on its own (usually a relative pronoun and fine)"
     }
    ],
-   "fatal": true
+   "fatal": false
   },
   {
    "ref": "MON-686",
@@ -11045,15 +10985,15 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "Are we living the life our money should be buying?",
-   "context": "Match between spend and satisfaction.",
+   "question": "What should our money be buying us that it currently is not?",
+   "context": "The match between what you spend and what you get.",
    "issues": [
     {
-     "level": "fatal",
-     "why": "answerable with yes or no"
+     "level": "review",
+     "why": "check \"that it\" reads on its own (usually a relative pronoun and fine)"
     }
    ],
-   "fatal": true
+   "fatal": false
   },
   {
    "ref": "MON-692",
@@ -11134,15 +11074,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "Do you trust my judgement with money?",
+   "question": "How much do you trust my judgement with money?",
    "context": "Honest, with reasons.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "MON-698",
@@ -11195,15 +11130,10 @@
    "chainName": "MONTRUTH",
    "chainPosition": 1,
    "chainTotal": 6,
-   "question": "Is there anything financial I do not currently know about?",
-   "context": "Account, debt, loan, commitment, gift.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "question": "How complete is my picture of your finances?",
+   "context": "Accounts, debts, loans, commitments, gifts.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "MON-702",
@@ -11266,15 +11196,10 @@
    "chainName": "MONTRUTH",
    "chainPosition": 5,
    "chainTotal": 6,
-   "question": "Is there a debt in your name that I have never seen?",
-   "context": "Straight answer.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "question": "How much of what you owe have I actually seen?",
+   "context": "Everything in your name, including the small and the old.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "MON-706",
@@ -11327,15 +11252,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "Would you stay with me if the money disappeared entirely?",
+   "question": "What would happen to us if the money disappeared entirely?",
    "context": "Uncomfortable and worth asking once.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "MON-710",
@@ -11715,19 +11635,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "Do you get that time currently?",
-   "context": "Straight yes or no, then explain.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    },
-    {
-     "level": "fatal",
-     "why": "not standalone: \"that time\" - no time has been mentioned"
-    }
-   ],
-   "fatal": true
+   "question": "How much time alone in the house do you actually get?",
+   "context": "Time in your own space, with nobody else there.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "HOM-737",
@@ -11766,15 +11677,10 @@
    "chainName": "HOMSPACE",
    "chainPosition": 3,
    "chainTotal": 4,
-   "question": "Do you ever avoid coming home, even slightly?",
+   "question": "When do you find yourself putting off coming home?",
    "context": "Sitting in the car counts.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "HOM-740",
@@ -11813,19 +11719,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "Is that argument actually about the task, or about something else?",
+   "question": "When we argue about a chore, what is it usually really about?",
    "context": "Usually it is something else.",
-   "issues": [
-    {
-     "level": "review",
-     "why": "opens on an auxiliary; either/or rescues it, but it reads closed"
-    },
-    {
-     "level": "fatal",
-     "why": "not standalone: \"that argument\" - no argument has been described"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "HOM-743",
@@ -11967,15 +11864,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "Do you think our split is actually equal?",
+   "question": "How equal do you think our split of the work at home actually is?",
    "context": "Your honest assessment.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "HOM-753",
@@ -11986,15 +11878,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "If it is not, does that bother you?",
+   "question": "Where the work at home is unequal between us, how much does it bother you?",
    "context": "Unequal is not automatically unfair. Say which it is.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "not standalone: \"If it is not\" - continues a question the reader has not seen"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "HOM-754",
@@ -12159,15 +12046,10 @@
    "chainName": "FUTSHAPE",
    "chainPosition": 5,
    "chainTotal": 5,
-   "question": "What would have to happen this year for that to be avoided?",
+   "question": "What would have to happen this year to avoid the future you least want?",
    "context": "One decisive thing.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "not standalone: \"for that to be avoided\" - nothing to avoid has been named"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "FUT-766",
@@ -12753,15 +12635,10 @@
    "chainName": "FUTHARD",
    "chainPosition": 5,
    "chainTotal": 5,
-   "question": "Do you want me to remarry if you go first?",
+   "question": "What would you want for me if you died first?",
    "context": "Ask it once, properly.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "FUT-807",
@@ -12772,15 +12649,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "Have we made the practical arrangements a couple our age should have?",
+   "question": "Which practical arrangements should we have made by now and have not?",
    "context": "Wills, policies, powers of attorney.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "FUT-808",
@@ -12791,15 +12663,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "Do you see us together in twenty years?",
-   "context": "Straight answer, then the reasoning.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "question": "When you picture yourself in twenty years, who is there with you?",
+   "context": "The picture that actually arrives, not the one you would prefer.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "FUT-809",
@@ -12810,15 +12677,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "What would make you change that answer?",
+   "question": "What would have to change for you to picture your future with me differently?",
    "context": "The condition, either way.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "not standalone: \"that answer\" - no answer has been given"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "FUT-810",
@@ -12927,15 +12789,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "What is the gap between that and reality?",
-   "context": "And what causes the gap.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "not standalone: \"the gap between that and reality\" - no expectation has been stated"
-    }
-   ],
-   "fatal": true
+   "question": "What is the gap between the work you imagined doing and the work you actually do?",
+   "context": "And what has caused the gap.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "WRK-818",
@@ -13105,15 +12962,10 @@
    "chainName": "WRKCOST",
    "chainPosition": 3,
    "chainTotal": 6,
-   "question": "Is the trade still worth it?",
+   "question": "How well is the trade your work demands still paying off?",
    "context": "Honest arithmetic.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "WRK-830",
@@ -13138,15 +12990,10 @@
    "chainName": "WRKCOST",
    "chainPosition": 5,
    "chainTotal": 6,
-   "question": "Do you resent me for anything connected to your career?",
+   "question": "Where has your career cost you something because of us?",
    "context": "Choices made, or not made, because of us.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "WRK-832",
@@ -13185,19 +13032,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "Is that arrangement still right?",
-   "context": "Circumstances change. Say whether this one should.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    },
-    {
-     "level": "fatal",
-     "why": "not standalone: \"that arrangement\" - no arrangement has been described"
-    }
-   ],
-   "fatal": true
+   "question": "Which arrangement we made about work no longer fits?",
+   "context": "Circumstances change. Say which one should.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "WRK-835",
@@ -13222,15 +13060,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "Do you feel I understand what you actually do all day?",
+   "question": "How well do you think I understand what you actually do all day?",
    "context": "Honest answer.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "WRK-837",
@@ -13241,15 +13074,10 @@
    "chainName": null,
    "chainPosition": null,
    "chainTotal": null,
-   "question": "Do you feel I am proud of your work?",
-   "context": "And how you know.",
-   "issues": [
-    {
-     "level": "fatal",
-     "why": "answerable with yes or no"
-    }
-   ],
-   "fatal": true
+   "question": "How do you know whether I am proud of your work?",
+   "context": "What tells you, one way or the other.",
+   "issues": [],
+   "fatal": false
   },
   {
    "ref": "WRK-838",

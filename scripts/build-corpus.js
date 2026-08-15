@@ -72,19 +72,9 @@ const DEMONSTRATIVE = /\b(that|those|these)\s+(?!(you|we|i|he|she|they|is|was|ar
  * in both directions.
  */
 const NOT_STANDALONE = {
-  'EFT-177': '"that cycle" - no cycle has been described',
-  'SOL-221': '"that approval" - whose approval is never named',
-  'MNN-265': '"that pattern" - no pattern has been described',
-  'PHA-343': '"healing that" - what needs healing is never named',
-  'LEH-538': '"that line" - no line has been drawn',
-  'MON-655': '"those inherited attitudes" - none have been listed',
-  'HOM-736': '"that time" - no time has been mentioned',
-  'HOM-742': '"that argument" - no argument has been described',
-  'HOM-753': '"If it is not" - continues a question the reader has not seen',
-  'FUT-765': '"for that to be avoided" - nothing to avoid has been named',
-  'FUT-809': '"that answer" - no answer has been given',
-  'WRK-817': '"the gap between that and reality" - no expectation has been stated',
-  'WRK-834': '"that arrangement" - no arrangement has been described',
+  // Empty as of the tranche-three rewrite: all thirteen were rewritten to
+  // name their own subject. Add a ref here when review finds another one -
+  // the automatic demonstrative rule below cannot make this call reliably.
 };
 
 /**

@@ -604,6 +604,75 @@ a { color: var(--accent); }
   font-weight: 600;
 }
 
+/* Depth filter: D1-D5 toggles, sitting between the close button and the card.
+ * Multi-select, so a couple can exclude the deepest without leaving the deck. */
+
+.depth-filter {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.35rem;
+  margin-top: 0.85rem;
+  max-width: 480px;
+  width: 100%;
+  align-self: center;
+}
+
+.depth-chip {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  color: var(--text-faint);
+  border-radius: 12px;
+  padding: 0.45rem 0.2rem 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+}
+
+.depth-chip:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+
+.depth-chip.is-on {
+  background: var(--lv-accent, var(--accent));
+  border-color: var(--lv-accent, var(--accent));
+  color: #fff;
+}
+
+.depth-chip:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.depth-chip-n {
+  font-size: 0.66rem;
+  font-weight: 600;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tapping the last remaining depth refuses rather than emptying the deck. */
+.depth-chip.shake {
+  animation: shake 0.28s ease;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .depth-chip.shake { animation: none; }
+}
+
 .deck-body {
   flex: 1;
   display: flex;

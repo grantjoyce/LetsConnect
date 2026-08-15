@@ -1043,10 +1043,16 @@ app.get(
     );
     if (!domain) return fail(res, 404, 'That set does not exist.');
 
-    const depth = req.query.depth ? Number(req.query.depth) : null;
-    if (depth !== null && (!Number.isInteger(depth) || depth < 1 || depth > 5)) {
-      return fail(res, 400, 'Depth must be between 1 and 5.');
-    }
+    // `depths` is a comma-separated set, because depth is a filter the couple
+    // toggles rather than a single choice: "everything except the deepest" is
+    // a normal thing to want. An empty or absent list means all five - a deck
+    // with no depths selected would be an empty screen for no good reason.
+    const depths = String(req.query.depths || '')
+      .split(',')
+      .map((d) => Number(d.trim()))
+      .filter((d) => Number.isInteger(d) && d >= 1 && d <= 5);
+    const uniqueDepths = [...new Set(depths)].sort();
+    const depthFilter = uniqueDepths.length && uniqueDepths.length < 5 ? uniqueDepths : null;
 
     const cooloff = await getIntSetting('skip_cooloff_days');
     const deckSize = await getIntSetting('deck_size');
@@ -1062,7 +1068,7 @@ app.get(
         LEFT JOIN couple_question_status s
           ON s.question_id = q.id AND s.couple_id = ?
        WHERE q.domain_id = ? AND ${servableWhere(allowVolatile)}
-         ${depth !== null ? `AND q.depth = ${depth}` : ''}
+         ${depthFilter ? `AND q.depth IN (${depthFilter.join(',')})` : ''}
          AND (s.id IS NULL${
            withCooloff
              ? ` OR (s.status = 'skipped' AND s.decided_at < DATE_SUB(NOW(), INTERVAL ${cooloff} DAY))`
@@ -1084,12 +1090,22 @@ app.get(
 
     const all = await domainsWithProgress(req.couple.id);
     const domainStats = all.find((d) => d.slug === domain.slug);
-    const stats =
-      depth === null
-        ? domainStats
-        : (domainStats && domainStats.depths.find((x) => x.depth === depth)) || {
-            depth, total: 0, completed: 0, skipped: 0, available: 0, ready: 0,
-          };
+
+    // Stats cover only the selected depths, so the header counts what the
+    // couple is actually being served rather than the whole subject.
+    const selected = depthFilter || [1, 2, 3, 4, 5];
+    const stats = (domainStats ? domainStats.depths : [])
+      .filter((x) => selected.includes(x.depth))
+      .reduce(
+        (acc, x) => ({
+          total: acc.total + x.total,
+          completed: acc.completed + x.completed,
+          skipped: acc.skipped + x.skipped,
+          available: acc.available + x.available,
+          ready: acc.ready + x.ready,
+        }),
+        { total: 0, completed: 0, skipped: 0, available: 0, ready: 0 }
+      );
 
     res.json({
       domain: {
@@ -1099,9 +1115,12 @@ app.get(
         description: domain.description,
         accent: domain.accent,
       },
-      depth,
+      // Which depths are switched on, and what each one holds. Two different
+      // things, so two names - an earlier version called both "depths" and the
+      // second silently overwrote the first.
+      selectedDepths: uniqueDepths.length ? uniqueDepths : [1, 2, 3, 4, 5],
+      depthCounts: domainStats ? domainStats.depths : [],
       stats,
-      depths: domainStats ? domainStats.depths : [],
       releasedEarly,
       cards: cards.map((c) => ({
         id: c.id,

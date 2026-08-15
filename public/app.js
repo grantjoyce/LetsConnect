@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.3.1';
 
 // ---------------------------------------------------------------------------
 // State
@@ -728,6 +728,40 @@ function viewChains() {
     </div>`;
 }
 
+/**
+ * D1-D5 as toggles, above the card.
+ *
+ * Multi-select rather than a single choice, because "everything except the
+ * deepest" is a normal thing to want on a weeknight. Unticking is the way you
+ * exclude a depth; the last remaining one cannot be unticked, since a deck
+ * with nothing selected is just an empty screen.
+ */
+function depthFilterBar() {
+  const d = state.deck;
+  const on = d.selectedDepths || [1, 2, 3, 4, 5];
+  const counts = d.depthCounts || [];
+  const onlyOne = on.length === 1;
+
+  return `
+    <div class="depth-filter" role="group" aria-label="Depth">
+      ${DEPTHS.map((depth) => {
+        const stat = counts.find((x) => x.depth === depth.n);
+        const has = stat && stat.total > 0;
+        const active = on.includes(depth.n);
+        return `
+          <button class="depth-chip${active ? ' is-on' : ''}"
+                  data-action="toggle-depth" data-depth="${depth.n}"
+                  aria-pressed="${active}"
+                  title="${esc(depth.name)} — ${esc(depth.blurb)}"
+                  ${!has ? 'disabled' : ''}
+                  ${active && onlyOne ? 'data-last="1"' : ''}>
+            D${depth.n}
+            <span class="depth-chip-n">${stat ? stat.ready : 0}</span>
+          </button>`;
+      }).join('')}
+    </div>`;
+}
+
 function viewDeck() {
   const d = state.deck;
   const lv = d.domain;
@@ -758,6 +792,8 @@ function viewDeck() {
         </div>
         <button class="icon-btn" data-action="deck-menu" aria-label="Options">&hellip;</button>
       </div>
+
+      ${inChain ? '' : depthFilterBar()}
 
       <div class="deck-body">
         <div class="qcard entering" id="qcard">
@@ -1101,9 +1137,14 @@ async function handleAction(action, el) {
       break;
 
     case 'open-domain':
+      // Straight into the deck with every depth on. The depth filter lives
+      // above the cards, so choosing a subject is one tap rather than two.
       state.domain = state.domains.find((d) => d.slug === el.dataset.slug) || null;
-      state.view = 'depths';
-      render();
+      await openDeck(el.dataset.slug, null);
+      break;
+
+    case 'toggle-depth':
+      await toggleDepth(Number(el.dataset.depth), el);
       break;
 
     case 'go-domains':
@@ -1372,13 +1413,15 @@ function copyText(text) {
  * deck releases them early - and the short-circuit meant that release could
  * never happen from the list. Let the server decide what is left.
  */
-async function openDeck(slug, depth) {
+async function openDeck(slug, depths) {
   try {
-    const q = depth ? `?depth=${depth}` : '';
+    const list = Array.isArray(depths) && depths.length ? depths : null;
+    const q = list ? `?depths=${list.join(',')}` : '';
     const data = await api.get(`/api/deck/${encodeURIComponent(slug)}${q}`);
     state.deck = {
       domain: data.domain,
-      depth: data.depth,
+      selectedDepths: data.selectedDepths,
+      depthCounts: data.depthCounts,
       stats: data.stats,
       cards: data.cards,
       index: 0,
@@ -1393,6 +1436,68 @@ async function openDeck(slug, depth) {
     }
   } catch (err) {
     uiAlert('Could not open that set', err.message);
+  }
+}
+
+// Increments on every depth toggle. A response is applied only if its token is
+// still the newest, so an earlier slow request cannot land on top of a later
+// one and leave the deck showing depths the chips say are off.
+let depthToken = 0;
+
+/**
+ * Tick or untick one depth.
+ *
+ * Refetching rather than filtering in memory, because the deck only ever holds
+ * a page of cards: ticking a depth back on has to pull in cards that were never
+ * sent.
+ *
+ * The selection is applied to state and rendered BEFORE the request goes out.
+ * An earlier version awaited the fetch first, so two quick taps both read the
+ * same stale selection and the second silently undid the first - which on a
+ * phone is just "tapping two chips", not an edge case.
+ */
+async function toggleDepth(n, el) {
+  const d = state.deck;
+  if (!d) return;
+
+  const on = new Set(d.selectedDepths || [1, 2, 3, 4, 5]);
+
+  if (on.has(n) && on.size === 1) {
+    // Refuse visibly rather than emptying the deck.
+    toast('Keep at least one depth switched on.');
+    if (el) {
+      el.classList.remove('shake');
+      void el.offsetWidth; // force a reflow so a repeated tap re-runs it
+      el.classList.add('shake');
+    }
+    return;
+  }
+
+  if (on.has(n)) on.delete(n);
+  else on.add(n);
+
+  const next = [...on].sort();
+  const token = (depthToken += 1);
+
+  // Optimistic: the chips respond immediately and the next tap reads the truth.
+  d.selectedDepths = next;
+  render();
+
+  try {
+    const q = next.length === 5 ? '' : `?depths=${next.join(',')}`;
+    const data = await api.get(`/api/deck/${encodeURIComponent(d.domain.slug)}${q}`);
+    if (token !== depthToken || !state.deck) return; // a later toggle won
+
+    state.deck.cards = data.cards;
+    state.deck.stats = data.stats;
+    state.deck.depthCounts = data.depthCounts;
+    state.deck.selectedDepths = next;
+    state.deck.index = 0;
+    state.revealed = false;
+    render();
+  } catch (err) {
+    if (token !== depthToken) return;
+    toast(err.message, true);
   }
 }
 
