@@ -46,9 +46,13 @@ const MIGRATIONS = [
   // with 'import', so it MUST run before anything that writes that value.
   'migrate-add-question-reports',
 
-  // FIRST-RUN SEED ONLY. Since v1.2.0 the admin area owns content, so this
-  // does nothing at all on a database that already has groups and questions.
-  'migrate-seed-catalogue',
+  // Depth and domain as independent axes, plus volatility, context and chains.
+  // Retires the old single-axis `levels` table, so it MUST run before the seed.
+  'migrate-corpus-model',
+
+  // FIRST-RUN SEED ONLY. Does nothing at all on a database that already has
+  // questions - content belongs to the admin area once it exists.
+  'migrate-seed-corpus',
 ];
 
 const SCRIPTS_DIR = __dirname;

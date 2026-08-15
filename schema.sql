@@ -62,6 +62,11 @@ CREATE TABLE IF NOT EXISTS couple_members (
   user_id    INT NOT NULL,
   member_role ENUM('creator','partner') NOT NULL DEFAULT 'partner',
   joined_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- Volatile questions are unlocked PER PERSON, and both members must have
+  -- done it. One partner must not be able to open that door on the other's
+  -- behalf - which is exactly what a couple-level flag would allow.
+  volatile_unlocked    TINYINT(1) NOT NULL DEFAULT 0,
+  volatile_unlocked_at DATETIME NULL,
   UNIQUE KEY uq_couple_members_user (user_id),
   UNIQUE KEY uq_couple_members_pair (couple_id, user_id),
   KEY idx_couple_members_couple (couple_id),
@@ -72,39 +77,78 @@ CREATE TABLE IF NOT EXISTS couple_members (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- The question catalogue
+-- Content: domains, chains and questions
 --
--- levels + questions are CONTENT, not user data. They are kept in step with
--- data/catalogue.js by the seed migration, which upserts on the stable `slug`
--- / `ref` keys and deactivates rather than deletes, so progress rows always
--- keep something to point at.
+-- DEPTH AND DOMAIN ARE INDEPENDENT AXES. This is the central design decision
+-- and it is easy to undo by accident.
+--
+--   domains   subject matter only. No depth. Sex, Money, Origin, Conflict...
+--   depth     emotional exposure only, 1-5, held per QUESTION.
+--   volatile  a flag on the few questions that can end a relationship in the
+--             wrong week, independent of both.
+--
+-- An earlier version had one table, `levels`, whose rows carried both a
+-- subject and a depth. That collapsed a mild question about sexual timing and
+-- a question about whether the relationship should end into the same bucket,
+-- because both merely felt risky. `levels` has been retired; do not
+-- reintroduce a depth column on `domains`.
+--
+-- Content is seeded once from data/corpus.json (generated from the corpus
+-- markdown by `npm run build-corpus`) and thereafter belongs to the admin area.
 -- ---------------------------------------------------------------------------
 
-CREATE TABLE IF NOT EXISTS levels (
+CREATE TABLE IF NOT EXISTS domains (
   id           INT AUTO_INCREMENT PRIMARY KEY,
   slug         VARCHAR(60) NOT NULL,
   name         VARCHAR(100) NOT NULL,
-  tagline      VARCHAR(180) NOT NULL,
+  tagline      VARCHAR(180) NULL,
   description  TEXT NULL,
-  depth        TINYINT NOT NULL DEFAULT 1,
   accent       VARCHAR(9) NOT NULL DEFAULT '#D8327C',
   sort_order   INT NOT NULL DEFAULT 0,
   is_active    TINYINT(1) NOT NULL DEFAULT 1,
   created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY uq_levels_slug (slug)
+  UNIQUE KEY uq_domains_slug (slug)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- `source` decides who owns a row. The seeder manages 'catalogue' questions and
--- retires any whose ref has left data/catalogue.js; it must never see 'admin'
--- ones, or a question written in the app would be switched off by the next
--- deploy. See scripts/migrate-add-question-source.js.
+-- A recommended running order over cards that circle the same construct at
+-- increasing exposure. Every card still stands alone - pull one out of a chain
+-- and it makes complete sense. The chain only adds value played in order.
+CREATE TABLE IF NOT EXISTS chains (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  name       VARCHAR(60) NOT NULL,
+  total      INT NOT NULL DEFAULT 0,
+  min_depth  TINYINT NOT NULL DEFAULT 1,
+  max_depth  TINYINT NOT NULL DEFAULT 1,
+  domain_id  INT NULL,
+  is_active  TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_chains_name (name),
+  KEY idx_chains_domain (domain_id),
+  CONSTRAINT fk_chains_domain FOREIGN KEY (domain_id)
+    REFERENCES domains (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- `source` is provenance: where a question came from, not who owns it.
+-- `context` is the helper line revealed on tap. It opens the territory and
+-- never supplies an answer - a sample answer anchors every couple to the same
+-- reply and kills the question.
+-- `needs_review` holds back questions that fail the corpus construction rules.
+-- They are stored rather than dropped so nothing authored is ever lost.
 CREATE TABLE IF NOT EXISTS questions (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   ref         VARCHAR(40) NOT NULL,
-  level_id    INT NOT NULL,
+  domain_id   INT NULL,
+  depth       TINYINT NOT NULL DEFAULT 1,
+  lens        VARCHAR(3) NULL,
+  is_volatile TINYINT(1) NOT NULL DEFAULT 0,
   source      ENUM('catalogue','admin','import') NOT NULL DEFAULT 'catalogue',
   text        TEXT NOT NULL,
+  context     VARCHAR(500) NULL,
+  chain_id       INT NULL,
+  chain_position INT NULL,
+  needs_review   TINYINT(1) NOT NULL DEFAULT 0,
+  review_note    VARCHAR(255) NULL,
   sort_order  INT NOT NULL DEFAULT 0,
   -- is_active belongs to the SEEDER. admin_hidden belongs to the ADMIN, and the
   -- seeder never touches it - otherwise hiding a curated question in the app
@@ -114,10 +158,33 @@ CREATE TABLE IF NOT EXISTS questions (
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_questions_ref (ref),
-  KEY idx_questions_level (level_id, is_active),
+  -- The deck query filters on all four of these together.
+  KEY idx_questions_axes (domain_id, depth, is_active, admin_hidden),
   KEY idx_questions_source (source),
-  CONSTRAINT fk_questions_level FOREIGN KEY (level_id)
-    REFERENCES levels (id) ON DELETE CASCADE
+  KEY idx_questions_chain (chain_id, chain_position),
+  CONSTRAINT fk_questions_domain FOREIGN KEY (domain_id)
+    REFERENCES domains (id) ON DELETE CASCADE,
+  CONSTRAINT fk_questions_chain FOREIGN KEY (chain_id)
+    REFERENCES chains (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A couple's position in a chain they have accepted. Stopping part-way is a
+-- valid outcome, not a failure: card two was never a fragment.
+CREATE TABLE IF NOT EXISTS couple_chain_progress (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  couple_id  INT NOT NULL,
+  chain_id   INT NOT NULL,
+  position   INT NOT NULL DEFAULT 0,
+  status     ENUM('active','done','abandoned') NOT NULL DEFAULT 'active',
+  started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_chain_progress (couple_id, chain_id),
+  KEY idx_chain_progress_couple (couple_id, status),
+  KEY fk_chain_progress_chain (chain_id),
+  CONSTRAINT fk_chain_progress_couple FOREIGN KEY (couple_id)
+    REFERENCES couples (id) ON DELETE CASCADE,
+  CONSTRAINT fk_chain_progress_chain FOREIGN KEY (chain_id)
+    REFERENCES chains (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------

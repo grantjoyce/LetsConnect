@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -29,9 +29,19 @@ const state = {
   authMode: 'login', // login | register | forgot
   me: null,
   couple: null,
-  levels: [],
+
+  // Depth and domain are INDEPENDENT axes. A domain is a subject and carries no
+  // depth of its own; each domain reports what it holds at each depth, so the
+  // picker can grey out a depth that has nothing in it.
+  domains: [],
+  domain: null, // the domain being browsed, before a depth is chosen
+  chains: null,
+  chain: null, // { chain, cards, position } while running a sequence
+  volatile: null, // { unlocked, mine, waitingOnPartner, available }
+
   serverVersion: null,
-  deck: null, // { level, stats, cards, index, releasedEarly }
+  deck: null, // { domain, depth, stats, cards, index, releasedEarly }
+  revealed: false, // whether the context line on the current card is showing
   form: {}, // values mirrored out of inputs so a re-render can restore them
   error: null,
   notice: null,
@@ -502,45 +512,58 @@ function topbar(showAccount) {
     </div>`;
 }
 
-function levelCard(lv) {
-  const done = lv.completed;
-  const pct = lv.total ? Math.round((done / lv.total) * 100) : 0;
+/** D1..D5. Exposure only - nothing to do with subject. */
+const DEPTHS = [
+  { n: 1, name: 'Open', blurb: 'Answerable straight away. Nothing at stake.' },
+  { n: 2, name: 'Reflective', blurb: 'Needs a moment’s thought. Mild disclosure.' },
+  { n: 3, name: 'Personal', blurb: 'Real disclosure. Assumes you already trust each other.' },
+  { n: 4, name: 'Exposed', blurb: 'Shame, fear, unmet need. Give it proper time.' },
+  { n: 5, name: 'Rupture', blurb: 'Damage that cannot be taken back. Only when you both mean it.' },
+];
 
-  // `ready` (not `available`) is what the deck would actually serve: it counts
-  // skipped cards the server would release early rather than dead-end. Using
-  // `available` here showed "0 ready" on decks that had cards waiting.
-  const ready = lv.ready !== undefined ? lv.ready : lv.available;
-  const nothingLeft = ready === 0;
+function domainCard(d) {
+  const pct = d.total ? Math.round((d.completed / d.total) * 100) : 0;
+  const nothingLeft = d.ready === 0;
+  const deepest = d.depths.length ? Math.max(...d.depths.map((x) => x.depth)) : 0;
 
+  // Dots show the range of exposure this SUBJECT reaches, which is a property
+  // of its questions rather than of the subject itself. "What Matters" holding
+  // only D1 is worth seeing before you open it.
   const dots = [1, 2, 3, 4, 5]
-    .map((d) => `<span class="dot${d <= lv.depth ? ' on' : ''}"></span>`)
+    .map((n) => {
+      const has = d.depths.some((x) => x.depth === n && x.total > 0);
+      return `<span class="dot${has ? ' on' : ''}"></span>`;
+    })
     .join('');
 
   return `
     <button class="level-card${nothingLeft ? ' is-empty' : ''}"
-            style="${accentVars(lv.accent)}"
-            data-action="open-deck" data-slug="${esc(lv.slug)}">
+            style="${accentVars(d.accent)}"
+            data-action="open-domain" data-slug="${esc(d.slug)}">
       <div class="level-head">
-        <span class="level-name">${esc(lv.name)}</span>
-        <span class="level-count">${nothingLeft ? 'all done' : `${ready} ready`}</span>
+        <span class="level-name">${esc(d.name)}</span>
+        <span class="level-count">${nothingLeft ? 'all done' : `${d.ready} ready`}</span>
       </div>
-      <div class="level-tagline">${esc(lv.tagline)}</div>
-      <div class="depth-dots">${dots}<span class="depth-label">Depth ${lv.depth}</span></div>
+      <div class="level-tagline">${esc(d.tagline || '')}</div>
+      <div class="depth-dots">${dots}<span class="depth-label">
+        ${deepest ? `to depth ${deepest}` : 'empty'}
+      </span></div>
       <div class="progress"><span style="width:${pct}%"></span></div>
       <div class="level-meta">
-        <span>${lv.completed} of ${lv.total} discussed</span>
-        ${lv.skipped ? `<span>${lv.skipped} skipped</span>` : ''}
+        <span>${d.completed} of ${d.total} discussed</span>
+        ${d.skipped ? `<span>${d.skipped} skipped</span>` : ''}
       </div>
     </button>`;
 }
 
-function viewLevels() {
+function viewDomains() {
   const c = state.couple;
   const partner = c.members.find((m) => m.id !== state.me.id);
   const solo = !partner;
 
-  const totalDone = state.levels.reduce((n, l) => n + l.completed, 0);
-  const totalAll = state.levels.reduce((n, l) => n + l.total, 0);
+  const totalDone = state.domains.reduce((n, d) => n + d.completed, 0);
+  const totalAll = state.domains.reduce((n, d) => n + d.total, 0);
+  const chainCount = state.chains ? state.chains.length : null;
 
   return `
     <div class="screen">
@@ -566,9 +589,13 @@ function viewLevels() {
           : ''
       }
 
-      <h2 class="section-title">Choose a depth</h2>
+      <button class="btn btn-block btn-ghost" data-action="open-chains" style="margin-bottom:1.4rem">
+        Guided sequences${chainCount ? ` · ${chainCount}` : ''}
+      </button>
+
+      <h2 class="section-title">What would you like to talk about?</h2>
       <div class="level-list">
-        ${state.levels.map(levelCard).join('')}
+        ${state.domains.map(domainCard).join('')}
       </div>
 
       <div class="footer-note">
@@ -583,37 +610,177 @@ function viewLevels() {
     </div>`;
 }
 
+/**
+ * Depth picker for the chosen subject.
+ *
+ * The second half of the two-axis choice: you have said what to talk about,
+ * now say how exposing you want it. Depths with nothing in them are shown but
+ * disabled rather than hidden, so the shape of the subject is visible - it is
+ * useful to see that Home holds almost nothing above D3.
+ */
+function viewDepthPicker() {
+  const d = state.domain;
+  if (!d) return viewDomains();
+
+  return `
+    <div class="screen" style="${accentVars(d.accent)}">
+      <div class="topbar">
+        <div class="brand">
+          <button class="icon-btn" data-action="go-domains" aria-label="Back">&larr;</button>
+          <span>${esc(d.name)}</span>
+        </div>
+      </div>
+
+      <div class="hero" style="text-align:left;margin-bottom:1.2rem">
+        <h1 style="font-size:1.6rem">${esc(d.name)}</h1>
+        <p style="margin:0.35rem 0 0;max-width:none">${esc(d.description || d.tagline || '')}</p>
+      </div>
+
+      <h2 class="section-title">How deep tonight?</h2>
+      <div class="level-list">
+        ${DEPTHS.map((depth) => {
+          const stat = d.depths.find((x) => x.depth === depth.n);
+          const ready = stat ? stat.ready : 0;
+          const total = stat ? stat.total : 0;
+          const empty = total === 0;
+          return `
+            <button class="level-card${empty || ready === 0 ? ' is-empty' : ''}"
+                    style="${accentVars(d.accent)}"
+                    ${empty ? 'disabled' : ''}
+                    data-action="open-deck" data-slug="${esc(d.slug)}" data-depth="${depth.n}">
+              <div class="level-head">
+                <span class="level-name">${depth.n}. ${esc(depth.name)}</span>
+                <span class="level-count">${
+                  empty ? 'none here' : ready === 0 ? 'all done' : `${ready} ready`
+                }</span>
+              </div>
+              <div class="level-tagline">${esc(depth.blurb)}</div>
+              ${
+                total
+                  ? `<div class="level-meta"><span>${stat.completed} of ${total} discussed</span>
+                     ${stat.skipped ? `<span>${stat.skipped} skipped</span>` : ''}</div>`
+                  : ''
+              }
+            </button>`;
+        }).join('')}
+      </div>
+
+      <button class="btn btn-block btn-ghost" data-action="open-deck"
+              data-slug="${esc(d.slug)}" style="margin-top:1rem">
+        Any depth — mix them
+      </button>
+    </div>`;
+}
+
+/** The list of guided sequences. */
+function viewChains() {
+  const chains = state.chains;
+
+  return `
+    <div class="screen">
+      <div class="topbar">
+        <div class="brand">
+          <button class="icon-btn" data-action="go-domains" aria-label="Back">&larr;</button>
+          <span>Guided sequences</span>
+        </div>
+      </div>
+
+      <div class="notice">
+        A sequence is a handful of cards that circle the same thing, getting more
+        exposing as you go. Every card still stands on its own, so stopping early is a
+        complete conversation rather than an abandoned one.
+      </div>
+
+      ${
+        !chains
+          ? '<div class="boot" style="min-height:30vh"><div class="boot-mark"></div></div>'
+          : chains.length
+            ? `<div class="level-list">
+                 ${chains
+                   .map(
+                     (c) => `
+                   <button class="level-card" style="${accentVars(c.accent)}"
+                           data-action="open-chain" data-id="${c.id}">
+                     <div class="level-head">
+                       <span class="level-name">${esc(c.name)}</span>
+                       <span class="level-count">${c.total} card${c.total === 1 ? '' : 's'}</span>
+                     </div>
+                     <div class="level-tagline">${esc(c.domainName || '')} · depth ${c.minDepth}${
+                       c.maxDepth !== c.minDepth ? ` to ${c.maxDepth}` : ''
+                     }</div>
+                     ${
+                       c.gateAt
+                         ? '<div class="level-meta"><span>Goes deep — you will be asked before it does</span></div>'
+                         : ''
+                     }
+                     ${
+                       c.completed
+                         ? `<div class="level-meta"><span>${c.completed} of ${c.total} done</span></div>`
+                         : ''
+                     }
+                   </button>`
+                   )
+                   .join('')}
+               </div>`
+            : `<div class="empty-state"><h3>Nothing left</h3>
+                 <p>You have worked through every sequence available to you.</p></div>`
+      }
+    </div>`;
+}
+
 function viewDeck() {
   const d = state.deck;
-  const lv = d.level;
+  const lv = d.domain;
   const card = d.cards[d.index];
   const doneInDeck = d.index;
   const stats = d.stats || { completed: 0, total: 0, skipped: 0, available: 0 };
 
   if (!card) return deckFinished();
 
+  const inChain = !!d.chain;
+  const depthName = (DEPTHS.find((x) => x.n === card.depth) || {}).name || '';
+
   return `
     <div class="deck" style="${accentVars(lv.accent)}">
       <div class="deck-bar">
-        <button class="icon-btn" data-action="close-deck" aria-label="Back to the decks">&times;</button>
+        <button class="icon-btn" data-action="close-deck" aria-label="Back">&times;</button>
         <div class="deck-titles">
-          <div class="deck-level">${esc(lv.name)}</div>
+          <div class="deck-level">${esc(inChain ? d.chain.name : lv.name)}</div>
           <div class="deck-progress-text">
-            ${esc(stats.completed)} of ${esc(stats.total)} discussed${
-    doneInDeck ? ` &middot; ${plural(doneInDeck, 'card', 'cards')} this sitting` : ''
-  }
+            ${
+              inChain
+                ? `Card ${d.index + 1} of ${d.cards.length}`
+                : `${esc(stats.completed)} of ${esc(stats.total)} discussed${
+                    doneInDeck ? ` &middot; ${plural(doneInDeck, 'card', 'cards')} this sitting` : ''
+                  }`
+            }
           </div>
         </div>
-        <button class="icon-btn" data-action="deck-menu" aria-label="Deck options">&hellip;</button>
+        <button class="icon-btn" data-action="deck-menu" aria-label="Options">&hellip;</button>
       </div>
 
       <div class="deck-body">
         <div class="qcard entering" id="qcard">
-          <div class="qcard-eyebrow">${esc(lv.name)}</div>
+          <div class="qcard-eyebrow">
+            ${esc(inChain ? `${lv.name} · ${d.chain.name}` : lv.name)}
+            <span style="opacity:0.6">· ${card.depth}. ${esc(depthName)}</span>
+            ${card.volatile ? '<span class="pill pill-warn">handle with care</span>' : ''}
+          </div>
           <div class="qtext">${esc(card.text)}</div>
+
           ${
             card.seenBefore
               ? '<div class="qcard-note">You skipped this one before — it has come back around.</div>'
+              : ''
+          }
+
+          ${
+            card.context
+              ? state.revealed
+                ? `<div class="qcard-context">${esc(card.context)}</div>`
+                : `<button class="qcard-help" data-action="reveal-context">
+                     <span aria-hidden="true">?</span> What does this mean
+                   </button>`
               : ''
           }
         </div>
@@ -630,7 +797,7 @@ function viewDeck() {
 
 function deckFinished() {
   const d = state.deck;
-  const lv = d.level;
+  const lv = d.domain;
   const s = d.stats || { completed: 0, total: 0, skipped: 0 };
   const allDone = s.completed >= s.total && s.total > 0;
 
@@ -736,6 +903,27 @@ function viewAccount() {
           : ''
       }
 
+      ${
+        state.volatile
+          ? `<h2 class="section-title" style="margin-top:1.5rem">The hardest questions</h2>
+             <div class="rows">
+               <button class="row" data-action="toggle-volatile">
+                 <span class="row-label">
+                   ${state.volatile.mine ? 'Unlocked by you' : 'Locked'}
+                   <span class="row-sub">${
+                     state.volatile.unlocked
+                       ? `${state.volatile.available} questions about betrayal, leaving and real damage are in play.`
+                       : state.volatile.waitingOnPartner
+                         ? 'Waiting for your partner to switch it on too. Nothing changes until they do.'
+                         : `${state.volatile.available} questions are held back. Both of you have to switch this on.`
+                   }</span>
+                 </span>
+                 <span class="row-value">${state.volatile.mine ? 'On' : 'Off'}</span>
+               </button>
+             </div>`
+          : ''
+      }
+
       <h2 class="section-title" style="margin-top:1.5rem">Your data</h2>
       <div class="rows">
         <button class="row" data-action="export-data">
@@ -804,8 +992,12 @@ function render() {
     html = viewDeck();
   } else if (state.view === 'account') {
     html = viewAccount();
+  } else if (state.view === 'chains') {
+    html = viewChains();
+  } else if (state.view === 'depths' && state.domain) {
+    html = viewDepthPicker();
   } else {
-    html = viewLevels();
+    html = viewDomains();
   }
 
   root.innerHTML = html;
@@ -908,14 +1100,51 @@ async function handleAction(action, el) {
       await doLogout();
       break;
 
+    case 'open-domain':
+      state.domain = state.domains.find((d) => d.slug === el.dataset.slug) || null;
+      state.view = 'depths';
+      render();
+      break;
+
+    case 'go-domains':
+      state.view = 'levels';
+      state.domain = null;
+      state.chain = null;
+      render();
+      break;
+
+    case 'open-chains':
+      state.view = 'chains';
+      render();
+      await loadChains();
+      break;
+
+    case 'open-chain':
+      await openChain(Number(el.dataset.id));
+      break;
+
     case 'open-deck':
-      await openDeck(el.dataset.slug);
+      await openDeck(el.dataset.slug, el.dataset.depth ? Number(el.dataset.depth) : null);
+      break;
+
+    case 'reveal-context':
+      // Revealed per card, and reset on every advance. The point of hiding it
+      // is that the question carries the moment; leaving it open would turn
+      // the next card into a worksheet too.
+      state.revealed = true;
+      render();
       break;
 
     case 'close-deck':
       state.deck = null;
-      state.view = 'levels';
+      state.revealed = false;
+      state.view = state.chain ? 'chains' : state.domain ? 'depths' : 'levels';
+      state.chain = null;
       render();
+      break;
+
+    case 'toggle-volatile':
+      await toggleVolatile();
       break;
 
     case 'answer':
@@ -1006,7 +1235,7 @@ async function doLogout() {
   }
   state.me = null;
   state.couple = null;
-  state.levels = [];
+  state.domains = [];
   state.deck = null;
   state.view = 'auth';
   state.authMode = 'login';
@@ -1135,31 +1364,129 @@ function copyText(text) {
 // ---- The deck -------------------------------------------------------------
 
 /**
- * Always asks the server, even when the level looks empty.
+ * Always asks the server, even when the domain looks empty.
  *
  * An earlier version short-circuited to the "nothing left" screen whenever
  * `available` was 0, to save a request. That silently defeated the server's
  * own guard: when the skip cool-off is the only thing holding cards back, the
  * deck releases them early - and the short-circuit meant that release could
- * never happen from the levels list. Let the server decide what is left.
+ * never happen from the list. Let the server decide what is left.
  */
-async function openDeck(slug) {
+async function openDeck(slug, depth) {
   try {
-    const data = await api.get(`/api/deck/${encodeURIComponent(slug)}`);
+    const q = depth ? `?depth=${depth}` : '';
+    const data = await api.get(`/api/deck/${encodeURIComponent(slug)}${q}`);
     state.deck = {
-      level: data.level,
+      domain: data.domain,
+      depth: data.depth,
       stats: data.stats,
       cards: data.cards,
       index: 0,
+      chain: null,
       releasedEarly: data.releasedEarly,
     };
+    state.revealed = false;
     state.view = 'deck';
     render();
     if (data.releasedEarly) {
       toast('Bringing back questions you skipped earlier.');
     }
   } catch (err) {
-    uiAlert('Could not open that deck', err.message);
+    uiAlert('Could not open that set', err.message);
+  }
+}
+
+// ---- Chains ---------------------------------------------------------------
+
+async function loadChains() {
+  try {
+    const data = await api.get('/api/chains');
+    state.chains = data.chains;
+    if (state.view === 'chains') render();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+/**
+ * Run a guided sequence.
+ *
+ * The consent gate sits at the transition INTO depth 4, not at the start, so
+ * the couple opts in with a clear view of where the arc is heading rather than
+ * agreeing blind at card one.
+ */
+async function openChain(id) {
+  try {
+    const data = await api.get(`/api/chains/${id}`);
+    if (!data.cards.length) {
+      return uiAlert('Nothing left', 'You have already worked through this sequence.');
+    }
+
+    // Resume where they stopped, but never past the end.
+    const start = Math.min(data.position || 0, data.cards.length - 1);
+
+    if (data.chain.maxDepth >= 4) {
+      const yes = await uiConfirm(
+        `${esc(data.chain.name)}`,
+        `This sequence starts gently and ends at depth <strong>${data.chain.maxDepth}</strong> — ` +
+          'shame, fear, or things that cannot be unsaid. ' +
+          `${data.cards.length} cards, perhaps twenty minutes.<br><br>` +
+          'You can stop after any card and still have had a whole conversation.',
+        'Start it',
+        false
+      );
+      if (!yes) return undefined;
+    }
+
+    state.chain = data.chain;
+    state.deck = {
+      domain: {
+        slug: data.chain.domainSlug,
+        name: data.chain.domainName,
+        accent: data.chain.accent,
+      },
+      depth: null,
+      stats: { completed: data.position || 0, total: data.cards.length, skipped: 0 },
+      cards: data.cards,
+      index: start,
+      chain: data.chain,
+      releasedEarly: false,
+    };
+    state.revealed = false;
+    state.view = 'deck';
+    render();
+  } catch (err) {
+    uiAlert('Could not open that sequence', err.message);
+  }
+  return undefined;
+}
+
+async function toggleVolatile() {
+  const v = state.volatile;
+  const turningOn = !v.mine;
+
+  if (turningOn) {
+    const yes = await uiConfirm(
+      'Unlock the hardest questions?',
+      `There are <strong>${v.available}</strong> questions held back because they can do real ` +
+        'damage if they arrive in a bad week — betrayal, leaving, what you would need to walk ' +
+        'away.<br><br>They stay locked until <strong>you both</strong> switch this on separately. ' +
+        'Either of you can switch it off again at any time, on your own.',
+      'Unlock my side'
+    );
+    if (!yes) return;
+  }
+
+  try {
+    const res = await api.post('/api/couple/volatile', { unlocked: turningOn });
+    await loadData();
+    if (turningOn) {
+      toast(res.unlocked ? 'Unlocked for both of you.' : 'Saved — waiting on your partner.');
+    } else {
+      toast('Locked again.');
+    }
+  } catch (err) {
+    uiAlert('Could not save', err.message);
   }
 }
 
@@ -1185,12 +1512,26 @@ async function answerCard(decision) {
       settle,
     ]);
 
-    state.levels = res.levels;
-    const fresh = res.levels.find((l) => l.slug === d.level.slug);
+    state.domains = res.domains;
+    const fresh = res.domains.find((l) => l.slug === d.domain.slug);
     if (fresh) d.stats = fresh;
 
     d.index += 1;
+    // Each card earns its own reveal. Carrying it over would turn the next
+    // question into a worksheet, which is the whole reason it hides.
+    state.revealed = false;
     state.busy = false;
+
+    // Keep a chain session's position on the server, so stopping and coming
+    // back resumes rather than restarting.
+    if (d.chain) {
+      api
+        .post(`/api/chains/${d.chain.id}/progress`, {
+          position: d.index,
+          status: d.index >= d.cards.length ? 'done' : 'active',
+        })
+        .catch(() => {});
+    }
 
     // Top the deck up before it runs dry, so there is never a pause mid-flow.
     if (d.index >= d.cards.length - 3 && fresh && (fresh.ready || 0) > 0) {
@@ -1216,8 +1557,8 @@ async function answerCard(decision) {
 async function refillDeck() {
   const d = state.deck;
   if (!d) return;
-  const data = await api.get(`/api/deck/${encodeURIComponent(d.level.slug)}`);
-  if (!state.deck || state.deck.level.slug !== d.level.slug) return;
+  const data = await api.get(`/api/deck/${encodeURIComponent(d.domain.slug)}${d.depth ? `?depth=${d.depth}` : ''}`);
+  if (!state.deck || state.deck.domain.slug !== d.domain.slug) return;
 
   const have = new Set(d.cards.map((c) => c.id));
   const extra = data.cards.filter((c) => !have.has(c.id));
@@ -1241,9 +1582,9 @@ async function showDeckMenu() {
   }
 
   const choice = await dialog({
-    title: d.level.name,
+    title: d.domain.name,
     bodyHtml: `
-      <p>${esc(d.level.description || d.level.tagline)}</p>
+      <p>${esc(d.domain.description || d.domain.tagline || '')}</p>
       <p style="margin-top:0.75rem">
         <strong>${esc(s.completed || 0)}</strong> discussed &middot;
         <strong>${esc(s.skipped || 0)}</strong> skipped &middot;
@@ -1322,24 +1663,24 @@ async function resetDeck(scope) {
   }
 
   const yes = await uiConfirm(
-    isSkipped ? 'Bring back skipped questions?' : `Start ${esc(d.level.name)} again?`,
+    isSkipped ? 'Bring back skipped questions?' : `Start ${esc(d.domain.name)} again?`,
     isSkipped
       ? `The <strong>${count}</strong> question${count === 1 ? '' : 's'} you skipped in ${esc(
-          d.level.name
+          d.domain.name
         )} will go straight back into the deck. Nothing you marked as discussed is affected.`
       : `This clears all <strong>${count}</strong> record${
           count === 1 ? '' : 's'
-        } for ${esc(d.level.name)} — every question becomes available again, as if you had never opened it. This cannot be undone.`,
+        } for ${esc(d.domain.name)} — every question becomes available again, as if you had never opened it. This cannot be undone.`,
     isSkipped ? 'Bring them back' : `Clear ${count}`,
     !isSkipped
   );
   if (!yes) return;
 
   try {
-    const res = await api.post(`/api/deck/${encodeURIComponent(d.level.slug)}/reset`, { scope });
-    state.levels = res.levels;
+    const res = await api.post(`/api/deck/${encodeURIComponent(d.domain.slug)}/reset`, { scope, depth: d.depth || undefined });
+    state.domains = res.domains;
     toast(`Cleared ${plural(res.cleared, 'record', 'records')}.`);
-    await openDeck(d.level.slug);
+    await openDeck(d.domain.slug, d.depth || null);
   } catch (err) {
     uiAlert('Could not reset', err.message);
   }
@@ -1498,7 +1839,7 @@ async function deleteAccount() {
     await api.post('/api/me/delete', { password });
     state.me = null;
     state.couple = null;
-    state.levels = [];
+    state.domains = [];
     state.deck = null;
     state.view = 'auth';
     state.authMode = 'login';
@@ -1645,7 +1986,8 @@ async function loadData() {
     const data = await api.get('/api/data');
     state.me = data.me;
     state.couple = data.couple;
-    state.levels = data.levels || [];
+    state.domains = data.domains || [];
+    state.volatile = data.volatile || null;
     state.serverVersion = data.version;
     if (data.branding) {
       state.branding = data.branding;
@@ -1678,7 +2020,8 @@ document.addEventListener('visibilitychange', () => {
     .get('/api/data')
     .then((data) => {
       state.couple = data.couple;
-      state.levels = data.levels || [];
+      state.domains = data.domains || [];
+    state.volatile = data.volatile || null;
       state.serverVersion = data.version;
       render();
     })

@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 const state = {
   ready: false,
@@ -425,7 +425,7 @@ function tabOverview() {
 function tabGroups() {
   const d = state.data.groups;
   if (!d) return loading();
-  const levels = d.levels;
+  const levels = d.domains;
 
   return `
     <div class="notice">
@@ -470,7 +470,7 @@ function tabGroups() {
 function tabQuestions() {
   const d = state.data.questions;
   if (!d) return loading();
-  const levels = (state.data.groups && state.data.groups.levels) || [];
+  const levels = (state.data.groups && state.data.groups.domains) || [];
 
   const q = state.questionQuery.toLowerCase();
   const shown = q ? d.questions.filter((x) => x.text.toLowerCase().includes(q)) : d.questions;
@@ -1256,17 +1256,17 @@ async function loadTab() {
       state.data.overview = await api.get('/api/owner/overview');
       state.openReports = Number(state.data.overview.counts.openReports) || 0;
     } else if (t === 'groups' && !state.data.groups) {
-      state.data.groups = await api.get('/api/owner/levels');
+      state.data.groups = await api.get('/api/owner/domains');
     } else if (t === 'questions') {
       // Questions needs the group list too, for the filter and the editor.
-      if (!state.data.groups) state.data.groups = await api.get('/api/owner/levels');
+      if (!state.data.groups) state.data.groups = await api.get('/api/owner/domains');
       if (!state.data.questions) {
         state.data.questions = await api.get(
           `/api/owner/questions?level=${encodeURIComponent(state.questionLevel)}`
         );
       }
     } else if (t === 'import' && !state.data.groups) {
-      state.data.groups = await api.get('/api/owner/levels');
+      state.data.groups = await api.get('/api/owner/domains');
     } else if (t === 'insights' && !state.data.insights) {
       state.data.insights = await api.get('/api/owner/insights');
     } else if (t === 'reports' && !state.data.reports) {
@@ -1343,7 +1343,7 @@ async function groupNew() {
   if (!v) return;
   if (!v.name) return uiAlert('Name needed', 'Give the group a name.');
   try {
-    await api.post('/api/owner/levels', v);
+    await api.post('/api/owner/domains', v);
     invalidateContent();
     await loadTab();
     toast('Group created.');
@@ -1354,12 +1354,12 @@ async function groupNew() {
 }
 
 async function groupEdit(id) {
-  const l = state.data.groups.levels.find((x) => x.id === id);
+  const l = state.data.groups.domains.find((x) => x.id === id);
   if (!l) return;
   const v = await formDialog({ title: `Edit ${l.name}`, fields: GROUP_FIELDS(l), confirmLabel: 'Save' });
   if (!v) return;
   try {
-    await api.patch(`/api/owner/levels/${id}`, v);
+    await api.patch(`/api/owner/domains/${id}`, v);
     invalidateContent();
     await loadTab();
     toast('Saved.');
@@ -1369,7 +1369,7 @@ async function groupEdit(id) {
 }
 
 async function groupToggle(id) {
-  const l = state.data.groups.levels.find((x) => x.id === id);
+  const l = state.data.groups.domains.find((x) => x.id === id);
   if (!l) return;
   if (l.isActive) {
     const yes = await uiConfirm(
@@ -1381,7 +1381,7 @@ async function groupToggle(id) {
     if (!yes) return;
   }
   try {
-    await api.patch(`/api/owner/levels/${id}`, { isActive: !l.isActive });
+    await api.patch(`/api/owner/domains/${id}`, { isActive: !l.isActive });
     invalidateContent();
     await loadTab();
     toast(l.isActive ? 'Hidden.' : 'Visible again.');
@@ -1391,7 +1391,7 @@ async function groupToggle(id) {
 }
 
 async function groupDelete(id) {
-  const l = state.data.groups.levels.find((x) => x.id === id);
+  const l = state.data.groups.domains.find((x) => x.id === id);
   if (!l) return;
   const yes = await uiConfirm(
     `Delete ${esc(l.name)}?`,
@@ -1404,7 +1404,7 @@ async function groupDelete(id) {
   );
   if (!yes) return;
   try {
-    await api.del(`/api/owner/levels/${id}`);
+    await api.del(`/api/owner/domains/${id}`);
     invalidateContent();
     await loadTab();
     toast('Group deleted.');
@@ -1414,7 +1414,7 @@ async function groupDelete(id) {
 }
 
 async function moveGroup(id, delta) {
-  const levels = state.data.groups.levels.slice();
+  const levels = state.data.groups.domains.slice();
   const i = levels.findIndex((l) => l.id === id);
   const j = i + delta;
   if (i < 0 || j < 0 || j >= levels.length) return;
@@ -1422,11 +1422,11 @@ async function moveGroup(id, delta) {
 
   // Reorder in place first so the list does not visibly jump while the request
   // is in flight.
-  state.data.groups.levels = levels;
+  state.data.groups.domains = levels;
   render();
 
   try {
-    await api.put('/api/owner/levels/order', { order: levels.map((l) => l.id) });
+    await api.put('/api/owner/domains/order', { order: levels.map((l) => l.id) });
   } catch (err) {
     toast(err.message, true);
     state.data.groups = null;
@@ -1437,7 +1437,7 @@ async function moveGroup(id, delta) {
 // ---- Questions ------------------------------------------------------------
 
 function groupOptions() {
-  return ((state.data.groups && state.data.groups.levels) || []).map((l) => ({
+  return ((state.data.groups && state.data.groups.domains) || []).map((l) => ({
     label: l.name,
     value: l.slug,
   }));

@@ -703,13 +703,14 @@ app.post('/api/auth/logout', (req, res) => {
 // Everything below requires a login
 // ---------------------------------------------------------------------------
 
-/** One bootstrap call: who I am, my couple, and every level with my progress. */
+/** One bootstrap call: who I am, my couple, and every domain with my progress. */
 app.get(
   '/api/data',
   requireAuth,
   wrap(async (req, res) => {
     const couple = await queryOne(
-      `SELECT c.id, c.invite_code, c.couple_name, c.created_at, m.member_role
+      `SELECT c.id, c.invite_code, c.couple_name, c.created_at, m.member_role,
+              m.volatile_unlocked
          FROM couple_members m
          JOIN couples c ON c.id = m.couple_id
         WHERE m.user_id = ? AND c.status = 'active'`,
@@ -717,18 +718,32 @@ app.get(
     );
 
     let members = [];
-    let levels = [];
+    let domains = [];
+    let volatile = null;
 
     if (couple) {
       members = await query(
-        `SELECT u.id, u.display_name, m.member_role, m.joined_at
+        `SELECT u.id, u.display_name, m.member_role, m.joined_at, m.volatile_unlocked
            FROM couple_members m
            JOIN users u ON u.id = m.user_id
           WHERE m.couple_id = ?
           ORDER BY m.joined_at`,
         [couple.id]
       );
-      levels = await levelsWithProgress(couple.id);
+      domains = await domainsWithProgress(couple.id);
+
+      const waitingOn = members.filter((m) => !m.volatile_unlocked).length;
+      volatile = {
+        // Both members, separately. A one-person couple can never unlock.
+        unlocked: await volatileUnlocked(couple.id),
+        mine: !!couple.volatile_unlocked,
+        waitingOnPartner: !!couple.volatile_unlocked && waitingOn > 0,
+        available: (
+          await queryOne(
+            "SELECT COUNT(*) AS n FROM questions WHERE is_volatile = 1 AND is_active = 1 AND admin_hidden = 0 AND needs_review = 0"
+          )
+        ).n,
+      };
     }
 
     res.json({
@@ -752,24 +767,86 @@ app.get(
               id: m.id,
               displayName: m.display_name,
               role: m.member_role,
+              volatileUnlocked: !!m.volatile_unlocked,
             })),
           }
         : null,
-      levels,
+      domains,
+      volatile,
     });
   })
 );
 
 /**
- * Every active level with this couple's counts.
+ * Unlock, or re-lock, volatile questions for MYSELF only.
  *
- * `available` is what could be served right now: never-seen questions, plus
- * skipped ones whose cool-off has passed.
+ * Deliberately cannot be done on a partner's behalf. Re-locking takes effect
+ * immediately for the couple, because withdrawing consent should never require
+ * the other person's agreement.
  */
-async function levelsWithProgress(coupleId) {
+app.post(
+  '/api/couple/volatile',
+  requireAuth,
+  requireCouple,
+  wrap(async (req, res) => {
+    const on = !!req.body.unlocked;
+    await query(
+      `UPDATE couple_members
+          SET volatile_unlocked = ?, volatile_unlocked_at = ${on ? 'NOW()' : 'NULL'}
+        WHERE couple_id = ? AND user_id = ?`,
+      [on ? 1 : 0, req.couple.id, req.user.id]
+    );
+    res.json({ ok: true, mine: on, unlocked: await volatileUnlocked(req.couple.id) });
+  })
+);
+
+/**
+ * Whether this couple may be served volatile questions.
+ *
+ * BOTH members must have unlocked, separately. A single-member couple can
+ * never unlock: there is nobody to agree with, and the whole point of the gate
+ * is that it is mutual. Returns false rather than throwing on a missing row.
+ */
+async function volatileUnlocked(coupleId) {
+  const row = await queryOne(
+    `SELECT COUNT(*) AS members, SUM(volatile_unlocked) AS unlocked
+       FROM couple_members WHERE couple_id = ?`,
+    [coupleId]
+  );
+  const members = Number(row && row.members) || 0;
+  const unlocked = Number(row && row.unlocked) || 0;
+  return members >= 2 && unlocked >= members;
+}
+
+/**
+ * The SQL fragment that decides which questions this couple may see at all,
+ * before any progress is considered.
+ *
+ * Kept in one place because it is applied in four different queries, and a
+ * volatile question leaking through one of them because somebody forgot a
+ * clause is the single worst bug this app could have.
+ */
+function servableWhere(allowVolatile) {
+  return `q.is_active = 1 AND q.admin_hidden = 0 AND q.needs_review = 0${
+    allowVolatile ? '' : ' AND q.is_volatile = 0'
+  }`;
+}
+
+/**
+ * Every domain with this couple's counts, broken down by depth.
+ *
+ * Returns a per-depth row as well as a total, because depth is now a separate
+ * choice: the couple picks a subject and then how exposing they want it, and
+ * the UI has to be able to grey out a depth that holds nothing. Meaning and
+ * Social, for instance, exist only at D1.
+ */
+async function domainsWithProgress(coupleId) {
   const cooloff = await getIntSetting('skip_cooloff_days');
+  const allowVolatile = await volatileUnlocked(coupleId);
+
   const rows = await query(
-    `SELECT l.id, l.slug, l.name, l.tagline, l.description, l.depth, l.accent,
+    `SELECT d.id, d.slug, d.name, d.tagline, d.description, d.accent,
+            q.depth,
             COUNT(q.id) AS total,
             SUM(CASE WHEN s.status = 'completed' THEN 1 ELSE 0 END) AS completed,
             SUM(CASE WHEN s.status = 'skipped' THEN 1 ELSE 0 END) AS skipped,
@@ -777,38 +854,58 @@ async function levelsWithProgress(coupleId) {
                        OR (s.status = 'skipped'
                            AND s.decided_at < DATE_SUB(NOW(), INTERVAL ${cooloff} DAY))
                      THEN 1 ELSE 0 END) AS available
-       FROM levels l
-       LEFT JOIN questions q ON q.level_id = l.id AND q.is_active = 1 AND q.admin_hidden = 0
+       FROM domains d
+       LEFT JOIN questions q ON q.domain_id = d.id AND ${servableWhere(allowVolatile)}
        LEFT JOIN couple_question_status s ON s.question_id = q.id AND s.couple_id = ?
-      WHERE l.is_active = 1
-      GROUP BY l.id, l.slug, l.name, l.tagline, l.description, l.depth, l.accent, l.sort_order
-      ORDER BY l.sort_order`,
+      WHERE d.is_active = 1
+      GROUP BY d.id, d.slug, d.name, d.tagline, d.description, d.accent, d.sort_order, q.depth
+      ORDER BY d.sort_order, q.depth`,
     [coupleId]
   );
 
-  return rows.map((r) => {
+  const byDomain = new Map();
+  for (const r of rows) {
+    if (!byDomain.has(r.slug)) {
+      byDomain.set(r.slug, {
+        slug: r.slug,
+        name: r.name,
+        tagline: r.tagline,
+        description: r.description,
+        accent: r.accent,
+        total: 0,
+        completed: 0,
+        skipped: 0,
+        available: 0,
+        ready: 0,
+        depths: [],
+      });
+    }
+    const d = byDomain.get(r.slug);
+    // A domain with no servable questions produces one row with depth NULL.
+    if (r.depth === null) continue;
+
     const available = Number(r.available) || 0;
     const skipped = Number(r.skipped) || 0;
-    return {
-      slug: r.slug,
-      name: r.name,
-      tagline: r.tagline,
-      description: r.description,
-      depth: r.depth,
-      accent: r.accent,
+    const entry = {
+      depth: Number(r.depth),
       total: Number(r.total) || 0,
       completed: Number(r.completed) || 0,
       skipped,
-      // Never served while something else remains.
       available,
-      // What the deck would ACTUALLY hand over if opened right now. When the
-      // cool-off is the only thing holding cards back, the deck releases them
-      // early rather than dead-ending - so `available` alone understates what
-      // is waiting, and the UI must count this instead or it will show
-      // "0 ready" for a deck that is about to serve cards.
+      // What the deck would ACTUALLY serve. When the cool-off is the only thing
+      // holding cards back, the deck releases them early rather than
+      // dead-ending, so `available` alone understates what is waiting.
       ready: available > 0 ? available : skipped,
     };
-  });
+    d.depths.push(entry);
+    d.total += entry.total;
+    d.completed += entry.completed;
+    d.skipped += entry.skipped;
+    d.available += entry.available;
+    d.ready += entry.ready;
+  }
+
+  return [...byDomain.values()];
 }
 
 // ---- Couple management ----------------------------------------------------
@@ -925,33 +1022,47 @@ app.post(
 // ---- The deck -------------------------------------------------------------
 
 /**
- * The next batch of cards for a level.
+ * The next batch of cards for a domain, optionally narrowed to one depth.
  *
  * Ordering is a deterministic shuffle on the couple's own seed: stable across
  * sessions, identical for both partners, but different for every couple.
+ *
+ * Volatile questions are excluded unless BOTH partners have unlocked them.
+ * That check is done here rather than trusted from the client, because a
+ * client-side filter would put "what would it take for you to leave" one
+ * tampered request away from appearing unannounced.
  */
 app.get(
   '/api/deck/:slug',
   requireAuth,
   requireCouple,
   wrap(async (req, res) => {
-    const level = await queryOne(
-      'SELECT id, slug, name, tagline, description, depth, accent FROM levels WHERE slug = ? AND is_active = 1',
+    const domain = await queryOne(
+      'SELECT id, slug, name, tagline, description, accent FROM domains WHERE slug = ? AND is_active = 1',
       [req.params.slug]
     );
-    if (!level) return fail(res, 404, 'That level does not exist.');
+    if (!domain) return fail(res, 404, 'That set does not exist.');
+
+    const depth = req.query.depth ? Number(req.query.depth) : null;
+    if (depth !== null && (!Number.isInteger(depth) || depth < 1 || depth > 5)) {
+      return fail(res, 400, 'Depth must be between 1 and 5.');
+    }
 
     const cooloff = await getIntSetting('skip_cooloff_days');
     const deckSize = await getIntSetting('deck_size');
+    const allowVolatile = await volatileUnlocked(req.couple.id);
     const seed = req.couple.shuffle_seed;
 
     const select = (withCooloff) => `
-      SELECT q.id, q.ref, q.text,
-             s.status AS prior_status, s.skip_count
+      SELECT q.id, q.ref, q.text, q.context, q.depth, q.is_volatile,
+             q.chain_id, q.chain_position, ch.name AS chain_name, ch.total AS chain_total,
+             s.status AS prior_status
         FROM questions q
+        LEFT JOIN chains ch ON ch.id = q.chain_id
         LEFT JOIN couple_question_status s
           ON s.question_id = q.id AND s.couple_id = ?
-       WHERE q.level_id = ? AND q.is_active = 1 AND q.admin_hidden = 0
+       WHERE q.domain_id = ? AND ${servableWhere(allowVolatile)}
+         ${depth !== null ? `AND q.depth = ${depth}` : ''}
          AND (s.id IS NULL${
            withCooloff
              ? ` OR (s.status = 'skipped' AND s.decided_at < DATE_SUB(NOW(), INTERVAL ${cooloff} DAY))`
@@ -960,37 +1071,196 @@ app.get(
        ORDER BY MD5(CONCAT(q.id, ':', ?))
        LIMIT ${deckSize}`;
 
-    let cards = await query(select(true), [req.couple.id, level.id, seed]);
+    let cards = await query(select(true), [req.couple.id, domain.id, seed]);
 
     // If the cool-off is the only thing standing between the couple and an
     // empty deck, release the skipped questions early. A deck must never
     // dead-end while unanswered cards sit waiting on a timer.
     let releasedEarly = false;
     if (!cards.length) {
-      cards = await query(select(false), [req.couple.id, level.id, seed]);
+      cards = await query(select(false), [req.couple.id, domain.id, seed]);
       releasedEarly = cards.length > 0;
     }
 
-    const stats = (await levelsWithProgress(req.couple.id)).find((l) => l.slug === level.slug);
+    const all = await domainsWithProgress(req.couple.id);
+    const domainStats = all.find((d) => d.slug === domain.slug);
+    const stats =
+      depth === null
+        ? domainStats
+        : (domainStats && domainStats.depths.find((x) => x.depth === depth)) || {
+            depth, total: 0, completed: 0, skipped: 0, available: 0, ready: 0,
+          };
 
     res.json({
-      level: {
-        slug: level.slug,
-        name: level.name,
-        tagline: level.tagline,
-        description: level.description,
-        depth: level.depth,
-        accent: level.accent,
+      domain: {
+        slug: domain.slug,
+        name: domain.name,
+        tagline: domain.tagline,
+        description: domain.description,
+        accent: domain.accent,
       },
+      depth,
       stats,
+      depths: domainStats ? domainStats.depths : [],
       releasedEarly,
       cards: cards.map((c) => ({
         id: c.id,
         ref: c.ref,
         text: c.text,
+        // The helper line. Sent with the card but hidden until tapped - the
+        // question has to carry the moment, and a card that arrives
+        // pre-explained reads as a worksheet.
+        context: c.context,
+        depth: c.depth,
+        volatile: !!c.is_volatile,
+        chain: c.chain_id
+          ? { id: c.chain_id, name: c.chain_name, position: c.chain_position, total: c.chain_total }
+          : null,
         seenBefore: !!c.prior_status,
       })),
     });
+  })
+);
+
+// ---- Chains ---------------------------------------------------------------
+
+/**
+ * Chains available to this couple, with how far through each they are.
+ *
+ * A chain is offered only if it still has an unanswered card, so finished
+ * chains drop off the list rather than sitting there as clutter.
+ */
+app.get(
+  '/api/chains',
+  requireAuth,
+  requireCouple,
+  wrap(async (req, res) => {
+    const allowVolatile = await volatileUnlocked(req.couple.id);
+    const rows = await query(
+      `SELECT ch.id, ch.name, ch.total, ch.min_depth, ch.max_depth,
+              d.slug AS domainSlug, d.name AS domainName, d.accent,
+              COUNT(q.id) AS servable,
+              SUM(CASE WHEN s.status = 'completed' THEN 1 ELSE 0 END) AS completed,
+              p.position AS position, p.status AS sessionStatus
+         FROM chains ch
+         LEFT JOIN domains d ON d.id = ch.domain_id
+         LEFT JOIN questions q ON q.chain_id = ch.id AND ${servableWhere(allowVolatile)}
+         LEFT JOIN couple_question_status s ON s.question_id = q.id AND s.couple_id = ?
+         LEFT JOIN couple_chain_progress p ON p.chain_id = ch.id AND p.couple_id = ?
+        WHERE ch.is_active = 1
+        GROUP BY ch.id, ch.name, ch.total, ch.min_depth, ch.max_depth,
+                 d.slug, d.name, d.accent, p.position, p.status
+       HAVING servable > 0
+        ORDER BY d.sort_order, ch.name`,
+      [req.couple.id, req.couple.id]
+    );
+
+    res.json({
+      chains: rows
+        .map((r) => ({
+          id: r.id,
+          name: r.name,
+          total: Number(r.servable),
+          declaredTotal: Number(r.total),
+          minDepth: Number(r.min_depth),
+          maxDepth: Number(r.max_depth),
+          domainSlug: r.domainSlug,
+          domainName: r.domainName,
+          accent: r.accent || '#D8327C',
+          completed: Number(r.completed) || 0,
+          position: r.position === null ? 0 : Number(r.position),
+          sessionStatus: r.sessionStatus,
+          // The corpus puts the consent gate at the transition into D4/D5
+          // rather than at the start, so a couple opts in with a clear view of
+          // where the arc is heading rather than blind at card one.
+          gateAt: Number(r.max_depth) >= 4 ? 4 : null,
+        }))
+        .filter((c) => c.completed < c.total),
+    });
+  })
+);
+
+/** The ordered cards of one chain, with where the couple has got to. */
+app.get(
+  '/api/chains/:id',
+  requireAuth,
+  requireCouple,
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const chain = await queryOne(
+      `SELECT ch.id, ch.name, ch.total, ch.min_depth, ch.max_depth,
+              d.slug AS domainSlug, d.name AS domainName, d.accent
+         FROM chains ch LEFT JOIN domains d ON d.id = ch.domain_id
+        WHERE ch.id = ? AND ch.is_active = 1`,
+      [id]
+    );
+    if (!chain) return fail(res, 404, 'That sequence does not exist.');
+
+    const allowVolatile = await volatileUnlocked(req.couple.id);
+    const cards = await query(
+      `SELECT q.id, q.ref, q.text, q.context, q.depth, q.is_volatile, q.chain_position,
+              s.status AS prior_status
+         FROM questions q
+         LEFT JOIN couple_question_status s ON s.question_id = q.id AND s.couple_id = ?
+        WHERE q.chain_id = ? AND ${servableWhere(allowVolatile)}
+        ORDER BY q.chain_position`,
+      [req.couple.id, id]
+    );
+
+    const progress = await queryOne(
+      'SELECT position, status FROM couple_chain_progress WHERE couple_id = ? AND chain_id = ?',
+      [req.couple.id, id]
+    );
+
+    res.json({
+      chain: {
+        id: chain.id,
+        name: chain.name,
+        total: cards.length,
+        minDepth: Number(chain.min_depth),
+        maxDepth: Number(chain.max_depth),
+        domainSlug: chain.domainSlug,
+        domainName: chain.domainName,
+        accent: chain.accent || '#D8327C',
+      },
+      position: progress ? Number(progress.position) : 0,
+      status: progress ? progress.status : null,
+      cards: cards.map((c) => ({
+        id: c.id,
+        ref: c.ref,
+        text: c.text,
+        context: c.context,
+        depth: c.depth,
+        volatile: !!c.is_volatile,
+        position: c.chain_position,
+        seenBefore: !!c.prior_status,
+      })),
+    });
+  })
+);
+
+/** Start, advance, or stop a chain session. */
+app.post(
+  '/api/chains/:id/progress',
+  requireAuth,
+  requireCouple,
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const chain = await queryOne('SELECT id FROM chains WHERE id = ?', [id]);
+    if (!chain) return fail(res, 404, 'That sequence does not exist.');
+
+    const position = Math.max(0, Number(req.body.position) || 0);
+    const status = ['active', 'done', 'abandoned'].includes(String(req.body.status))
+      ? req.body.status
+      : 'active';
+
+    await query(
+      `INSERT INTO couple_chain_progress (couple_id, chain_id, position, status)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE position = VALUES(position), status = VALUES(status)`,
+      [req.couple.id, id, position, status]
+    );
+    res.json({ ok: true });
   })
 );
 
@@ -1016,8 +1286,17 @@ app.post(
       return fail(res, 400, 'Action must be "completed" or "skipped".');
     }
 
-    const question = await queryOne('SELECT id, level_id FROM questions WHERE id = ?', [questionId]);
+    const question = await queryOne(
+      'SELECT id, domain_id, is_volatile FROM questions WHERE id = ?',
+      [questionId]
+    );
     if (!question) return fail(res, 404, 'That question no longer exists.');
+
+    // Answering is a write, so the volatility gate is enforced here too rather
+    // than assumed from the fact that the card was served.
+    if (question.is_volatile && !(await volatileUnlocked(req.couple.id))) {
+      return fail(res, 403, 'That question is locked.');
+    }
 
     await query(
       `INSERT INTO couple_question_status
@@ -1031,13 +1310,13 @@ app.post(
       [req.couple.id, questionId, action, action === 'skipped' ? 1 : 0, req.user.id]
     );
 
-    const levels = await levelsWithProgress(req.couple.id);
-    res.json({ ok: true, levels });
+    const domains = await domainsWithProgress(req.couple.id);
+    res.json({ ok: true, domains });
   })
 );
 
 /**
- * Clear this couple's progress for one level.
+ * Clear this couple's progress for one domain, optionally just one depth.
  *
  * Reports what it removed rather than just "ok", so the UI can confirm against
  * a real number instead of an assumption.
@@ -1047,23 +1326,26 @@ app.post(
   requireAuth,
   requireCouple,
   wrap(async (req, res) => {
-    const level = await queryOne('SELECT id, slug FROM levels WHERE slug = ?', [req.params.slug]);
-    if (!level) return fail(res, 404, 'That level does not exist.');
+    const domain = await queryOne('SELECT id, slug FROM domains WHERE slug = ?', [req.params.slug]);
+    if (!domain) return fail(res, 404, 'That set does not exist.');
+
+    const depth = req.body.depth ? Number(req.body.depth) : null;
+    if (depth !== null && (!Number.isInteger(depth) || depth < 1 || depth > 5)) {
+      return fail(res, 400, 'Depth must be between 1 and 5.');
+    }
 
     const scope = req.body.scope === 'skipped' ? 'skipped' : 'all';
-    const sql =
-      scope === 'skipped'
-        ? `DELETE s FROM couple_question_status s
-             JOIN questions q ON q.id = s.question_id
-            WHERE s.couple_id = ? AND q.level_id = ? AND s.status = 'skipped'`
-        : `DELETE s FROM couple_question_status s
-             JOIN questions q ON q.id = s.question_id
-            WHERE s.couple_id = ? AND q.level_id = ?`;
+    const result = await query(
+      `DELETE s FROM couple_question_status s
+         JOIN questions q ON q.id = s.question_id
+        WHERE s.couple_id = ? AND q.domain_id = ?
+          ${depth !== null ? `AND q.depth = ${depth}` : ''}
+          ${scope === 'skipped' ? "AND s.status = 'skipped'" : ''}`,
+      [req.couple.id, domain.id]
+    );
+    const domains = await domainsWithProgress(req.couple.id);
 
-    const result = await query(sql, [req.couple.id, level.id]);
-    const levels = await levelsWithProgress(req.couple.id);
-
-    res.json({ ok: true, cleared: result.affectedRows || 0, scope, levels });
+    res.json({ ok: true, cleared: result.affectedRows || 0, scope, domains });
   })
 );
 
@@ -1138,7 +1420,7 @@ app.get(
                 s.decided_by_user_id = ? AS decidedByMe
            FROM couple_question_status s
            JOIN questions q ON q.id = s.question_id
-           JOIN levels l ON l.id = q.level_id
+           JOIN domains l ON l.id = q.domain_id
           WHERE s.couple_id = ?
           ORDER BY s.decided_at`,
         [req.user.id, couple.id]
@@ -1305,7 +1587,7 @@ owner.get(
          (SELECT COUNT(*) FROM users WHERE is_active = 1)                AS activeUsers,
          (SELECT COUNT(*) FROM users WHERE is_owner = 1)                 AS owners,
          (SELECT COUNT(*) FROM question_reports WHERE status = 'open')   AS openReports,
-         (SELECT COUNT(*) FROM levels WHERE is_active = 1)               AS groups,
+         (SELECT COUNT(*) FROM domains WHERE is_active = 1)               AS groups,
          (SELECT COUNT(*) FROM couples WHERE status = 'active')          AS couples,
          (SELECT COUNT(*) FROM questions WHERE is_active = 1 AND admin_hidden = 0) AS liveQuestions,
          (SELECT COUNT(*) FROM questions WHERE source = 'admin')         AS adminQuestions,
@@ -1325,9 +1607,9 @@ owner.get(
               COUNT(q.id) AS questions,
               (SELECT COUNT(*) FROM couple_question_status s
                  JOIN questions q2 ON q2.id = s.question_id
-                WHERE q2.level_id = l.id) AS decisions
-         FROM levels l
-         LEFT JOIN questions q ON q.level_id = l.id AND q.is_active = 1 AND q.admin_hidden = 0
+                WHERE q2.domain_id = l.id) AS decisions
+         FROM domains l
+         LEFT JOIN questions q ON q.domain_id = l.id AND q.is_active = 1 AND q.admin_hidden = 0
         WHERE l.is_active = 1
         GROUP BY l.id, l.name, l.accent, l.sort_order
         ORDER BY l.sort_order`
@@ -1574,17 +1856,20 @@ owner.get(
   '/questions',
   wrap(async (req, res) => {
     const slug = String(req.query.level || '').trim();
-    const level = slug ? await queryOne('SELECT id FROM levels WHERE slug = ?', [slug]) : null;
+    const level = slug ? await queryOne('SELECT id FROM domains WHERE slug = ?', [slug]) : null;
     if (slug && !level) return fail(res, 404, 'That level does not exist.');
 
     const rows = await query(
-      `SELECT q.id, q.ref, q.text, q.source, q.is_active, q.admin_hidden, q.sort_order,
+      `SELECT q.id, q.ref, q.text, q.context, q.depth, q.lens, q.is_volatile,
+              q.needs_review, q.review_note, q.source, q.is_active, q.admin_hidden,
+              q.sort_order, ch.name AS chainName, q.chain_position,
               l.slug AS levelSlug, l.name AS levelName,
               (SELECT COUNT(*) FROM couple_question_status s WHERE s.question_id = q.id) AS timesUsed
          FROM questions q
-         JOIN levels l ON l.id = q.level_id
-        ${level ? 'WHERE q.level_id = ?' : ''}
-        ORDER BY l.sort_order, q.source DESC, q.sort_order`,
+         JOIN domains l ON l.id = q.domain_id
+         LEFT JOIN chains ch ON ch.id = q.chain_id
+        ${level ? 'WHERE q.domain_id = ?' : ''}
+        ORDER BY l.sort_order, q.depth, q.sort_order`,
       level ? [level.id] : []
     );
 
@@ -1593,6 +1878,14 @@ owner.get(
         id: r.id,
         ref: r.ref,
         text: r.text,
+        context: r.context,
+        depth: Number(r.depth),
+        lens: r.lens,
+        volatile: !!r.is_volatile,
+        needsReview: !!r.needs_review,
+        reviewNote: r.review_note,
+        chainName: r.chainName,
+        chainPosition: r.chain_position,
         source: r.source,
         isActive: !!r.is_active,
         hidden: !!r.admin_hidden,
@@ -1612,22 +1905,31 @@ owner.post(
     if (!text) return fail(res, 400, 'Enter the question.');
     if (text.length > 500) return fail(res, 400, 'That question is too long.');
 
-    const level = await queryOne('SELECT id FROM levels WHERE slug = ? AND is_active = 1', [slug]);
-    if (!level) return fail(res, 400, 'Choose a level.');
+    const level = await queryOne('SELECT id FROM domains WHERE slug = ? AND is_active = 1', [slug]);
+    if (!level) return fail(res, 400, 'Choose a set.');
 
-    // Admin refs are namespaced so they can never collide with a catalogue ref,
+    const depth = Math.min(5, Math.max(1, Number(req.body.depth) || 2));
+    const context = String(req.body.context || '').trim().slice(0, 500) || null;
+    const isVolatile = !!req.body.volatile;
+
+    // Admin refs are namespaced so they can never collide with a corpus ref,
     // present or future.
     const ref = `adm-${crypto.randomBytes(6).toString('hex')}`;
     const [{ n }] = await query(
-      'SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM questions WHERE level_id = ?',
+      'SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM questions WHERE domain_id = ?',
       [level.id]
     );
 
     const result = await query(
-      `INSERT INTO questions (ref, level_id, source, text, sort_order, is_active, admin_hidden)
-       VALUES (?, ?, 'admin', ?, ?, 1, 0)`,
-      [ref, level.id, text, n]
+      `INSERT INTO questions
+         (ref, domain_id, depth, is_volatile, source, text, context, sort_order,
+          is_active, admin_hidden)
+       VALUES (?, ?, ?, ?, 'admin', ?, ?, ?, 1, 0)`,
+      [ref, level.id, depth, isVolatile ? 1 : 0, text, context, n]
     );
+    await audit(req, 'question.create', {
+      targetType: 'question', targetId: result.insertId, targetLabel: text.slice(0, 120),
+    });
     res.status(201).json({ ok: true, id: result.insertId, ref });
   })
 );
@@ -1635,32 +1937,67 @@ owner.post(
 /**
  * Edit a question.
  *
- * The text of a CATALOGUE question is deliberately not editable here. It would
- * appear to save and then be overwritten by data/catalogue.js on the next
- * migrate - a change that silently undoes itself is worse than one that is
- * refused with a reason. Hiding it works on any question, because admin_hidden
- * is the one flag the seeder never touches.
+ * Every question is editable here, including corpus ones. That changed when
+ * the database became authoritative: a deploy no longer rewrites content, so
+ * an edit made here now survives one.
+ *
+ * The remaining caveat is narrower and belongs in the UI rather than in a
+ * refusal: `npm run seed-corpus -- --replace` rebuilds everything from the
+ * markdown and would overwrite an edit made here. That is an explicit,
+ * destructive, hand-run command, not something a deploy does by itself.
+ *
+ * Releasing a quarantined question is deliberately part of editing it. A
+ * question held back for being answerable yes/no is released by rewriting it,
+ * and clearing the flag without touching the text would just put a broken card
+ * back into circulation.
  */
 owner.patch(
   '/questions/:id',
   wrap(async (req, res) => {
     const id = Number(req.params.id);
-    const q = await queryOne('SELECT id, source FROM questions WHERE id = ?', [id]);
+    const q = await queryOne(
+      'SELECT id, source, text, needs_review FROM questions WHERE id = ?',
+      [id]
+    );
     if (!q) return fail(res, 404, 'No such question.');
 
     if (req.body.text !== undefined) {
-      if (q.source === 'catalogue') {
-        return fail(
-          res,
-          400,
-          'Curated questions are edited in data/catalogue.js - a change made here would be ' +
-            'overwritten on the next deploy. You can hide it instead.'
-        );
-      }
       const text = String(req.body.text).trim();
       if (!text) return fail(res, 400, 'Enter the question.');
       if (text.length > 500) return fail(res, 400, 'That question is too long.');
       await query('UPDATE questions SET text = ? WHERE id = ?', [text, id]);
+
+      // Rewriting a held-back question is how it gets released, but only if the
+      // wording actually changed.
+      if (q.needs_review && text !== q.text) {
+        await query(
+          'UPDATE questions SET needs_review = 0, review_note = NULL, admin_hidden = 0 WHERE id = ?',
+          [id]
+        );
+        await audit(req, 'question.release', {
+          targetType: 'question', targetId: id, targetLabel: text.slice(0, 120),
+        });
+      }
+    }
+
+    if (req.body.context !== undefined) {
+      const context = String(req.body.context).trim().slice(0, 500) || null;
+      await query('UPDATE questions SET context = ? WHERE id = ?', [context, id]);
+    }
+
+    if (req.body.depth !== undefined) {
+      const depth = Number(req.body.depth);
+      if (!Number.isInteger(depth) || depth < 1 || depth > 5) {
+        return fail(res, 400, 'Depth must be between 1 and 5.');
+      }
+      await query('UPDATE questions SET depth = ? WHERE id = ?', [depth, id]);
+    }
+
+    if (req.body.volatile !== undefined) {
+      await query('UPDATE questions SET is_volatile = ? WHERE id = ?', [
+        req.body.volatile ? 1 : 0,
+        id,
+      ]);
     }
 
     if (req.body.hidden !== undefined) {
@@ -1671,9 +2008,10 @@ owner.patch(
     }
 
     const fresh = await queryOne(
-      `SELECT q.id, q.ref, q.text, q.source, q.is_active, q.admin_hidden,
+      `SELECT q.id, q.ref, q.text, q.context, q.depth, q.is_volatile, q.needs_review,
+              q.review_note, q.source, q.is_active, q.admin_hidden,
               l.slug AS levelSlug, l.name AS levelName
-         FROM questions q JOIN levels l ON l.id = q.level_id WHERE q.id = ?`,
+         FROM questions q JOIN domains l ON l.id = q.domain_id WHERE q.id = ?`,
       [id]
     );
     res.json({
@@ -1682,6 +2020,11 @@ owner.patch(
         id: fresh.id,
         ref: fresh.ref,
         text: fresh.text,
+        context: fresh.context,
+        depth: Number(fresh.depth),
+        volatile: !!fresh.is_volatile,
+        needsReview: !!fresh.needs_review,
+        reviewNote: fresh.review_note,
         source: fresh.source,
         isActive: !!fresh.is_active,
         hidden: !!fresh.admin_hidden,
@@ -1788,7 +2131,11 @@ owner.post(
   })
 );
 
-// ---- Groups (levels) ------------------------------------------------------
+// ---- Domains --------------------------------------------------------------
+//
+// Subject only. A domain has NO depth: depth is per question and is chosen
+// separately by the couple. Re-adding a depth column here would rebuild the
+// single-axis model the corpus exists to correct.
 
 function slugify(v) {
   return String(v)
@@ -1800,44 +2147,50 @@ function slugify(v) {
 }
 
 owner.get(
-  '/levels',
+  '/domains',
   wrap(async (req, res) => {
     const rows = await query(
-      `SELECT l.id, l.slug, l.name, l.tagline, l.description, l.depth, l.accent,
+      `SELECT l.id, l.slug, l.name, l.tagline, l.description, l.accent,
               l.sort_order, l.is_active,
               COUNT(q.id) AS questions,
-              SUM(CASE WHEN q.admin_hidden = 1 THEN 1 ELSE 0 END) AS hidden
-         FROM levels l
-         LEFT JOIN questions q ON q.level_id = l.id AND q.is_active = 1
-        GROUP BY l.id, l.slug, l.name, l.tagline, l.description, l.depth, l.accent,
+              SUM(CASE WHEN q.admin_hidden = 1 THEN 1 ELSE 0 END) AS hidden,
+              SUM(CASE WHEN q.needs_review = 1 THEN 1 ELSE 0 END) AS needsReview,
+              SUM(CASE WHEN q.is_volatile = 1 THEN 1 ELSE 0 END) AS volatileCount,
+              MIN(q.depth) AS minDepth, MAX(q.depth) AS maxDepth
+         FROM domains l
+         LEFT JOIN questions q ON q.domain_id = l.id AND q.is_active = 1
+        GROUP BY l.id, l.slug, l.name, l.tagline, l.description, l.accent,
                  l.sort_order, l.is_active
         ORDER BY l.sort_order, l.id`
     );
     res.json({
-      levels: rows.map((r) => ({
+      domains: rows.map((r) => ({
         id: r.id,
         slug: r.slug,
         name: r.name,
         tagline: r.tagline,
         description: r.description,
-        depth: r.depth,
         accent: r.accent,
         sortOrder: r.sort_order,
         isActive: !!r.is_active,
         questions: Number(r.questions) || 0,
         hidden: Number(r.hidden) || 0,
+        needsReview: Number(r.needsReview) || 0,
+        volatileCount: Number(r.volatileCount) || 0,
+        minDepth: r.minDepth === null ? null : Number(r.minDepth),
+        maxDepth: r.maxDepth === null ? null : Number(r.maxDepth),
       })),
     });
   })
 );
 
-function readLevelBody(body) {
-  const name = String(body.name || '').trim();
-  const depth = Math.min(5, Math.max(1, Number(body.depth) || 1));
+// No depth here, deliberately. A domain is a subject; depth belongs to the
+// question. Accepting a depth on a domain would quietly recreate the single
+// axis the corpus separates.
+function readDomainBody(body) {
   const accent = /^#[0-9a-f]{6}$/i.test(String(body.accent || '')) ? body.accent : '#D8327C';
   return {
-    name,
-    depth,
+    name: String(body.name || '').trim(),
     accent,
     tagline: String(body.tagline || '').trim().slice(0, 180),
     description: String(body.description || '').trim() || null,
@@ -1845,10 +2198,10 @@ function readLevelBody(body) {
 }
 
 owner.post(
-  '/levels',
+  '/domains',
   wrap(async (req, res) => {
-    const b = readLevelBody(req.body);
-    if (!b.name) return fail(res, 400, 'Give the group a name.');
+    const b = readDomainBody(req.body);
+    if (!b.name) return fail(res, 400, 'Give the set a name.');
     if (b.name.length > 100) return fail(res, 400, 'That name is too long.');
 
     let slug = slugify(req.body.slug || b.name);
@@ -1859,46 +2212,45 @@ owner.post(
     const base = slug;
     for (let i = 2; i < 50; i += 1) {
       // eslint-disable-next-line no-await-in-loop
-      const clash = await queryOne('SELECT id FROM levels WHERE slug = ?', [slug]);
+      const clash = await queryOne('SELECT id FROM domains WHERE slug = ?', [slug]);
       if (!clash) break;
       slug = `${base}-${i}`;
     }
 
-    const [{ n }] = await query('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM levels');
+    const [{ n }] = await query('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM domains');
     const result = await query(
-      `INSERT INTO levels (slug, name, tagline, description, depth, accent, sort_order, is_active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-      [slug, b.name, b.tagline, b.description, b.depth, b.accent, n]
+      `INSERT INTO domains (slug, name, tagline, description, accent, sort_order, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [slug, b.name, b.tagline, b.description, b.accent, n]
     );
 
-    await audit(req, 'group.create', { targetType: 'level', targetId: result.insertId, targetLabel: b.name });
+    await audit(req, 'domain.create', { targetType: 'domain', targetId: result.insertId, targetLabel: b.name });
     res.status(201).json({ ok: true, id: result.insertId, slug });
   })
 );
 
 owner.patch(
-  '/levels/:id',
+  '/domains/:id',
   wrap(async (req, res) => {
     const id = Number(req.params.id);
-    const level = await queryOne('SELECT id, name, is_active FROM levels WHERE id = ?', [id]);
-    if (!level) return fail(res, 404, 'No such group.');
+    const level = await queryOne('SELECT id, name, is_active FROM domains WHERE id = ?', [id]);
+    if (!level) return fail(res, 404, 'No such set.');
 
-    const b = readLevelBody(req.body);
-    if (req.body.name !== undefined && !b.name) return fail(res, 400, 'Give the group a name.');
+    const b = readDomainBody(req.body);
+    if (req.body.name !== undefined && !b.name) return fail(res, 400, 'Give the set a name.');
 
     const isActive = req.body.isActive === undefined ? !!level.is_active : !!req.body.isActive;
 
     await query(
-      `UPDATE levels
+      `UPDATE domains
           SET name = COALESCE(?, name), tagline = COALESCE(?, tagline),
-              description = COALESCE(?, description), depth = COALESCE(?, depth),
+              description = COALESCE(?, description),
               accent = COALESCE(?, accent), is_active = ?
         WHERE id = ?`,
       [
         req.body.name === undefined ? null : b.name,
         req.body.tagline === undefined ? null : b.tagline,
         req.body.description === undefined ? null : b.description,
-        req.body.depth === undefined ? null : b.depth,
         req.body.accent === undefined ? null : b.accent,
         isActive ? 1 : 0,
         id,
@@ -1906,20 +2258,20 @@ owner.patch(
     );
 
     await audit(req, 'group.update', { targetType: 'level', targetId: id, targetLabel: level.name });
-    const fresh = await queryOne('SELECT * FROM levels WHERE id = ?', [id]);
+    const fresh = await queryOne('SELECT * FROM domains WHERE id = ?', [id]);
     res.json({ ok: true, level: { id: fresh.id, slug: fresh.slug, name: fresh.name, isActive: !!fresh.is_active } });
   })
 );
 
 /** Reorder groups. Takes the full ordered list of ids in one go. */
 owner.put(
-  '/levels/order',
+  '/domains/order',
   wrap(async (req, res) => {
     const ids = Array.isArray(req.body.order) ? req.body.order.map(Number).filter(Boolean) : [];
     if (!ids.length) return fail(res, 400, 'Send the new order.');
     for (let i = 0; i < ids.length; i += 1) {
       // eslint-disable-next-line no-await-in-loop
-      await query('UPDATE levels SET sort_order = ? WHERE id = ?', [i + 1, ids[i]]);
+      await query('UPDATE domains SET sort_order = ? WHERE id = ?', [i + 1, ids[i]]);
     }
     await audit(req, 'group.reorder', { detail: ids.join(',') });
     res.json({ ok: true });
@@ -1935,13 +2287,13 @@ owner.put(
  * single tap. Empty it or hide it instead.
  */
 owner.delete(
-  '/levels/:id',
+  '/domains/:id',
   wrap(async (req, res) => {
     const id = Number(req.params.id);
-    const level = await queryOne('SELECT id, name FROM levels WHERE id = ?', [id]);
+    const level = await queryOne('SELECT id, name FROM domains WHERE id = ?', [id]);
     if (!level) return fail(res, 404, 'No such group.');
 
-    const [{ n }] = await query('SELECT COUNT(*) AS n FROM questions WHERE level_id = ?', [id]);
+    const [{ n }] = await query('SELECT COUNT(*) AS n FROM questions WHERE domain_id = ?', [id]);
     if (Number(n) > 0) {
       return fail(
         res,
@@ -1952,7 +2304,7 @@ owner.delete(
       );
     }
 
-    await query('DELETE FROM levels WHERE id = ?', [id]);
+    await query('DELETE FROM domains WHERE id = ?', [id]);
     await audit(req, 'group.delete', { targetType: 'level', targetId: id, targetLabel: level.name });
     res.json({ ok: true });
   })
@@ -2000,14 +2352,14 @@ owner.patch(
   '/questions/:id/level',
   wrap(async (req, res) => {
     const id = Number(req.params.id);
-    const level = await queryOne('SELECT id, name FROM levels WHERE slug = ?', [
+    const level = await queryOne('SELECT id, name FROM domains WHERE slug = ?', [
       String(req.body.level || ''),
     ]);
     if (!level) return fail(res, 400, 'Choose a group.');
     const q = await queryOne('SELECT id, text FROM questions WHERE id = ?', [id]);
     if (!q) return fail(res, 404, 'No such question.');
 
-    await query('UPDATE questions SET level_id = ? WHERE id = ?', [level.id, id]);
+    await query('UPDATE questions SET domain_id = ? WHERE id = ?', [level.id, id]);
     await audit(req, 'question.move', {
       targetType: 'question',
       targetId: id,
@@ -2047,9 +2399,12 @@ function parseWorkbook(buffer, levelsBySlug, levelsByName) {
 
   const alias = (key) => {
     const k = String(key).toLowerCase().replace(/[^a-z]/g, '');
-    if (['group', 'level', 'category', 'deck', 'section'].includes(k)) return 'group';
+    if (['group', 'level', 'category', 'deck', 'section', 'domain', 'set'].includes(k)) return 'group';
     if (['question', 'text', 'questiontext', 'prompt'].includes(k)) return 'question';
     if (['ref', 'reference', 'id', 'code'].includes(k)) return 'ref';
+    if (['depth', 'exposure'].includes(k)) return 'depth';
+    if (['context', 'helper', 'hint', 'note'].includes(k)) return 'context';
+    if (['vol', 'volatile', 'volatility'].includes(k)) return 'volatile';
     return null;
   };
 
@@ -2076,11 +2431,21 @@ function parseWorkbook(buffer, levelsBySlug, levelsByName) {
         null;
     }
 
+    // "D3" and "3" both mean depth 3. Anything unreadable falls back to 2
+    // rather than failing the row - depth is a judgement the owner can correct
+    // in the app, and it is not worth losing a question over.
+    const depthRaw = String(mapped.depth || '').trim().replace(/^d/i, '');
+    const depthNum = Number(depthRaw);
+    const depth = Number.isInteger(depthNum) && depthNum >= 1 && depthNum <= 5 ? depthNum : 2;
+
     rows.push({
       rowNo,
       text,
       groupName,
       ref,
+      depth,
+      context: String(mapped.context || '').trim().slice(0, 500) || null,
+      volatile: /^(yes|y|true|1)$/i.test(String(mapped.volatile || '').trim()),
       levelId: level ? level.id : null,
       levelName: level ? level.name : null,
       error: !text
@@ -2113,7 +2478,7 @@ owner.post(
   wrap(async (req, res) => {
     if (!req.file) return fail(res, 400, 'Choose a file to upload.');
 
-    const levels = await query('SELECT id, slug, name FROM levels');
+    const levels = await query('SELECT id, slug, name FROM domains');
     const bySlug = new Map(levels.map((l) => [l.slug, l]));
     const byName = new Map(levels.map((l) => [l.name.toLowerCase(), l]));
 
@@ -2148,7 +2513,7 @@ owner.post(
         // the same file twice does not duplicate everything.
         // eslint-disable-next-line no-await-in-loop
         const existing = await queryOne(
-          'SELECT id FROM questions WHERE level_id = ? AND text = ?',
+          'SELECT id FROM questions WHERE domain_id = ? AND text = ?',
           [r.levelId, r.text]
         );
         r.action = existing ? 'skip' : 'create';
@@ -2190,23 +2555,27 @@ owner.post(
         const ref = r.ref || `imp-${crypto.randomBytes(6).toString('hex')}`;
         // eslint-disable-next-line no-await-in-loop
         const [{ n }] = await query(
-          'SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM questions WHERE level_id = ?',
+          'SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM questions WHERE domain_id = ?',
           [r.levelId]
         );
         // eslint-disable-next-line no-await-in-loop
         await query(
-          `INSERT INTO questions (ref, level_id, source, text, sort_order, is_active, admin_hidden)
-           VALUES (?, ?, 'import', ?, ?, 1, 0)`,
-          [ref, r.levelId, r.text, n]
+          `INSERT INTO questions
+             (ref, domain_id, depth, is_volatile, source, text, context, sort_order,
+              is_active, admin_hidden)
+           VALUES (?, ?, ?, ?, 'import', ?, ?, ?, 1, 0)`,
+          [ref, r.levelId, r.depth, r.volatile ? 1 : 0, r.text, r.context, n]
         );
         created += 1;
       } else if (r.action === 'update' && !r.unchanged) {
         // eslint-disable-next-line no-await-in-loop
-        await query('UPDATE questions SET text = ?, level_id = ? WHERE id = ?', [
-          r.text,
-          r.levelId,
-          r.existingId,
-        ]);
+        await query(
+          `UPDATE questions
+              SET text = ?, domain_id = ?, depth = ?, is_volatile = ?,
+                  context = COALESCE(?, context)
+            WHERE id = ?`,
+          [r.text, r.levelId, r.depth, r.volatile ? 1 : 0, r.context, r.existingId]
+        );
         updated += 1;
       }
     }
@@ -2226,24 +2595,39 @@ owner.get(
     // eslint-disable-next-line global-require
     const XLSX = require('xlsx');
     const rows = await query(
-      `SELECT l.name AS "group", q.text AS question, q.ref,
-              q.source, q.admin_hidden AS hidden,
+      `SELECT l.name AS "group", q.text AS question, q.ref, q.depth, q.context,
+              q.is_volatile, q.lens, ch.name AS chainName, q.chain_position,
+              q.source, q.admin_hidden AS hidden, q.needs_review, q.review_note,
               (SELECT COUNT(*) FROM couple_question_status s WHERE s.question_id = q.id) AS timesAnswered
-         FROM questions q JOIN levels l ON l.id = q.level_id
-        ORDER BY l.sort_order, q.sort_order`
+         FROM questions q
+         JOIN domains l ON l.id = q.domain_id
+         LEFT JOIN chains ch ON ch.id = q.chain_id
+        ORDER BY l.sort_order, q.depth, q.sort_order`
     );
 
+    // Every column the import understands is exported, so the round trip is
+    // lossless. Dropping depth or context here would silently flatten the two
+    // axes back into one the first time somebody edited in Excel.
     const sheet = XLSX.utils.json_to_sheet(
       rows.map((r) => ({
         group: r.group,
+        depth: `D${r.depth}`,
         question: r.question,
+        context: r.context || '',
+        volatile: r.is_volatile ? 'yes' : '',
         ref: r.ref,
+        lens: r.lens || '',
+        chain: r.chainName ? `${r.chainName} ${r.chain_position}` : '',
         source: r.source,
         hidden: r.hidden ? 'yes' : '',
+        heldBack: r.needs_review ? r.review_note || 'yes' : '',
         timesAnswered: Number(r.timesAnswered) || 0,
       }))
     );
-    sheet['!cols'] = [{ wch: 18 }, { wch: 80 }, { wch: 18 }, { wch: 10 }, { wch: 8 }, { wch: 14 }];
+    sheet['!cols'] = [
+      { wch: 18 }, { wch: 7 }, { wch: 70 }, { wch: 60 }, { wch: 9 }, { wch: 12 },
+      { wch: 6 }, { wch: 16 }, { wch: 10 }, { wch: 8 }, { wch: 30 }, { wch: 14 },
+    ];
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheet, 'Questions');
@@ -2261,29 +2645,53 @@ owner.get(
   wrap(async (req, res) => {
     // eslint-disable-next-line global-require
     const XLSX = require('xlsx');
-    const levels = await query('SELECT name FROM levels WHERE is_active = 1 ORDER BY sort_order');
-    const example = levels.length ? levels[0].name : 'Icebreakers';
+    const levels = await query('SELECT name FROM domains WHERE is_active = 1 ORDER BY sort_order');
+    const example = levels.length ? levels[0].name : 'You & Me';
 
     const sheet = XLSX.utils.json_to_sheet([
-      { group: example, question: 'What is the best meal we have ever eaten together?', ref: '' },
-      { group: example, question: 'Replace these rows with your own. Leave ref blank for new questions.', ref: '' },
+      {
+        group: example,
+        depth: 'D2',
+        question: 'What has been on your mind this week that I have not asked you about?',
+        context: 'Not a test. Just the thing you have been turning over without mentioning.',
+        volatile: '',
+        ref: '',
+      },
+      {
+        group: example,
+        depth: 'D1',
+        question: 'Replace these rows with your own. Leave ref blank for new questions.',
+        context: 'One short line that opens the territory without supplying an answer.',
+        volatile: '',
+        ref: '',
+      },
     ]);
-    sheet['!cols'] = [{ wch: 20 }, { wch: 80 }, { wch: 18 }];
+    sheet['!cols'] = [{ wch: 18 }, { wch: 7 }, { wch: 70 }, { wch: 60 }, { wch: 9 }, { wch: 14 }];
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheet, 'Questions');
     const notes = XLSX.utils.aoa_to_sheet([
       ['How this import works'],
       [''],
-      ['group', 'Must match a group name that already exists. Create the group first.'],
-      ['question', 'The question text. Up to 500 characters.'],
-      ['ref', 'Leave blank for new questions. If you paste a ref from an export, that'],
+      ['group', 'Must match a set that already exists. Create the set first.'],
+      ['depth', 'D1 to D5, or just 1 to 5. Emotional exposure ONLY, not subject.'],
+      ['', 'D1 open · D2 reflective · D3 personal · D4 exposed · D5 rupture.'],
+      ['', 'Blank defaults to D2.'],
+      ['question', 'The question text, up to 500 characters. It must stand alone:'],
+      ['', 'every card is shown on its own, so nothing may refer to a previous one.'],
+      ['', 'Avoid anything answerable with a bare yes or no.'],
+      ['context', 'One line under eighteen words, revealed when the reader taps the card.'],
+      ['', 'Name the territory. NEVER give an example answer - that anchors every'],
+      ['', 'couple to the same reply and kills the question.'],
+      ['volatile', 'yes for questions that could end a relationship in the wrong week.'],
+      ['', 'These stay locked until both partners separately opt in.'],
+      ['ref', 'Leave blank for new questions. Paste a ref from an export and that'],
       ['', 'question is UPDATED rather than duplicated.'],
       [''],
       ['Uploading always shows a preview first. Nothing is saved until you confirm.'],
-      ['Column headings are flexible: Level/Category also work for group, Text for question.'],
+      ['Headings are flexible: Level/Category/Domain all work for group, Text for question.'],
     ]);
-    notes['!cols'] = [{ wch: 14 }, { wch: 80 }];
+    notes['!cols'] = [{ wch: 14 }, { wch: 84 }];
     XLSX.utils.book_append_sheet(wb, notes, 'How to use');
 
     res.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -2312,7 +2720,7 @@ owner.get(
               COUNT(s.id) AS answered,
               SUM(CASE WHEN s.status = 'skipped' THEN 1 ELSE 0 END) AS skipped
          FROM questions q
-         JOIN levels l ON l.id = q.level_id
+         JOIN domains l ON l.id = q.domain_id
          JOIN couple_question_status s ON s.question_id = q.id
         GROUP BY q.id, q.text, l.name, q.admin_hidden
        -- The aggregates are repeated rather than referred to by alias:
@@ -2329,8 +2737,8 @@ owner.get(
       `SELECT l.name, l.accent,
               COUNT(s.id) AS answered,
               SUM(CASE WHEN s.status = 'skipped' THEN 1 ELSE 0 END) AS skipped
-         FROM levels l
-         LEFT JOIN questions q ON q.level_id = l.id
+         FROM domains l
+         LEFT JOIN questions q ON q.domain_id = l.id
          LEFT JOIN couple_question_status s ON s.question_id = q.id
         WHERE l.is_active = 1
         GROUP BY l.id, l.name, l.accent, l.sort_order
@@ -2378,7 +2786,7 @@ owner.get(
               l.name AS levelName, c.couple_name, u.display_name AS reporter
          FROM question_reports r
          JOIN questions q ON q.id = r.question_id
-         JOIN levels l ON l.id = q.level_id
+         JOIN domains l ON l.id = q.domain_id
          JOIN couples c ON c.id = r.couple_id
          LEFT JOIN users u ON u.id = r.user_id
         WHERE r.status = ?

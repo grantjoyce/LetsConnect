@@ -676,6 +676,65 @@ a { color: var(--accent); }
   background: var(--lv-accent, var(--accent));
 }
 
+/* The context helper.
+ *
+ * Hidden behind a tap, never shown by default. The question has to carry the
+ * moment: a card that arrives pre-explained reads as a worksheet, and the pause
+ * before someone answers is where the work happens. Reaching for the help is
+ * itself a signal worth not destroying. */
+
+.qcard-help {
+  align-self: flex-start;
+  background: none;
+  border: 1px solid var(--line-strong);
+  color: var(--text-faint);
+  border-radius: 999px;
+  padding: 0.42rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.qcard-help:hover {
+  color: var(--text);
+  border-color: var(--lv-accent, var(--accent));
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.qcard-help span {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--lv-accent, var(--accent));
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  flex: none;
+}
+
+.qcard-context {
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+  border-left: 2px solid var(--lv-accent, var(--accent));
+  padding-left: 0.85rem;
+  animation: reveal 0.22s ease;
+}
+
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+}
+
+.qcard-eyebrow .pill {
+  vertical-align: middle;
+}
+
 /* Card transitions */
 .qcard.leaving-skip {
   animation: leave-left 0.22s ease forwards;
