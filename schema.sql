@@ -91,17 +91,27 @@ CREATE TABLE IF NOT EXISTS levels (
   UNIQUE KEY uq_levels_slug (slug)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- `source` decides who owns a row. The seeder manages 'catalogue' questions and
+-- retires any whose ref has left data/catalogue.js; it must never see 'admin'
+-- ones, or a question written in the app would be switched off by the next
+-- deploy. See scripts/migrate-add-question-source.js.
 CREATE TABLE IF NOT EXISTS questions (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   ref         VARCHAR(40) NOT NULL,
   level_id    INT NOT NULL,
+  source      ENUM('catalogue','admin') NOT NULL DEFAULT 'catalogue',
   text        TEXT NOT NULL,
   sort_order  INT NOT NULL DEFAULT 0,
+  -- is_active belongs to the SEEDER. admin_hidden belongs to the ADMIN, and the
+  -- seeder never touches it - otherwise hiding a curated question in the app
+  -- would be quietly undone by the next migrate. Both are checked when serving.
   is_active   TINYINT(1) NOT NULL DEFAULT 1,
+  admin_hidden TINYINT(1) NOT NULL DEFAULT 0,
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_questions_ref (ref),
   KEY idx_questions_level (level_id, is_active),
+  KEY idx_questions_source (source),
   CONSTRAINT fk_questions_level FOREIGN KEY (level_id)
     REFERENCES levels (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -134,6 +144,31 @@ CREATE TABLE IF NOT EXISTS couple_question_status (
     REFERENCES questions (id) ON DELETE CASCADE,
   CONSTRAINT fk_cqs_user FOREIGN KEY (decided_by_user_id)
     REFERENCES users (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Password resets
+--
+-- Only a SHA-256 HASH of the token is stored, never the token. A database dump
+-- therefore does not hand anybody a working reset link - the same reasoning as
+-- hashing passwords, since a reset token IS a password for the next hour.
+--
+-- Single-use (used_at) and time-limited (expires_at).
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  user_id      INT NOT NULL,
+  token_hash   CHAR(64) NOT NULL,
+  expires_at   DATETIME NOT NULL,
+  used_at      DATETIME NULL,
+  requested_ip VARCHAR(64) NULL,
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_password_resets_token (token_hash),
+  KEY idx_password_resets_user (user_id, used_at),
+  KEY idx_password_resets_expiry (expires_at),
+  CONSTRAINT fk_password_resets_user FOREIGN KEY (user_id)
+    REFERENCES users (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------

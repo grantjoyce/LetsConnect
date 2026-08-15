@@ -52,9 +52,28 @@ class MySQLSessionStore extends session.Store {
          session_id VARCHAR(128) NOT NULL PRIMARY KEY,
          expires    DATETIME NOT NULL,
          data       MEDIUMTEXT NOT NULL,
-         KEY idx_sessions_expires (expires)
+         user_id    INT NULL,
+         KEY idx_sessions_expires (expires),
+         KEY idx_sessions_user (user_id)
        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
     );
+
+    // Installs that predate user_id get it here. The migration covers the same
+    // ground, but this table is created by the app rather than by schema.sql,
+    // so it can exist before any migration has ever run against it.
+    try {
+      const col = await queryOne(
+        `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'sessions'
+            AND COLUMN_NAME = 'user_id'`
+      );
+      if (!col) {
+        await query('ALTER TABLE sessions ADD COLUMN user_id INT NULL');
+        await query('ALTER TABLE sessions ADD INDEX idx_sessions_user (user_id)');
+      }
+    } catch (err) {
+      console.error('[sessions] could not verify user_id column:', err.message);
+    }
   }
 
   async sweep() {
@@ -79,12 +98,17 @@ class MySQLSessionStore extends session.Store {
 
   set(sid, sess, cb) {
     const data = JSON.stringify(sess);
+    // Mirrored out of the JSON blob into its own column so "end every session
+    // for this user" is an exact delete. A LIKE over the JSON cannot tell
+    // userId 5 from userId 50.
+    const userId = sess && sess.userId ? Number(sess.userId) : null;
     this.ready
       .then(() =>
         query(
-          `INSERT INTO sessions (session_id, expires, data) VALUES (?, ?, ?)
-           ON DUPLICATE KEY UPDATE expires = VALUES(expires), data = VALUES(data)`,
-          [sid, this.expiryOf(sess), data]
+          `INSERT INTO sessions (session_id, expires, data, user_id) VALUES (?, ?, ?, ?)
+           ON DUPLICATE KEY UPDATE expires = VALUES(expires), data = VALUES(data),
+                                   user_id = VALUES(user_id)`,
+          [sid, this.expiryOf(sess), data, userId]
         )
       )
       .then(() => cb(null))
@@ -165,8 +189,124 @@ async function getIntSetting(key) {
   return Number.isFinite(n) ? Math.max(0, Math.round(n)) : DEFAULTS[key];
 }
 
+async function setSetting(key, value) {
+  await query(
+    `INSERT INTO settings (setting_key, setting_value) VALUES (?, ?)
+     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)`,
+    [key, value === null || value === undefined ? null : String(value)]
+  );
+}
+
 function fail(res, status, message) {
   return res.status(status).json({ error: message });
+}
+
+// ---------------------------------------------------------------------------
+// Secrets at rest
+//
+// The SMTP password is the one secret this app must be able to READ BACK, so
+// it cannot be hashed - it is encrypted with AES-256-GCM under a key from the
+// environment, never from the database.
+//
+// SECRET_KEY is the dedicated key; SESSION_SECRET is a fallback so an install
+// that predates it keeps working. Set SECRET_KEY explicitly in production:
+// without it, rotating SESSION_SECRET - an entirely normal thing to do - makes
+// the stored SMTP password unreadable.
+// ---------------------------------------------------------------------------
+
+const SECRET_KEY_SOURCE =
+  process.env.SECRET_KEY || process.env.SESSION_SECRET || 'dev-secret-change-me';
+const SECRET_KEY = crypto.createHash('sha256').update(SECRET_KEY_SOURCE).digest();
+
+function encryptSecret(plain) {
+  if (plain === null || plain === undefined || plain === '') return null;
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', SECRET_KEY, iv);
+  const enc = Buffer.concat([cipher.update(String(plain), 'utf8'), cipher.final()]);
+  return `v1:${Buffer.concat([iv, cipher.getAuthTag(), enc]).toString('base64')}`;
+}
+
+/**
+ * Returns null when the value cannot be decrypted rather than throwing.
+ *
+ * Failing soft is deliberate: if the key has changed, the recoverable path is
+ * "the admin retypes the SMTP password", and an exception here would instead
+ * take down every page that happens to read settings.
+ */
+function decryptSecret(stored) {
+  try {
+    if (!stored || typeof stored !== 'string' || !stored.startsWith('v1:')) return null;
+    const buf = Buffer.from(stored.slice(3), 'base64');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', SECRET_KEY, buf.subarray(0, 12));
+    decipher.setAuthTag(buf.subarray(12, 28));
+    return Buffer.concat([decipher.update(buf.subarray(28)), decipher.final()]).toString('utf8');
+  } catch (err) {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Email
+//
+// Configured in the admin UI, stored in `settings`, so it survives redeploys
+// with no server file editing. nodemailer is required lazily so the app still
+// boots if the dependency is somehow missing on the host.
+// ---------------------------------------------------------------------------
+
+async function getMailConfig() {
+  const [host, port, secure, user, pass, from] = await Promise.all([
+    getSetting('smtp_host'),
+    getSetting('smtp_port'),
+    getSetting('smtp_secure'),
+    getSetting('smtp_user'),
+    getSetting('smtp_password'),
+    getSetting('smtp_from'),
+  ]);
+
+  const password = decryptSecret(pass);
+  return {
+    host: host || '',
+    port: Number(port) || 587,
+    secure: String(secure) === '1' || String(secure) === 'true',
+    user: user || '',
+    password,
+    // A stored-but-unreadable password means the key changed under it.
+    passwordUnreadable: !!pass && password === null,
+    from: from || '',
+    configured: !!(host && from),
+  };
+}
+
+async function sendMail({ to, subject, text, html }) {
+  const cfg = await getMailConfig();
+  if (!cfg.configured) throw new Error('Email is not set up yet.');
+  if (cfg.passwordUnreadable) {
+    throw new Error('The saved SMTP password cannot be read. Retype it in Admin → Email.');
+  }
+
+  let nodemailer;
+  try {
+    // eslint-disable-next-line global-require
+    nodemailer = require('nodemailer');
+  } catch (err) {
+    throw new Error('The email library is not installed on this server.');
+  }
+
+  const transport = nodemailer.createTransport({
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.secure,
+    auth: cfg.user ? { user: cfg.user, pass: cfg.password || '' } : undefined,
+  });
+
+  await transport.sendMail({ from: cfg.from, to, subject, text, html });
+}
+
+/** Base URL for links in emails. The setting wins; otherwise infer from the request. */
+async function appUrl(req) {
+  const configured = await getSetting('app_url');
+  if (configured) return String(configured).replace(/\/+$/, '');
+  return `${req.protocol}://${req.get('host')}`;
 }
 
 /** Wraps an async route so a rejection becomes a 500 instead of a hung request. */
@@ -347,6 +487,148 @@ app.post(
   })
 );
 
+// ---- Password reset -------------------------------------------------------
+
+const RESET_TTL_MS = 60 * 60 * 1000; // one hour
+
+function hashToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+/**
+ * Issues a reset token for a user and returns the raw token ONCE.
+ *
+ * Only the hash is persisted, so this return value is the only time the real
+ * token exists anywhere. Any outstanding tokens for the same user are consumed
+ * first - requesting a new link must invalidate the old one, or an email
+ * forwarded months ago stays live.
+ */
+async function issueResetToken(userId, ip) {
+  await query(
+    'UPDATE password_resets SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL',
+    [userId]
+  );
+  const token = crypto.randomBytes(32).toString('base64url');
+  await query(
+    'INSERT INTO password_resets (user_id, token_hash, expires_at, requested_ip) VALUES (?, ?, ?, ?)',
+    [userId, hashToken(token), new Date(Date.now() + RESET_TTL_MS), String(ip || '').slice(0, 64)]
+  );
+  return token;
+}
+
+function resetLink(base, token) {
+  return `${base}/?reset=${encodeURIComponent(token)}`;
+}
+
+app.post(
+  '/api/auth/forgot',
+  wrap(async (req, res) => {
+    const email = normaliseEmail(req.body.email);
+    const key = `forgot|${req.ip}`;
+
+    // Throttled on IP alone, not IP+email, so it cannot be used to sweep a list
+    // of addresses one request at a time.
+    if (isLockedOut(key)) {
+      return fail(res, 429, 'Too many requests. Wait ten minutes and try again.');
+    }
+    noteFailure(key);
+
+    if (!email) return fail(res, 400, 'Enter your email address.');
+
+    const user = await queryOne(
+      'SELECT id, email, display_name, is_active FROM users WHERE email = ?',
+      [email]
+    );
+
+    // ALWAYS the same response, whether or not the address exists. Anything
+    // else turns this endpoint into a way of testing who has an account.
+    const generic = {
+      ok: true,
+      message: 'If that email has an account, a reset link is on its way.',
+    };
+
+    if (!user || !user.is_active) return res.json(generic);
+
+    const token = await issueResetToken(user.id, req.ip);
+    const link = resetLink(await appUrl(req), token);
+
+    try {
+      await sendMail({
+        to: user.email,
+        subject: "Reset your Let's Connect password",
+        text:
+          `Hello ${user.display_name},\n\n` +
+          `Someone asked to reset the password on your Let's Connect account.\n\n` +
+          `${link}\n\n` +
+          `The link works once and expires in an hour. If this was not you, you can ` +
+          `ignore this email - nothing has changed.\n`,
+        html:
+          `<p>Hello ${user.display_name},</p>` +
+          `<p>Someone asked to reset the password on your Let's Connect account.</p>` +
+          `<p><a href="${link}">Choose a new password</a></p>` +
+          `<p>The link works once and expires in an hour. If this was not you, you can ` +
+          `ignore this email &mdash; nothing has changed.</p>`,
+      });
+    } catch (err) {
+      // The token is already issued and valid. Log the real reason for an admin
+      // to find, but never tell the browser - "email failed" would confirm the
+      // account exists just as surely as "no such user" would.
+      console.error(`[reset] could not email ${user.email}:`, err.message);
+    }
+
+    return res.json(generic);
+  })
+);
+
+/** Lets the SPA check a token before showing the "new password" form. */
+app.get(
+  '/api/auth/reset/:token',
+  wrap(async (req, res) => {
+    const row = await queryOne(
+      `SELECT u.display_name
+         FROM password_resets r
+         JOIN users u ON u.id = r.user_id
+        WHERE r.token_hash = ? AND r.used_at IS NULL AND r.expires_at > NOW()
+          AND u.is_active = 1`,
+      [hashToken(String(req.params.token || ''))]
+    );
+    if (!row) return fail(res, 400, 'That reset link has expired or has already been used.');
+    return res.json({ ok: true, displayName: row.display_name });
+  })
+);
+
+app.post(
+  '/api/auth/reset',
+  wrap(async (req, res) => {
+    const token = String(req.body.token || '');
+    const password = String(req.body.password || '');
+    if (password.length < 8) return fail(res, 400, 'Your password needs at least 8 characters.');
+
+    const row = await queryOne(
+      `SELECT r.id, r.user_id
+         FROM password_resets r
+         JOIN users u ON u.id = r.user_id
+        WHERE r.token_hash = ? AND r.used_at IS NULL AND r.expires_at > NOW()
+          AND u.is_active = 1`,
+      [hashToken(token)]
+    );
+    if (!row) return fail(res, 400, 'That reset link has expired or has already been used.');
+
+    await query('UPDATE users SET password_hash = ? WHERE id = ?', [
+      await bcrypt.hash(password, 10),
+      row.user_id,
+    ]);
+    await query('UPDATE password_resets SET used_at = NOW() WHERE id = ?', [row.id]);
+
+    // End every existing session for this account. If the reset happened
+    // because somebody else was in the account, leaving their session alive
+    // would change the lock with the intruder still inside.
+    await query('DELETE FROM sessions WHERE user_id = ?', [row.user_id]);
+
+    return res.json({ ok: true });
+  })
+);
+
 app.post('/api/auth/logout', (req, res) => {
   if (!req.session) return res.json({ ok: true });
   return req.session.destroy(() => {
@@ -432,7 +714,7 @@ async function levelsWithProgress(coupleId) {
                            AND s.decided_at < DATE_SUB(NOW(), INTERVAL ${cooloff} DAY))
                      THEN 1 ELSE 0 END) AS available
        FROM levels l
-       LEFT JOIN questions q ON q.level_id = l.id AND q.is_active = 1
+       LEFT JOIN questions q ON q.level_id = l.id AND q.is_active = 1 AND q.admin_hidden = 0
        LEFT JOIN couple_question_status s ON s.question_id = q.id AND s.couple_id = ?
       WHERE l.is_active = 1
       GROUP BY l.id, l.slug, l.name, l.tagline, l.description, l.depth, l.accent, l.sort_order
@@ -605,7 +887,7 @@ app.get(
         FROM questions q
         LEFT JOIN couple_question_status s
           ON s.question_id = q.id AND s.couple_id = ?
-       WHERE q.level_id = ? AND q.is_active = 1
+       WHERE q.level_id = ? AND q.is_active = 1 AND q.admin_hidden = 0
          AND (s.id IS NULL${
            withCooloff
              ? ` OR (s.status = 'skipped' AND s.decided_at < DATE_SUB(NOW(), INTERVAL ${cooloff} DAY))`
@@ -752,6 +1034,495 @@ app.post(
       req.user.id,
     ]);
     res.json({ ok: true });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// Admin
+//
+// Gated as a whole namespace rather than per route. A new admin endpoint is
+// therefore closed by default and you opt in by putting it under /api/admin -
+// the opposite way round from remembering to add a check to each one, which is
+// how a single forgotten line leaks everything.
+// ---------------------------------------------------------------------------
+
+function requireAdmin(req, res, next) {
+  if (!req.user) return fail(res, 401, 'Please log in.');
+  if (!req.user.is_admin) return fail(res, 403, 'Admins only.');
+  return next();
+}
+
+const admin = express.Router();
+app.use('/api/admin', requireAuth, requireAdmin, admin);
+
+admin.get(
+  '/overview',
+  wrap(async (req, res) => {
+    const [counts] = await query(
+      `SELECT
+         (SELECT COUNT(*) FROM users)                                    AS users,
+         (SELECT COUNT(*) FROM users WHERE is_active = 1)                AS activeUsers,
+         (SELECT COUNT(*) FROM users WHERE is_admin = 1)                 AS admins,
+         (SELECT COUNT(*) FROM couples WHERE status = 'active')          AS couples,
+         (SELECT COUNT(*) FROM questions WHERE is_active = 1 AND admin_hidden = 0) AS liveQuestions,
+         (SELECT COUNT(*) FROM questions WHERE source = 'admin')         AS adminQuestions,
+         (SELECT COUNT(*) FROM questions WHERE admin_hidden = 1)         AS hiddenQuestions,
+         (SELECT COUNT(*) FROM couple_question_status)                   AS decisions,
+         (SELECT COUNT(*) FROM couple_question_status WHERE status = 'completed') AS completed,
+         (SELECT COUNT(*) FROM couple_question_status WHERE status = 'skipped')   AS skipped`
+    );
+
+    const recentUsers = await query(
+      `SELECT id, email, display_name, is_admin, is_active, created_at, last_login_at
+         FROM users ORDER BY created_at DESC LIMIT 8`
+    );
+
+    const perLevel = await query(
+      `SELECT l.name, l.accent,
+              COUNT(q.id) AS questions,
+              (SELECT COUNT(*) FROM couple_question_status s
+                 JOIN questions q2 ON q2.id = s.question_id
+                WHERE q2.level_id = l.id) AS decisions
+         FROM levels l
+         LEFT JOIN questions q ON q.level_id = l.id AND q.is_active = 1 AND q.admin_hidden = 0
+        WHERE l.is_active = 1
+        GROUP BY l.id, l.name, l.accent, l.sort_order
+        ORDER BY l.sort_order`
+    );
+
+    const mail = await getMailConfig();
+
+    res.json({
+      counts,
+      recentUsers: recentUsers.map(publicUser),
+      perLevel: perLevel.map((r) => ({
+        name: r.name,
+        accent: r.accent,
+        questions: Number(r.questions) || 0,
+        decisions: Number(r.decisions) || 0,
+      })),
+      email: { configured: mail.configured, unreadable: mail.passwordUnreadable },
+    });
+  })
+);
+
+function publicUser(u) {
+  return {
+    id: u.id,
+    email: u.email,
+    displayName: u.display_name,
+    isAdmin: !!u.is_admin,
+    isActive: !!u.is_active,
+    createdAt: u.created_at,
+    lastLoginAt: u.last_login_at,
+    coupleId: u.couple_id || null,
+    coupleName: u.couple_name || null,
+  };
+}
+
+admin.get(
+  '/users',
+  wrap(async (req, res) => {
+    const q = String(req.query.q || '').trim();
+    const like = `%${q}%`;
+    const rows = await query(
+      `SELECT u.id, u.email, u.display_name, u.is_admin, u.is_active, u.created_at,
+              u.last_login_at, c.id AS couple_id, c.couple_name
+         FROM users u
+         LEFT JOIN couple_members m ON m.user_id = u.id
+         LEFT JOIN couples c ON c.id = m.couple_id AND c.status = 'active'
+        ${q ? 'WHERE u.email LIKE ? OR u.display_name LIKE ?' : ''}
+        ORDER BY u.created_at DESC
+        LIMIT 200`,
+      q ? [like, like] : []
+    );
+    res.json({ users: rows.map(publicUser) });
+  })
+);
+
+/**
+ * Update a user's name, admin flag or active state.
+ *
+ * Two guards, deliberately scoped so each one actually does something:
+ *
+ *   - You cannot DEACTIVATE YOURSELF. There is no legitimate use for it - it
+ *     signs you out on the spot and locks you back out - so it is refused
+ *     outright rather than confirmed.
+ *
+ *   - You cannot remove the LAST active admin. This is what makes stepping
+ *     down safe: handing over to a colleague and demoting yourself is a real
+ *     thing an admin should be able to do, so self-demotion is allowed exactly
+ *     when somebody else is left holding the keys.
+ *
+ * An earlier version blocked ALL self-demotion, which read as safer and was
+ * worse: it made the last-admin check unreachable (the caller is always an
+ * active admin, so "another admin exists" was true whenever the target was
+ * someone else), leaving the real lockout case guarded by nothing but a rule
+ * that never fired.
+ */
+admin.patch(
+  '/users/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const target = await queryOne(
+      'SELECT id, is_admin, is_active FROM users WHERE id = ?',
+      [id]
+    );
+    if (!target) return fail(res, 404, 'No such user.');
+
+    const wantsAdmin = req.body.isAdmin === undefined ? !!target.is_admin : !!req.body.isAdmin;
+    const wantsActive = req.body.isActive === undefined ? !!target.is_active : !!req.body.isActive;
+    const losingAdmin = !!target.is_admin && (!wantsAdmin || !wantsActive);
+
+    if (id === req.user.id && !wantsActive) {
+      return fail(res, 400, 'You cannot deactivate your own account.');
+    }
+
+    if (losingAdmin) {
+      const others = await queryOne(
+        'SELECT COUNT(*) AS n FROM users WHERE is_admin = 1 AND is_active = 1 AND id <> ?',
+        [id]
+      );
+      if (Number(others.n) === 0) {
+        return fail(
+          res,
+          400,
+          id === req.user.id
+            ? 'You are the only admin. Make somebody else an admin before stepping down.'
+            : 'This is the only admin left. Promote someone else first.'
+        );
+      }
+    }
+
+    const displayName =
+      req.body.displayName === undefined ? null : String(req.body.displayName).trim();
+    if (displayName !== null && !displayName) return fail(res, 400, 'Enter a name.');
+
+    await query(
+      `UPDATE users
+          SET display_name = COALESCE(?, display_name), is_admin = ?, is_active = ?
+        WHERE id = ?`,
+      [displayName, wantsAdmin ? 1 : 0, wantsActive ? 1 : 0, id]
+    );
+
+    // A deactivated account must not keep working until its cookie happens to
+    // expire. loadUser() already refuses an inactive user, but ending the
+    // session makes it immediate and explicit.
+    if (!wantsActive) await query('DELETE FROM sessions WHERE user_id = ?', [id]);
+
+    const fresh = await queryOne(
+      `SELECT u.id, u.email, u.display_name, u.is_admin, u.is_active, u.created_at,
+              u.last_login_at, c.id AS couple_id, c.couple_name
+         FROM users u
+         LEFT JOIN couple_members m ON m.user_id = u.id
+         LEFT JOIN couples c ON c.id = m.couple_id AND c.status = 'active'
+        WHERE u.id = ?`,
+      [id]
+    );
+    res.json({ ok: true, user: publicUser(fresh) });
+  })
+);
+
+/**
+ * Issue a reset link for someone else.
+ *
+ * Returns the link so it can be handed over directly when email is not set up
+ * (or has not arrived). That does let an admin take over an account - but an
+ * admin can already promote themselves and read everything, so the link adds no
+ * privilege that was not already there. It is the honest, workable option, and
+ * the alternative of typing a password FOR someone means the admin then knows
+ * their password, which is worse.
+ */
+admin.post(
+  '/users/:id/reset-link',
+  wrap(async (req, res) => {
+    const user = await queryOne(
+      'SELECT id, email, display_name, is_active FROM users WHERE id = ?',
+      [Number(req.params.id)]
+    );
+    if (!user) return fail(res, 404, 'No such user.');
+    if (!user.is_active) return fail(res, 400, 'That account is deactivated. Reactivate it first.');
+
+    const token = await issueResetToken(user.id, req.ip);
+    const link = resetLink(await appUrl(req), token);
+
+    let emailed = false;
+    let emailError = null;
+    try {
+      await sendMail({
+        to: user.email,
+        subject: "Reset your Let's Connect password",
+        text:
+          `Hello ${user.display_name},\n\n` +
+          `An administrator has started a password reset for your account.\n\n${link}\n\n` +
+          `The link works once and expires in an hour.\n`,
+        html:
+          `<p>Hello ${user.display_name},</p>` +
+          `<p>An administrator has started a password reset for your account.</p>` +
+          `<p><a href="${link}">Choose a new password</a></p>` +
+          `<p>The link works once and expires in an hour.</p>`,
+      });
+      emailed = true;
+    } catch (err) {
+      emailError = err.message;
+    }
+
+    res.json({ ok: true, link, emailed, emailError, expiresInMinutes: RESET_TTL_MS / 60000 });
+  })
+);
+
+admin.get(
+  '/couples',
+  wrap(async (req, res) => {
+    const rows = await query(
+      `SELECT c.id, c.couple_name, c.invite_code, c.status, c.created_at,
+              COUNT(DISTINCT m.user_id) AS members,
+              GROUP_CONCAT(DISTINCT u.display_name ORDER BY m.joined_at SEPARATOR ' & ') AS memberNames,
+              (SELECT COUNT(*) FROM couple_question_status s
+                WHERE s.couple_id = c.id AND s.status = 'completed') AS completed,
+              (SELECT COUNT(*) FROM couple_question_status s
+                WHERE s.couple_id = c.id AND s.status = 'skipped') AS skipped,
+              (SELECT MAX(s.decided_at) FROM couple_question_status s
+                WHERE s.couple_id = c.id) AS lastActivity
+         FROM couples c
+         LEFT JOIN couple_members m ON m.couple_id = c.id
+         LEFT JOIN users u ON u.id = m.user_id
+        GROUP BY c.id, c.couple_name, c.invite_code, c.status, c.created_at
+        ORDER BY c.created_at DESC
+        LIMIT 200`
+    );
+    res.json({
+      couples: rows.map((r) => ({
+        id: r.id,
+        name: r.couple_name,
+        inviteCode: r.invite_code,
+        status: r.status,
+        members: Number(r.members) || 0,
+        memberNames: r.memberNames || '',
+        completed: Number(r.completed) || 0,
+        skipped: Number(r.skipped) || 0,
+        lastActivity: r.lastActivity,
+        createdAt: r.created_at,
+      })),
+    });
+  })
+);
+
+admin.get(
+  '/questions',
+  wrap(async (req, res) => {
+    const slug = String(req.query.level || '').trim();
+    const level = slug ? await queryOne('SELECT id FROM levels WHERE slug = ?', [slug]) : null;
+    if (slug && !level) return fail(res, 404, 'That level does not exist.');
+
+    const rows = await query(
+      `SELECT q.id, q.ref, q.text, q.source, q.is_active, q.admin_hidden, q.sort_order,
+              l.slug AS levelSlug, l.name AS levelName,
+              (SELECT COUNT(*) FROM couple_question_status s WHERE s.question_id = q.id) AS timesUsed
+         FROM questions q
+         JOIN levels l ON l.id = q.level_id
+        ${level ? 'WHERE q.level_id = ?' : ''}
+        ORDER BY l.sort_order, q.source DESC, q.sort_order`,
+      level ? [level.id] : []
+    );
+
+    res.json({
+      questions: rows.map((r) => ({
+        id: r.id,
+        ref: r.ref,
+        text: r.text,
+        source: r.source,
+        isActive: !!r.is_active,
+        hidden: !!r.admin_hidden,
+        levelSlug: r.levelSlug,
+        levelName: r.levelName,
+        timesUsed: Number(r.timesUsed) || 0,
+      })),
+    });
+  })
+);
+
+admin.post(
+  '/questions',
+  wrap(async (req, res) => {
+    const text = String(req.body.text || '').trim();
+    const slug = String(req.body.level || '').trim();
+    if (!text) return fail(res, 400, 'Enter the question.');
+    if (text.length > 500) return fail(res, 400, 'That question is too long.');
+
+    const level = await queryOne('SELECT id FROM levels WHERE slug = ? AND is_active = 1', [slug]);
+    if (!level) return fail(res, 400, 'Choose a level.');
+
+    // Admin refs are namespaced so they can never collide with a catalogue ref,
+    // present or future.
+    const ref = `adm-${crypto.randomBytes(6).toString('hex')}`;
+    const [{ n }] = await query(
+      'SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM questions WHERE level_id = ?',
+      [level.id]
+    );
+
+    const result = await query(
+      `INSERT INTO questions (ref, level_id, source, text, sort_order, is_active, admin_hidden)
+       VALUES (?, ?, 'admin', ?, ?, 1, 0)`,
+      [ref, level.id, text, n]
+    );
+    res.status(201).json({ ok: true, id: result.insertId, ref });
+  })
+);
+
+/**
+ * Edit a question.
+ *
+ * The text of a CATALOGUE question is deliberately not editable here. It would
+ * appear to save and then be overwritten by data/catalogue.js on the next
+ * migrate - a change that silently undoes itself is worse than one that is
+ * refused with a reason. Hiding it works on any question, because admin_hidden
+ * is the one flag the seeder never touches.
+ */
+admin.patch(
+  '/questions/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const q = await queryOne('SELECT id, source FROM questions WHERE id = ?', [id]);
+    if (!q) return fail(res, 404, 'No such question.');
+
+    if (req.body.text !== undefined) {
+      if (q.source === 'catalogue') {
+        return fail(
+          res,
+          400,
+          'Curated questions are edited in data/catalogue.js - a change made here would be ' +
+            'overwritten on the next deploy. You can hide it instead.'
+        );
+      }
+      const text = String(req.body.text).trim();
+      if (!text) return fail(res, 400, 'Enter the question.');
+      if (text.length > 500) return fail(res, 400, 'That question is too long.');
+      await query('UPDATE questions SET text = ? WHERE id = ?', [text, id]);
+    }
+
+    if (req.body.hidden !== undefined) {
+      await query('UPDATE questions SET admin_hidden = ? WHERE id = ?', [
+        req.body.hidden ? 1 : 0,
+        id,
+      ]);
+    }
+
+    const fresh = await queryOne(
+      `SELECT q.id, q.ref, q.text, q.source, q.is_active, q.admin_hidden,
+              l.slug AS levelSlug, l.name AS levelName
+         FROM questions q JOIN levels l ON l.id = q.level_id WHERE q.id = ?`,
+      [id]
+    );
+    res.json({
+      ok: true,
+      question: {
+        id: fresh.id,
+        ref: fresh.ref,
+        text: fresh.text,
+        source: fresh.source,
+        isActive: !!fresh.is_active,
+        hidden: !!fresh.admin_hidden,
+        levelSlug: fresh.levelSlug,
+        levelName: fresh.levelName,
+      },
+    });
+  })
+);
+
+const TUNABLE_SETTINGS = ['skip_cooloff_days', 'deck_size', 'app_url'];
+
+admin.get(
+  '/settings',
+  wrap(async (req, res) => {
+    const mail = await getMailConfig();
+    const values = {};
+    for (const key of TUNABLE_SETTINGS) values[key] = await getSetting(key);
+
+    res.json({
+      settings: values,
+      defaults: DEFAULTS,
+      email: {
+        host: mail.host,
+        port: mail.port,
+        secure: mail.secure,
+        user: mail.user,
+        from: mail.from,
+        configured: mail.configured,
+        // The password itself is NEVER returned to the browser - only whether
+        // one is stored and whether it can still be read.
+        hasPassword: !!mail.password || mail.passwordUnreadable,
+        passwordUnreadable: mail.passwordUnreadable,
+      },
+    });
+  })
+);
+
+admin.put(
+  '/settings',
+  wrap(async (req, res) => {
+    const body = req.body || {};
+
+    if (body.skip_cooloff_days !== undefined) {
+      const n = Number(body.skip_cooloff_days);
+      if (!Number.isFinite(n) || n < 0 || n > 365) {
+        return fail(res, 400, 'Cool-off must be between 0 and 365 days.');
+      }
+      await setSetting('skip_cooloff_days', Math.round(n));
+    }
+
+    if (body.deck_size !== undefined) {
+      const n = Number(body.deck_size);
+      if (!Number.isFinite(n) || n < 1 || n > 200) {
+        return fail(res, 400, 'Deck size must be between 1 and 200.');
+      }
+      await setSetting('deck_size', Math.round(n));
+    }
+
+    if (body.app_url !== undefined) {
+      const url = String(body.app_url).trim().replace(/\/+$/, '');
+      if (url && !/^https?:\/\/.+/i.test(url)) {
+        return fail(res, 400, 'The app URL must start with http:// or https://');
+      }
+      await setSetting('app_url', url || null);
+    }
+
+    if (body.email) {
+      const e = body.email;
+      if (e.host !== undefined) await setSetting('smtp_host', String(e.host).trim());
+      if (e.port !== undefined) await setSetting('smtp_port', Number(e.port) || 587);
+      if (e.secure !== undefined) await setSetting('smtp_secure', e.secure ? '1' : '0');
+      if (e.user !== undefined) await setSetting('smtp_user', String(e.user).trim());
+      if (e.from !== undefined) await setSetting('smtp_from', String(e.from).trim());
+      // Three-way, in priority order:
+      //   a password was typed  -> store it (wins even if "forget" is ticked,
+      //                            since typing one is the more specific act)
+      //   "forget" ticked       -> wipe the stored one
+      //   neither               -> leave it alone, so saving the host or port
+      //                            does not silently wipe the password
+      if (e.password) await setSetting('smtp_password', encryptSecret(String(e.password)));
+      else if (e.clearPassword) await setSetting('smtp_password', null);
+    }
+
+    res.json({ ok: true });
+  })
+);
+
+admin.post(
+  '/email/test',
+  wrap(async (req, res) => {
+    const to = String(req.body.to || req.user.email).trim();
+    try {
+      await sendMail({
+        to,
+        subject: "Let's Connect - test email",
+        text: 'This is a test from the Let\'s Connect admin screen. Email is working.',
+        html: "<p>This is a test from the Let's Connect admin screen. Email is working.</p>",
+      });
+      res.json({ ok: true, to });
+    } catch (err) {
+      res.status(400).json({ error: err.message });
+    }
   })
 );
 

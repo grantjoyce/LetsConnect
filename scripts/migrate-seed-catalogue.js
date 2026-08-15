@@ -15,6 +15,12 @@
  *
  * Deactivating rather than deleting is the whole reason progress survives
  * content edits. Do not "tidy" it into a DELETE.
+ *
+ * SCOPE: this seeder owns `source = 'catalogue'` rows ONLY. Questions written
+ * by an admin in the app carry source = 'admin' and are invisible to every
+ * query here. Without that split, the retire step below would see an
+ * admin-authored question, find no matching ref in the file, and switch it off
+ * on the very next deploy.
  */
 
 const { pool } = require('../db');
@@ -90,7 +96,8 @@ async function run() {
           if (changed) {
             await conn.query(
               `UPDATE questions
-                  SET text = ?, level_id = ?, sort_order = ?, is_active = 1
+                  SET text = ?, level_id = ?, sort_order = ?, is_active = 1,
+                      source = 'catalogue'
                 WHERE id = ?`,
               [text, levelId, i + 1, q.id]
             );
@@ -98,8 +105,8 @@ async function run() {
           }
         } else {
           await conn.query(
-            `INSERT INTO questions (ref, level_id, text, sort_order, is_active)
-             VALUES (?, ?, ?, ?, 1)`,
+            `INSERT INTO questions (ref, level_id, text, sort_order, is_active, source)
+             VALUES (?, ?, ?, ?, 1, 'catalogue')`,
             [ref, levelId, text, i + 1]
           );
           added += 1;
@@ -107,11 +114,14 @@ async function run() {
       }
     }
 
+    // Retire catalogue questions that have left the file. Scoped to
+    // source = 'catalogue' so admin-authored questions are never caught by it.
     let retired = 0;
     if (keptRefs.length) {
       const [res] = await conn.query(
         `UPDATE questions SET is_active = 0
-          WHERE is_active = 1 AND ref NOT IN (${keptRefs.map(() => '?').join(',')})`,
+          WHERE is_active = 1 AND source = 'catalogue'
+            AND ref NOT IN (${keptRefs.map(() => '?').join(',')})`,
         keptRefs
       );
       retired = res.affectedRows || 0;

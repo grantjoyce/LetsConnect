@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -25,8 +25,8 @@ const APP_VERSION = '1.0.0';
 
 const state = {
   ready: false,
-  view: 'auth', // auth | onboard | levels | deck | account
-  authMode: 'login', // login | register
+  view: 'auth', // auth | onboard | levels | deck | account | admin
+  authMode: 'login', // login | register | forgot
   me: null,
   couple: null,
   levels: [],
@@ -34,7 +34,24 @@ const state = {
   deck: null, // { level, stats, cards, index, releasedEarly }
   form: {}, // values mirrored out of inputs so a re-render can restore them
   error: null,
+  notice: null,
   busy: false,
+
+  // Password reset, driven by ?reset=<token> in the URL.
+  reset: null, // { token, checking, valid, displayName, done, error }
+
+  // Admin screen. Each tab loads its own data on first open.
+  admin: {
+    tab: 'overview', // overview | people | couples | questions | settings
+    overview: null,
+    users: null,
+    userQuery: '',
+    couples: null,
+    questions: null,
+    questionLevel: '',
+    settings: null,
+    loading: false,
+  },
 };
 
 const root = document.getElementById('app');
@@ -230,7 +247,117 @@ function showHowItWorks() {
 // Views
 // ---------------------------------------------------------------------------
 
+function viewForgot() {
+  const f = state.form;
+  return `
+    <div class="screen screen--centred">
+      <div class="hero">
+        <div class="hero-mark" aria-hidden="true">&#10084;</div>
+        <h1>Forgotten password</h1>
+        <p>We will email you a link to choose a new one.</p>
+      </div>
+
+      <div class="panel">
+        ${state.error ? `<div class="form-error">${esc(state.error)}</div>` : ''}
+        ${state.notice ? `<div class="notice">${esc(state.notice)}</div>` : ''}
+
+        <form id="forgot-form" novalidate>
+          <div class="field">
+            <label for="f-email">Email</label>
+            <input class="input" id="f-email" name="email" type="email"
+                   autocomplete="email" inputmode="email" placeholder="you@example.com"
+                   value="${esc(f.email || '')}" required>
+          </div>
+          <button class="btn btn-block" type="submit" ${state.busy ? 'disabled' : ''}>
+            ${state.busy ? 'Sending…' : 'Send the link'}
+          </button>
+        </form>
+
+        <div class="switch-row">
+          <button class="btn-quiet" data-action="go-login">Back to sign in</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+/** The ?reset=<token> screen. Shown to logged-out and logged-in visitors alike. */
+function viewReset() {
+  const r = state.reset;
+
+  if (r.done) {
+    return `
+      <div class="screen screen--centred">
+        <div class="hero">
+          <div class="hero-mark" aria-hidden="true">&#10003;</div>
+          <h1>Password changed</h1>
+          <p>You can sign in with your new password now.</p>
+        </div>
+        <div class="panel">
+          <button class="btn btn-block" data-action="finish-reset">Sign in</button>
+        </div>
+      </div>`;
+  }
+
+  if (r.checking) {
+    return `
+      <div class="screen screen--centred">
+        <div class="boot"><div class="boot-mark"></div>
+        <p class="boot-text">Checking your link…</p></div>
+      </div>`;
+  }
+
+  if (!r.valid) {
+    return `
+      <div class="screen screen--centred">
+        <div class="hero">
+          <div class="hero-mark" aria-hidden="true">&#9888;</div>
+          <h1>Link no longer works</h1>
+          <p>${esc(r.error || 'That reset link has expired or has already been used.')}</p>
+        </div>
+        <div class="panel">
+          <button class="btn btn-block" data-action="go-forgot">Send a new link</button>
+          <div class="switch-row">
+            <button class="btn-quiet" data-action="finish-reset">Back to sign in</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="screen screen--centred">
+      <div class="hero">
+        <div class="hero-mark" aria-hidden="true">&#10084;</div>
+        <h1>Choose a new password</h1>
+        <p>Hello ${esc(r.displayName)}. Pick something you have not used here before.</p>
+      </div>
+
+      <div class="panel">
+        ${state.error ? `<div class="form-error">${esc(state.error)}</div>` : ''}
+        <form id="reset-form" novalidate>
+          <div class="field">
+            <label for="f-password">New password</label>
+            <input class="input" id="f-password" name="password" type="password"
+                   autocomplete="new-password" placeholder="At least 8 characters" required>
+          </div>
+          <div class="field">
+            <label for="f-confirm">Confirm it</label>
+            <input class="input" id="f-confirm" name="confirm" type="password"
+                   autocomplete="new-password" placeholder="Type it again" required>
+          </div>
+          <button class="btn btn-block" type="submit" ${state.busy ? 'disabled' : ''}>
+            ${state.busy ? 'Saving…' : 'Change my password'}
+          </button>
+        </form>
+        <p class="hint" style="margin-top:0.9rem">
+          This link works once and expires an hour after it was sent. Changing your password
+          signs you out everywhere else.
+        </p>
+      </div>
+    </div>`;
+}
+
 function viewAuth() {
+  if (state.authMode === 'forgot') return viewForgot();
   const isLogin = state.authMode === 'login';
   const f = state.form;
 
@@ -288,6 +415,14 @@ function viewAuth() {
             ${isLogin ? 'Create one' : 'Sign in'}
           </button>
         </div>
+
+        ${
+          isLogin
+            ? `<div class="switch-row" style="margin-top:0.35rem">
+                 <button class="btn-quiet" data-action="go-forgot">Forgotten your password?</button>
+               </div>`
+            : ''
+        }
       </div>
 
       <div class="footer-note">
@@ -601,6 +736,20 @@ function viewAccount() {
           : ''
       }
 
+      ${
+        state.me.isAdmin
+          ? `<h2 class="section-title" style="margin-top:1.5rem">Administration</h2>
+             <div class="rows">
+               <button class="row" data-action="go-admin">
+                 <span class="row-label">Admin
+                   <span class="row-sub">People, couples, questions and settings</span>
+                 </span>
+                 <span class="row-value">&rsaquo;</span>
+               </button>
+             </div>`
+          : ''
+      }
+
       <h2 class="section-title" style="margin-top:1.5rem">App</h2>
       <div class="rows">
         ${
@@ -634,6 +783,366 @@ function viewAccount() {
 }
 
 // ---------------------------------------------------------------------------
+// Admin
+// ---------------------------------------------------------------------------
+
+const ADMIN_TABS = [
+  ['overview', 'Overview'],
+  ['people', 'People'],
+  ['couples', 'Couples'],
+  ['questions', 'Questions'],
+  ['settings', 'Settings'],
+];
+
+function fmtDate(v) {
+  if (!v) return '—';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function statTile(label, value, tint) {
+  return `
+    <div class="stat" ${tint ? `style="--stat-accent:${esc(tint)}"` : ''}>
+      <div class="stat-value">${esc(value)}</div>
+      <div class="stat-label">${esc(label)}</div>
+    </div>`;
+}
+
+function adminOverview() {
+  const d = state.admin.overview;
+  if (!d) return adminLoading();
+  const c = d.counts;
+
+  return `
+    <div class="stat-grid">
+      ${statTile('People', c.users)}
+      ${statTile('Couples', c.couples)}
+      ${statTile('Live questions', c.liveQuestions)}
+      ${statTile('Cards answered', c.decisions)}
+      ${statTile('Discussed', c.completed, '#35B7A6')}
+      ${statTile('Skipped', c.skipped, '#F2A33C')}
+    </div>
+
+    ${
+      !d.email.configured
+        ? `<div class="notice" style="margin-top:1.2rem">
+             <strong>Email is not set up.</strong> Password reset links cannot be sent until it
+             is. You can still generate a link by hand from People.
+             <button class="btn-quiet" data-action="admin-tab" data-tab="settings">Set it up</button>
+           </div>`
+        : ''
+    }
+    ${
+      d.email.unreadable
+        ? `<div class="notice" style="margin-top:1.2rem">
+             <strong>The saved SMTP password cannot be read.</strong> This happens when
+             SECRET_KEY or SESSION_SECRET changed on the server. Retype the password in
+             Settings to fix it.
+           </div>`
+        : ''
+    }
+
+    <h2 class="section-title" style="margin-top:1.6rem">Questions by level</h2>
+    <div class="rows">
+      ${d.perLevel
+        .map(
+          (l) => `
+        <div class="row is-static">
+          <span class="row-label">
+            <span class="lv-dot" style="background:${esc(l.accent)}"></span>${esc(l.name)}
+          </span>
+          <span class="row-value">${l.questions} questions &middot; ${l.decisions} answered</span>
+        </div>`
+        )
+        .join('')}
+    </div>
+
+    <h2 class="section-title" style="margin-top:1.6rem">Newest accounts</h2>
+    <div class="rows">
+      ${
+        d.recentUsers.length
+          ? d.recentUsers
+              .map(
+                (u) => `
+          <div class="row is-static">
+            <span class="row-label">${esc(u.displayName)}
+              ${u.isAdmin ? '<span class="pill">admin</span>' : ''}
+              ${u.isActive ? '' : '<span class="pill pill-off">off</span>'}
+            </span>
+            <span class="row-value">${esc(fmtDate(u.createdAt))}</span>
+          </div>`
+              )
+              .join('')
+          : '<div class="row is-static"><span class="row-value">Nobody yet.</span></div>'
+      }
+    </div>`;
+}
+
+function adminPeople() {
+  const users = state.admin.users;
+  if (!users) return adminLoading();
+
+  return `
+    <form id="admin-user-search" class="field" style="margin-bottom:1rem">
+      <input class="input" name="q" type="search" placeholder="Search name or email"
+             value="${esc(state.admin.userQuery)}">
+    </form>
+
+    ${
+      users.length
+        ? `<div class="rows">
+             ${users
+               .map(
+                 (u) => `
+               <button class="row" data-action="admin-user" data-id="${u.id}">
+                 <span class="row-label">
+                   ${esc(u.displayName)}
+                   ${u.isAdmin ? '<span class="pill">admin</span>' : ''}
+                   ${u.isActive ? '' : '<span class="pill pill-off">deactivated</span>'}
+                   <span class="row-sub">${esc(u.email)}</span>
+                   <span class="row-sub">${
+                     u.coupleId ? esc(u.coupleName || 'In a couple') : 'No couple'
+                   } &middot; joined ${esc(fmtDate(u.createdAt))}</span>
+                 </span>
+                 <span class="row-value">&rsaquo;</span>
+               </button>`
+               )
+               .join('')}
+           </div>`
+        : `<div class="empty-state"><h3>Nobody matches</h3>
+             <p>Try a different search, or clear it to see everyone.</p></div>`
+    }`;
+}
+
+function adminCouples() {
+  const couples = state.admin.couples;
+  if (!couples) return adminLoading();
+  if (!couples.length) {
+    return `<div class="empty-state"><h3>No couples yet</h3>
+      <p>They appear here as soon as somebody creates one.</p></div>`;
+  }
+
+  return `
+    <div class="rows">
+      ${couples
+        .map(
+          (c) => `
+        <div class="row is-static">
+          <span class="row-label">
+            ${esc(c.name || c.memberNames || 'Unnamed couple')}
+            ${c.status === 'dissolved' ? '<span class="pill pill-off">dissolved</span>' : ''}
+            ${c.members < 2 ? '<span class="pill pill-warn">not paired</span>' : ''}
+            <span class="row-sub">${esc(c.memberNames || 'No members')}</span>
+            <span class="row-sub">code ${esc(c.inviteCode)} &middot; created ${esc(
+              fmtDate(c.createdAt)
+            )}</span>
+          </span>
+          <span class="row-value">
+            ${c.completed} discussed<br>
+            <span style="opacity:0.7">${c.skipped} skipped</span><br>
+            <span style="opacity:0.7">${
+              c.lastActivity ? `active ${esc(fmtDate(c.lastActivity))}` : 'no activity'
+            }</span>
+          </span>
+        </div>`
+        )
+        .join('')}
+    </div>`;
+}
+
+function adminQuestions() {
+  const qs = state.admin.questions;
+  if (!qs) return adminLoading();
+
+  const levelOptions = state.levels
+    .map(
+      (l) =>
+        `<option value="${esc(l.slug)}"${
+          state.admin.questionLevel === l.slug ? ' selected' : ''
+        }>${esc(l.name)}</option>`
+    )
+    .join('');
+
+  return `
+    <div class="notice">
+      The <strong>245 curated questions</strong> live in <code>data/catalogue.js</code> and are
+      rewritten by every deploy, so their wording cannot be edited here. You can hide any of
+      them, and questions you write here are yours &mdash; the seeder never touches them.
+    </div>
+
+    <div class="field">
+      <label for="q-level">Level</label>
+      <select class="input" id="q-level" name="level">
+        <option value="">Every level</option>
+        ${levelOptions}
+      </select>
+    </div>
+
+    <button class="btn btn-block btn-ghost" data-action="admin-new-question"
+            style="margin-bottom:1.2rem">Write a new question</button>
+
+    <p class="hint" style="margin-bottom:0.7rem">${qs.length} question${
+    qs.length === 1 ? '' : 's'
+  } shown.</p>
+
+    <div class="rows">
+      ${qs
+        .map(
+          (q) => `
+        <button class="row row-question${q.hidden ? ' is-hidden-q' : ''}"
+                data-action="admin-question" data-id="${q.id}">
+          <span class="row-label">
+            <span class="q-text">${esc(q.text)}</span>
+            <span class="row-sub">
+              ${esc(q.levelName)} &middot; ${esc(q.ref)}
+              ${q.source === 'admin' ? '<span class="pill">yours</span>' : ''}
+              ${q.hidden ? '<span class="pill pill-off">hidden</span>' : ''}
+              &middot; used ${q.timesUsed}&times;
+            </span>
+          </span>
+          <span class="row-value">&rsaquo;</span>
+        </button>`
+        )
+        .join('')}
+    </div>`;
+}
+
+function adminSettings() {
+  const s = state.admin.settings;
+  if (!s) return adminLoading();
+  const v = s.settings;
+  const e = s.email;
+
+  return `
+    <form id="admin-settings-form">
+      <h2 class="section-title">How the decks behave</h2>
+      <div class="panel">
+        <div class="field">
+          <label for="s-cooloff">Skip cool-off (days)</label>
+          <input class="input" id="s-cooloff" name="skip_cooloff_days" type="number"
+                 min="0" max="365" value="${esc(
+                   v.skip_cooloff_days ?? s.defaults.skip_cooloff_days
+                 )}">
+          <p class="hint">How long a skipped question is held back before it can come round
+          again. Set to 0 to bring skipped questions straight back.</p>
+        </div>
+        <div class="field">
+          <label for="s-deck">Cards loaded per deck</label>
+          <input class="input" id="s-deck" name="deck_size" type="number"
+                 min="1" max="200" value="${esc(v.deck_size ?? s.defaults.deck_size)}">
+          <p class="hint">How many cards the app fetches at a time. Rarely needs changing.</p>
+        </div>
+        <div class="field">
+          <label for="s-url">App URL</label>
+          <input class="input" id="s-url" name="app_url" type="url"
+                 placeholder="https://connect.example.com" value="${esc(v.app_url || '')}">
+          <p class="hint">Used to build password reset links in emails. Leave blank to use
+          whatever address the request came in on.</p>
+        </div>
+      </div>
+
+      <h2 class="section-title" style="margin-top:1.6rem">Email (SMTP)</h2>
+      ${
+        e.passwordUnreadable
+          ? `<div class="notice"><strong>The stored password cannot be read.</strong>
+               SECRET_KEY or SESSION_SECRET changed on the server. Type the password again
+               below and save.</div>`
+          : ''
+      }
+      <div class="panel">
+        <div class="field">
+          <label for="s-host">SMTP host</label>
+          <input class="input" id="s-host" name="host" type="text"
+                 placeholder="mail.example.com" value="${esc(e.host)}">
+        </div>
+        <div class="field">
+          <label for="s-port">Port</label>
+          <input class="input" id="s-port" name="port" type="number" value="${esc(e.port)}">
+        </div>
+        <div class="field">
+          <label class="check">
+            <input type="checkbox" name="secure" ${e.secure ? 'checked' : ''}>
+            <span>Use TLS on connect (usually port 465)</span>
+          </label>
+        </div>
+        <div class="field">
+          <label for="s-user">Username</label>
+          <input class="input" id="s-user" name="user" type="text"
+                 autocomplete="off" value="${esc(e.user)}">
+        </div>
+        <div class="field">
+          <label for="s-pass">Password</label>
+          <input class="input" id="s-pass" name="password" type="password" autocomplete="new-password"
+                 placeholder="${e.hasPassword ? 'Stored — leave blank to keep it' : 'Not set'}">
+          <p class="hint">Encrypted at rest and never sent back to the browser. Leaving this
+          blank keeps whatever is already stored.</p>
+        </div>
+        ${
+          e.hasPassword
+            ? `<div class="field">
+                 <label class="check">
+                   <input type="checkbox" name="clearPassword">
+                   <span>Forget the stored password</span>
+                 </label>
+               </div>`
+            : ''
+        }
+        <div class="field">
+          <label for="s-from">From address</label>
+          <input class="input" id="s-from" name="from" type="text"
+                 placeholder="Let's Connect &lt;hello@example.com&gt;" value="${esc(e.from)}">
+        </div>
+      </div>
+
+      <button class="btn btn-block" type="submit" style="margin-top:1.2rem"
+              ${state.busy ? 'disabled' : ''}>
+        ${state.busy ? 'Saving…' : 'Save settings'}
+      </button>
+    </form>
+
+    <button class="btn btn-block btn-ghost" data-action="admin-test-email"
+            style="margin-top:0.6rem">Send a test email to myself</button>`;
+}
+
+function adminLoading() {
+  return '<div class="boot" style="min-height:40vh"><div class="boot-mark"></div></div>';
+}
+
+function viewAdmin() {
+  const tab = state.admin.tab;
+  const body = {
+    overview: adminOverview,
+    people: adminPeople,
+    couples: adminCouples,
+    questions: adminQuestions,
+    settings: adminSettings,
+  }[tab]();
+
+  return `
+    <div class="screen">
+      <div class="topbar">
+        <div class="brand">
+          <button class="icon-btn" data-action="go-account" aria-label="Back">&larr;</button>
+          <span>Admin</span>
+        </div>
+      </div>
+
+      <div class="tabs" role="tablist">
+        ${ADMIN_TABS.map(
+          ([key, label]) => `
+          <button class="tab${key === tab ? ' is-on' : ''}" role="tab"
+                  aria-selected="${key === tab}" data-action="admin-tab" data-tab="${key}">
+            ${esc(label)}
+          </button>`
+        ).join('')}
+      </div>
+
+      <div class="tab-body">${body}</div>
+    </div>`;
+}
+
+// ---------------------------------------------------------------------------
 // render / wire
 // ---------------------------------------------------------------------------
 
@@ -641,8 +1150,14 @@ function render() {
   let html;
   if (!state.ready) {
     html = '<div class="boot"><div class="boot-mark"></div><p class="boot-text">Loading…</p></div>';
+  } else if (state.reset) {
+    // Comes before the login check on purpose: a reset link is nearly always
+    // opened by somebody who cannot get in.
+    html = viewReset();
   } else if (!state.me) {
     html = viewAuth();
+  } else if (state.view === 'admin' && state.me.isAdmin) {
+    html = viewAdmin();
   } else if (!state.couple) {
     html = viewOnboard();
   } else if (state.view === 'deck' && state.deck) {
@@ -675,6 +1190,36 @@ function wire() {
 
   const joinForm = document.getElementById('join-form');
   if (joinForm) joinForm.onsubmit = onJoinCouple;
+
+  const forgotForm = document.getElementById('forgot-form');
+  if (forgotForm) forgotForm.onsubmit = onForgotSubmit;
+
+  const resetForm = document.getElementById('reset-form');
+  if (resetForm) resetForm.onsubmit = onResetSubmit;
+
+  const settingsForm = document.getElementById('admin-settings-form');
+  if (settingsForm) settingsForm.onsubmit = onSaveSettings;
+
+  // Searching re-renders, which would blur the input mid-typing. Debounce, then
+  // put the caret back where it was.
+  const search = document.getElementById('admin-user-search');
+  if (search) {
+    search.onsubmit = (e) => e.preventDefault();
+    const input = search.querySelector('input');
+    input.oninput = () => {
+      state.admin.userQuery = input.value;
+      clearTimeout(window.__userSearchTimer);
+      window.__userSearchTimer = setTimeout(() => loadAdminUsers(true), 250);
+    };
+  }
+
+  const levelSelect = document.getElementById('q-level');
+  if (levelSelect) {
+    levelSelect.onchange = () => {
+      state.admin.questionLevel = levelSelect.value;
+      loadAdminQuestions();
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -690,7 +1235,61 @@ async function handleAction(action, el) {
     case 'switch-auth':
       state.authMode = state.authMode === 'login' ? 'register' : 'login';
       state.error = null;
+      state.notice = null;
       render();
+      break;
+
+    case 'go-forgot':
+      state.reset = null;
+      clearResetFromUrl();
+      state.authMode = 'forgot';
+      state.error = null;
+      state.notice = null;
+      render();
+      break;
+
+    case 'go-login':
+      state.authMode = 'login';
+      state.error = null;
+      state.notice = null;
+      render();
+      break;
+
+    case 'finish-reset':
+      state.reset = null;
+      clearResetFromUrl();
+      state.authMode = 'login';
+      state.error = null;
+      state.notice = null;
+      render();
+      break;
+
+    case 'go-admin':
+      state.view = 'admin';
+      render();
+      loadAdminTab();
+      break;
+
+    case 'admin-tab':
+      state.admin.tab = el.dataset.tab;
+      render();
+      loadAdminTab();
+      break;
+
+    case 'admin-user':
+      await adminUserDialog(Number(el.dataset.id));
+      break;
+
+    case 'admin-question':
+      await adminQuestionDialog(Number(el.dataset.id));
+      break;
+
+    case 'admin-new-question':
+      await adminNewQuestion();
+      break;
+
+    case 'admin-test-email':
+      await adminTestEmail();
       break;
 
     case 'go-account':
@@ -1223,9 +1822,455 @@ async function doInstall() {
   return undefined;
 }
 
+// ---- Password reset -------------------------------------------------------
+
+/**
+ * Strips ?reset=<token> from the address bar.
+ *
+ * Uses replaceState so the token does not sit in history, where it would be
+ * re-triggered by a Back tap and, more to the point, left in the browser's
+ * record of visited URLs long after it stopped being needed.
+ */
+function clearResetFromUrl() {
+  if (!window.location.search.includes('reset=')) return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('reset');
+  window.history.replaceState({}, '', url.pathname + (url.search || '') + url.hash);
+}
+
+async function onForgotSubmit(e) {
+  e.preventDefault();
+  if (state.busy) return;
+
+  const email = e.target.email.value.trim();
+  state.form = { email };
+  state.error = null;
+  state.notice = null;
+  state.busy = true;
+  render();
+
+  try {
+    const res = await api.post('/api/auth/forgot', { email });
+    state.busy = false;
+    // The server deliberately answers the same way whether or not the address
+    // exists, so this message must not imply the account was found.
+    state.notice = res.message || 'If that email has an account, a reset link is on its way.';
+    render();
+  } catch (err) {
+    state.busy = false;
+    state.error = err.message;
+    render();
+  }
+}
+
+async function onResetSubmit(e) {
+  e.preventDefault();
+  if (state.busy) return;
+
+  const password = e.target.password.value;
+  const confirm = e.target.confirm.value;
+
+  if (password.length < 8) {
+    state.error = 'Your password needs at least 8 characters.';
+    return render();
+  }
+  if (password !== confirm) {
+    state.error = 'Those two passwords do not match.';
+    return render();
+  }
+
+  state.error = null;
+  state.busy = true;
+  render();
+
+  try {
+    await api.post('/api/auth/reset', { token: state.reset.token, password });
+    state.busy = false;
+    state.reset = { ...state.reset, done: true };
+    clearResetFromUrl();
+    // The reset ended every session for this account, including this browser's.
+    state.me = null;
+    state.couple = null;
+    render();
+  } catch (err) {
+    state.busy = false;
+    state.error = err.message;
+    render();
+  }
+  return undefined;
+}
+
+// ---- Admin ----------------------------------------------------------------
+
+async function loadAdminTab() {
+  const tab = state.admin.tab;
+  try {
+    if (tab === 'overview' && !state.admin.overview) {
+      state.admin.overview = await api.get('/api/admin/overview');
+      render();
+    } else if (tab === 'people' && !state.admin.users) {
+      await loadAdminUsers();
+    } else if (tab === 'couples' && !state.admin.couples) {
+      const d = await api.get('/api/admin/couples');
+      state.admin.couples = d.couples;
+      render();
+    } else if (tab === 'questions' && !state.admin.questions) {
+      await loadAdminQuestions();
+    } else if (tab === 'settings' && !state.admin.settings) {
+      state.admin.settings = await api.get('/api/admin/settings');
+      render();
+    }
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function loadAdminUsers(keepFocus) {
+  try {
+    const q = encodeURIComponent(state.admin.userQuery || '');
+    const d = await api.get(`/api/admin/users?q=${q}`);
+    state.admin.users = d.users;
+    render();
+    if (keepFocus) {
+      const input = document.querySelector('#admin-user-search input');
+      if (input) {
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      }
+    }
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function loadAdminQuestions() {
+  try {
+    const lv = encodeURIComponent(state.admin.questionLevel || '');
+    const d = await api.get(`/api/admin/questions?level=${lv}`);
+    state.admin.questions = d.questions;
+    render();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function adminUserDialog(id) {
+  const u = (state.admin.users || []).find((x) => x.id === id);
+  if (!u) return;
+  const isMe = state.me.id === u.id;
+
+  const actions = [{ label: 'Close', value: null, className: 'btn-ghost' }];
+  actions.unshift({ label: 'Send reset link', value: 'reset', className: 'btn-ghost' });
+  if (!isMe) {
+    actions.unshift({
+      label: u.isActive ? 'Deactivate' : 'Reactivate',
+      value: 'active',
+      className: u.isActive ? 'btn-ghost danger' : 'btn-ghost',
+    });
+  }
+  actions.unshift({
+    label: u.isAdmin ? 'Remove admin' : 'Make admin',
+    value: 'admin',
+    className: 'btn-ghost',
+  });
+
+  const choice = await dialog({
+    title: u.displayName,
+    bodyHtml: `
+      <p>${esc(u.email)}</p>
+      <p style="margin-top:0.6rem">
+        ${u.isAdmin ? '<strong>Administrator.</strong> ' : ''}
+        ${u.isActive ? '' : '<strong>Deactivated.</strong> '}
+        ${u.coupleId ? `In <strong>${esc(u.coupleName || 'a couple')}</strong>.` : 'Not in a couple.'}
+      </p>
+      <p style="margin-top:0.6rem">Joined ${esc(fmtDate(u.createdAt))} &middot;
+      last signed in ${esc(fmtDate(u.lastLoginAt))}</p>
+      ${
+        isMe
+          ? '<p style="margin-top:0.6rem"><strong>This is you.</strong> You cannot deactivate ' +
+            'your own account. You can step down as admin, but only once somebody else is ' +
+            'an admin.</p>'
+          : ''
+      }`,
+    actions,
+  });
+
+  if (!choice) return;
+
+  try {
+    if (choice === 'admin' || choice === 'active') {
+      const patch =
+        choice === 'admin' ? { isAdmin: !u.isAdmin } : { isActive: !u.isActive };
+
+      if (choice === 'active' && u.isActive) {
+        const yes = await uiConfirm(
+          `Deactivate ${esc(u.displayName)}?`,
+          'They will be signed out immediately and will not be able to sign back in. ' +
+            'Their couple and its progress are untouched, and you can reactivate them later.',
+          'Deactivate',
+          true
+        );
+        if (!yes) return;
+      }
+
+      const res = await api.patch(`/api/admin/users/${u.id}`, patch);
+      Object.assign(u, res.user);
+      state.admin.overview = null; // counts have moved
+      render();
+      toast('Saved.');
+    } else if (choice === 'reset') {
+      const res = await api.post(`/api/admin/users/${u.id}/reset-link`);
+      const pick = await dialog({
+        title: 'Reset link created',
+        bodyHtml: `
+          <p>${
+            res.emailed
+              ? `Emailed to <strong>${esc(u.email)}</strong>.`
+              : `<strong>Not emailed</strong> &mdash; ${esc(
+                  res.emailError || 'email is not set up'
+                )}. Send them this link yourself.`
+          }</p>
+          <div class="code-display" style="word-break:break-all">
+            <span class="code-label">One-time link</span>
+            <span style="font-size:0.82rem">${esc(res.link)}</span>
+          </div>
+          <p>It works once and expires in ${esc(res.expiresInMinutes)} minutes. Any earlier
+          link for this account has just stopped working.</p>`,
+        actions: [
+          { label: 'Copy link', value: 'copy', className: 'btn-ghost' },
+          { label: 'Done', value: 'ok', className: 'btn' },
+        ],
+      });
+      if (pick === 'copy') copyText(res.link);
+    }
+  } catch (err) {
+    uiAlert('Could not do that', err.message);
+  }
+}
+
+async function adminQuestionDialog(id) {
+  const q = (state.admin.questions || []).find((x) => x.id === id);
+  if (!q) return;
+
+  const actions = [{ label: 'Close', value: null, className: 'btn-ghost' }];
+  actions.unshift({
+    label: q.hidden ? 'Show it again' : 'Hide it',
+    value: 'hide',
+    className: q.hidden ? 'btn-ghost' : 'btn-ghost danger',
+  });
+  if (q.source === 'admin') {
+    actions.unshift({ label: 'Edit wording', value: 'edit', className: 'btn-ghost' });
+  }
+
+  const choice = await dialog({
+    title: q.levelName,
+    bodyHtml: `
+      <p style="font-size:1.05rem;color:var(--text)">${esc(q.text)}</p>
+      <p style="margin-top:0.8rem">
+        ${esc(q.ref)} &middot;
+        ${
+          q.source === 'admin'
+            ? 'written here'
+            : 'curated &mdash; wording lives in data/catalogue.js'
+        }
+        &middot; answered ${q.timesUsed} time${q.timesUsed === 1 ? '' : 's'}
+      </p>
+      ${
+        q.hidden
+          ? '<p style="margin-top:0.6rem"><strong>Hidden.</strong> It is not being served ' +
+            'to anyone.</p>'
+          : ''
+      }`,
+    actions,
+  });
+
+  if (!choice) return;
+
+  try {
+    if (choice === 'hide') {
+      const res = await api.patch(`/api/admin/questions/${q.id}`, { hidden: !q.hidden });
+      Object.assign(q, res.question);
+      state.admin.overview = null;
+      render();
+      toast(res.question.hidden ? 'Hidden.' : 'Back in the deck.');
+    } else if (choice === 'edit') {
+      const text = await promptDialog({
+        title: 'Edit question',
+        label: 'Question',
+        value: q.text,
+        confirmLabel: 'Save',
+      });
+      if (!text || text === q.text) return;
+      const res = await api.patch(`/api/admin/questions/${q.id}`, { text });
+      Object.assign(q, res.question);
+      render();
+      toast('Saved.');
+    }
+  } catch (err) {
+    uiAlert('Could not do that', err.message);
+  }
+}
+
+async function adminNewQuestion() {
+  const levels = state.levels.length
+    ? state.levels
+    : (state.admin.questions || []).reduce((acc, q) => {
+        if (!acc.some((l) => l.slug === q.levelSlug)) {
+          acc.push({ slug: q.levelSlug, name: q.levelName });
+        }
+        return acc;
+      }, []);
+
+  if (!levels.length) return uiAlert('No levels', 'The question catalogue has not loaded.');
+
+  const slug =
+    state.admin.questionLevel ||
+    (await pickDialog(
+      'Which level?',
+      levels.map((l) => ({ label: l.name, value: l.slug }))
+    ));
+  if (!slug) return undefined;
+
+  const text = await promptDialog({
+    title: 'New question',
+    message: `It will be added to <strong>${esc(
+      (levels.find((l) => l.slug === slug) || {}).name || slug
+    )}</strong> and served to couples straight away.`,
+    label: 'Question',
+    placeholder: 'What would you like to ask?',
+    confirmLabel: 'Add it',
+  });
+  if (!text) return undefined;
+
+  try {
+    await api.post('/api/admin/questions', { text, level: slug });
+    state.admin.questions = null;
+    state.admin.overview = null;
+    await loadAdminQuestions();
+    toast('Question added.');
+  } catch (err) {
+    uiAlert('Could not add it', err.message);
+  }
+  return undefined;
+}
+
+/** A dialog that asks the user to choose one of a list. */
+function pickDialog(title, options) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.innerHTML = `
+      <div class="dialog" role="dialog" aria-modal="true">
+        <h3>${esc(title)}</h3>
+        <div class="rows" style="margin-bottom:1rem">
+          ${options
+            .map(
+              (o) =>
+                `<button class="row" data-v="${esc(o.value)}">
+                   <span class="row-label">${esc(o.label)}</span>
+                   <span class="row-value">&rsaquo;</span>
+                 </button>`
+            )
+            .join('')}
+        </div>
+        <div class="dialog-actions">
+          <button class="btn btn-ghost" data-cancel>Cancel</button>
+        </div>
+      </div>`;
+
+    const close = (v) => {
+      overlay.remove();
+      document.removeEventListener('keydown', onKey);
+      resolve(v);
+    };
+    function onKey(e) {
+      if (e.key === 'Escape') close(null);
+    }
+    overlay.onclick = (e) => {
+      if (e.target === overlay) close(null);
+    };
+    overlay.querySelectorAll('[data-v]').forEach((b) => {
+      b.onclick = () => close(b.dataset.v);
+    });
+    overlay.querySelector('[data-cancel]').onclick = () => close(null);
+    document.addEventListener('keydown', onKey);
+    document.body.appendChild(overlay);
+  });
+}
+
+async function onSaveSettings(e) {
+  e.preventDefault();
+  if (state.busy) return;
+  const f = e.target;
+
+  state.busy = true;
+  render();
+
+  try {
+    await api.call('PUT', '/api/admin/settings', {
+      skip_cooloff_days: f.skip_cooloff_days.value,
+      deck_size: f.deck_size.value,
+      app_url: f.app_url.value,
+      email: {
+        host: f.host.value,
+        port: f.port.value,
+        secure: f.secure.checked,
+        user: f.user.value,
+        from: f.from.value,
+        // Blank means "keep what is stored" - the server treats it that way too.
+        password: f.password.value,
+        // Only rendered once something IS stored, so guard the lookup.
+        clearPassword: f.clearPassword ? f.clearPassword.checked : false,
+      },
+    });
+    state.busy = false;
+    state.admin.settings = await api.get('/api/admin/settings');
+    render();
+    toast('Settings saved.');
+  } catch (err) {
+    state.busy = false;
+    render();
+    uiAlert('Could not save', err.message);
+  }
+}
+
+async function adminTestEmail() {
+  try {
+    const res = await api.post('/api/admin/email/test', {});
+    uiAlert('Sent', `A test email is on its way to ${res.to}.`);
+  } catch (err) {
+    uiAlert('Could not send', err.message);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
+
+/**
+ * Picks up a reset link before anything else.
+ *
+ * Validated against the server up front so an expired token shows "this link
+ * no longer works" rather than a password form that fails only after the user
+ * has typed one in twice.
+ */
+async function checkResetLink() {
+  const token = new URLSearchParams(window.location.search).get('reset');
+  if (!token) return false;
+
+  state.reset = { token, checking: true, valid: false };
+  state.ready = true;
+  render();
+
+  try {
+    const res = await api.get(`/api/auth/reset/${encodeURIComponent(token)}`);
+    state.reset = { token, checking: false, valid: true, displayName: res.displayName };
+  } catch (err) {
+    state.reset = { token, checking: false, valid: false, error: err.message };
+  }
+  render();
+  return true;
+}
 
 async function loadData() {
   try {
@@ -1269,4 +2314,9 @@ document.addEventListener('visibilitychange', () => {
 });
 
 render();
-loadData();
+
+// A reset link short-circuits the normal boot: there is no point loading a
+// logged-out user's data behind a screen they cannot use yet.
+checkResetLink().then((handlingReset) => {
+  if (!handlingReset) loadData();
+});

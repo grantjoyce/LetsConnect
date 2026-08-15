@@ -29,6 +29,13 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 
 const MIGRATIONS = [
+  // Separates file-managed catalogue questions from admin-authored ones. MUST
+  // run before the seeder, which reads `source` to decide what it may retire.
+  'migrate-add-question-source',
+
+  // Reset tokens, plus sessions.user_id so a reset can end existing sessions.
+  'migrate-add-password-resets',
+
   // Keeps levels + questions in step with data/catalogue.js. Runs on every
   // deploy so new questions ship with a `migrate` and nothing else.
   'migrate-seed-catalogue',
