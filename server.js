@@ -1022,10 +1022,52 @@ app.post(
 // ---- The deck -------------------------------------------------------------
 
 /**
- * The next batch of cards for a domain, optionally narrowed to one depth.
+ * Parses a selection: which topics and which depths.
+ *
+ * Both are sets, because the couple chooses any number of each up front and
+ * then plays a single shuffled deck drawn from all of it. An empty list means
+ * "all", so a request with no selection still returns a usable deck rather
+ * than an empty screen.
+ */
+function parseSelection(req, domainRows) {
+  const bySlug = new Map(domainRows.map((d) => [d.slug, d]));
+
+  const wantedSlugs = String(req.query.domains || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const chosen = wantedSlugs.length
+    ? wantedSlugs.filter((s) => bySlug.has(s))
+    : domainRows.map((d) => d.slug);
+
+  const depths = [
+    ...new Set(
+      String(req.query.depths || '')
+        .split(',')
+        .map((d) => Number(d.trim()))
+        .filter((d) => Number.isInteger(d) && d >= 1 && d <= 5)
+    ),
+  ].sort();
+
+  return {
+    slugs: chosen,
+    ids: chosen.map((s) => bySlug.get(s).id),
+    depths: depths.length ? depths : [1, 2, 3, 4, 5],
+    unknown: wantedSlugs.filter((s) => !bySlug.has(s)),
+  };
+}
+
+/**
+ * A shuffled deck drawn from everything the couple selected.
+ *
+ * ONE deck across all chosen topics, not one deck per topic. The couple picks
+ * topics and depths on a single screen, presses start, and gets cards at
+ * random from the whole selection - so a session can legitimately move between
+ * Money and Desire card to card, which is the point.
  *
  * Ordering is a deterministic shuffle on the couple's own seed: stable across
- * sessions, identical for both partners, but different for every couple.
+ * sessions, identical for both partners, different for every couple.
  *
  * Volatile questions are excluded unless BOTH partners have unlocked them.
  * That check is done here rather than trusted from the client, because a
@@ -1033,26 +1075,15 @@ app.post(
  * tampered request away from appearing unannounced.
  */
 app.get(
-  '/api/deck/:slug',
+  '/api/deck',
   requireAuth,
   requireCouple,
   wrap(async (req, res) => {
-    const domain = await queryOne(
-      'SELECT id, slug, name, tagline, description, accent FROM domains WHERE slug = ? AND is_active = 1',
-      [req.params.slug]
+    const domainRows = await query(
+      'SELECT id, slug, name, accent FROM domains WHERE is_active = 1 ORDER BY sort_order'
     );
-    if (!domain) return fail(res, 404, 'That set does not exist.');
-
-    // `depths` is a comma-separated set, because depth is a filter the couple
-    // toggles rather than a single choice: "everything except the deepest" is
-    // a normal thing to want. An empty or absent list means all five - a deck
-    // with no depths selected would be an empty screen for no good reason.
-    const depths = String(req.query.depths || '')
-      .split(',')
-      .map((d) => Number(d.trim()))
-      .filter((d) => Number.isInteger(d) && d >= 1 && d <= 5);
-    const uniqueDepths = [...new Set(depths)].sort();
-    const depthFilter = uniqueDepths.length && uniqueDepths.length < 5 ? uniqueDepths : null;
+    const sel = parseSelection(req, domainRows);
+    if (!sel.ids.length) return fail(res, 400, 'Choose at least one topic.');
 
     const cooloff = await getIntSetting('skip_cooloff_days');
     const deckSize = await getIntSetting('deck_size');
@@ -1061,14 +1092,17 @@ app.get(
 
     const select = (withCooloff) => `
       SELECT q.id, q.ref, q.text, q.context, q.depth, q.is_volatile,
+             d.slug AS domain_slug, d.name AS domain_name, d.accent AS domain_accent,
              q.chain_id, q.chain_position, ch.name AS chain_name, ch.total AS chain_total,
              s.status AS prior_status
         FROM questions q
+        JOIN domains d ON d.id = q.domain_id
         LEFT JOIN chains ch ON ch.id = q.chain_id
         LEFT JOIN couple_question_status s
           ON s.question_id = q.id AND s.couple_id = ?
-       WHERE q.domain_id = ? AND ${servableWhere(allowVolatile)}
-         ${depthFilter ? `AND q.depth IN (${depthFilter.join(',')})` : ''}
+       WHERE q.domain_id IN (${sel.ids.join(',')})
+         AND q.depth IN (${sel.depths.join(',')})
+         AND ${servableWhere(allowVolatile)}
          AND (s.id IS NULL${
            withCooloff
              ? ` OR (s.status = 'skipped' AND s.decided_at < DATE_SUB(NOW(), INTERVAL ${cooloff} DAY))`
@@ -1077,25 +1111,24 @@ app.get(
        ORDER BY MD5(CONCAT(q.id, ':', ?))
        LIMIT ${deckSize}`;
 
-    let cards = await query(select(true), [req.couple.id, domain.id, seed]);
+    let cards = await query(select(true), [req.couple.id, seed]);
 
     // If the cool-off is the only thing standing between the couple and an
     // empty deck, release the skipped questions early. A deck must never
     // dead-end while unanswered cards sit waiting on a timer.
     let releasedEarly = false;
     if (!cards.length) {
-      cards = await query(select(false), [req.couple.id, domain.id, seed]);
+      cards = await query(select(false), [req.couple.id, seed]);
       releasedEarly = cards.length > 0;
     }
 
+    // Totals across the whole selection, so the header counts what is actually
+    // in play rather than any one topic.
     const all = await domainsWithProgress(req.couple.id);
-    const domainStats = all.find((d) => d.slug === domain.slug);
-
-    // Stats cover only the selected depths, so the header counts what the
-    // couple is actually being served rather than the whole subject.
-    const selected = depthFilter || [1, 2, 3, 4, 5];
-    const stats = (domainStats ? domainStats.depths : [])
-      .filter((x) => selected.includes(x.depth))
+    const stats = all
+      .filter((d) => sel.slugs.includes(d.slug))
+      .flatMap((d) => d.depths)
+      .filter((x) => sel.depths.includes(x.depth))
       .reduce(
         (acc, x) => ({
           total: acc.total + x.total,
@@ -1108,18 +1141,11 @@ app.get(
       );
 
     res.json({
-      domain: {
-        slug: domain.slug,
-        name: domain.name,
-        tagline: domain.tagline,
-        description: domain.description,
-        accent: domain.accent,
+      selection: {
+        domains: sel.slugs,
+        depths: sel.depths,
+        names: domainRows.filter((d) => sel.slugs.includes(d.slug)).map((d) => d.name),
       },
-      // Which depths are switched on, and what each one holds. Two different
-      // things, so two names - an earlier version called both "depths" and the
-      // second silently overwrote the first.
-      selectedDepths: uniqueDepths.length ? uniqueDepths : [1, 2, 3, 4, 5],
-      depthCounts: domainStats ? domainStats.depths : [],
       stats,
       releasedEarly,
       cards: cards.map((c) => ({
@@ -1132,6 +1158,9 @@ app.get(
         context: c.context,
         depth: c.depth,
         volatile: !!c.is_volatile,
+        domainSlug: c.domain_slug,
+        domainName: c.domain_name,
+        accent: c.domain_accent,
         chain: c.chain_id
           ? { id: c.chain_id, name: c.chain_name, position: c.chain_position, total: c.chain_total }
           : null,
@@ -1335,32 +1364,35 @@ app.post(
 );
 
 /**
- * Clear this couple's progress for one domain, optionally just one depth.
+ * Clear this couple's progress across the current selection.
  *
- * Reports what it removed rather than just "ok", so the UI can confirm against
- * a real number instead of an assumption.
+ * Scoped to the selection rather than to one topic, because that is the unit
+ * the couple is actually playing. Reports what it removed rather than just
+ * "ok", so the UI can confirm against a real number instead of an assumption.
  */
 app.post(
-  '/api/deck/:slug/reset',
+  '/api/deck/reset',
   requireAuth,
   requireCouple,
   wrap(async (req, res) => {
-    const domain = await queryOne('SELECT id, slug FROM domains WHERE slug = ?', [req.params.slug]);
-    if (!domain) return fail(res, 404, 'That set does not exist.');
-
-    const depth = req.body.depth ? Number(req.body.depth) : null;
-    if (depth !== null && (!Number.isInteger(depth) || depth < 1 || depth > 5)) {
-      return fail(res, 400, 'Depth must be between 1 and 5.');
-    }
+    const domainRows = await query('SELECT id, slug FROM domains WHERE is_active = 1');
+    // The selection arrives in the body here, so reuse the parser by handing it
+    // a query-shaped object rather than duplicating the parsing.
+    const sel = parseSelection(
+      { query: { domains: (req.body.domains || []).join(','), depths: (req.body.depths || []).join(',') } },
+      domainRows
+    );
+    if (!sel.ids.length) return fail(res, 400, 'Choose at least one topic.');
 
     const scope = req.body.scope === 'skipped' ? 'skipped' : 'all';
     const result = await query(
       `DELETE s FROM couple_question_status s
          JOIN questions q ON q.id = s.question_id
-        WHERE s.couple_id = ? AND q.domain_id = ?
-          ${depth !== null ? `AND q.depth = ${depth}` : ''}
+        WHERE s.couple_id = ?
+          AND q.domain_id IN (${sel.ids.join(',')})
+          AND q.depth IN (${sel.depths.join(',')})
           ${scope === 'skipped' ? "AND s.status = 'skipped'" : ''}`,
-      [req.couple.id, domain.id]
+      [req.couple.id]
     );
     const domains = await domainsWithProgress(req.couple.id);
 

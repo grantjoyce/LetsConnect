@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.3.1';
+const APP_VERSION = '1.4.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -34,7 +34,12 @@ const state = {
   // depth of its own; each domain reports what it holds at each depth, so the
   // picker can grey out a depth that has nothing in it.
   domains: [],
-  domain: null, // the domain being browsed, before a depth is chosen
+
+  // What the couple has ticked on the start screen. Both are chosen BEFORE
+  // play, and the deck is one shuffled pile drawn from all of it - not one
+  // deck per topic. Null means "not chosen yet", which resolves to everything.
+  selection: { domains: null, depths: null },
+
   chains: null,
   chain: null, // { chain, cards, position } while running a sequence
   volatile: null, // { unlocked, mine, waitingOnPartner, available }
@@ -521,55 +526,86 @@ const DEPTHS = [
   { n: 5, name: 'Rupture', blurb: 'Damage that cannot be taken back. Only when you both mean it.' },
 ];
 
-function domainCard(d) {
-  const pct = d.total ? Math.round((d.completed / d.total) * 100) : 0;
-  const nothingLeft = d.ready === 0;
-  const deepest = d.depths.length ? Math.max(...d.depths.map((x) => x.depth)) : 0;
+/** Selected topics, defaulting to all of them. */
+function selectedDomains() {
+  if (state.selection.domains) return state.selection.domains;
+  return state.domains.map((d) => d.slug);
+}
 
-  // Dots show the range of exposure this SUBJECT reaches, which is a property
-  // of its questions rather than of the subject itself. "What Matters" holding
-  // only D1 is worth seeing before you open it.
-  const dots = [1, 2, 3, 4, 5]
-    .map((n) => {
-      const has = d.depths.some((x) => x.depth === n && x.total > 0);
-      return `<span class="dot${has ? ' on' : ''}"></span>`;
-    })
-    .join('');
+/** Selected depths, defaulting to all five. */
+function selectedDepths() {
+  return state.selection.depths || [1, 2, 3, 4, 5];
+}
+
+/**
+ * How many questions the current selection would actually serve.
+ *
+ * Counted from the per-depth breakdown rather than the domain totals, because
+ * the depth ticks cut across every chosen topic.
+ */
+function selectionReady() {
+  const doms = new Set(selectedDomains());
+  const deps = new Set(selectedDepths());
+  return state.domains
+    .filter((d) => doms.has(d.slug))
+    .flatMap((d) => d.depths)
+    .filter((x) => deps.has(x.depth))
+    .reduce((n, x) => n + x.ready, 0);
+}
+
+function domainCard(d) {
+  const on = selectedDomains().includes(d.slug);
+  const deps = new Set(selectedDepths());
+
+  // The count shown is what THIS topic contributes at the currently ticked
+  // depths, so unticking D5 visibly changes every card rather than only the
+  // total at the bottom.
+  const ready = d.depths.filter((x) => deps.has(x.depth)).reduce((n, x) => n + x.ready, 0);
+  const total = d.depths.filter((x) => deps.has(x.depth)).reduce((n, x) => n + x.total, 0);
 
   return `
-    <button class="level-card${nothingLeft ? ' is-empty' : ''}"
+    <button class="topic-card${on ? ' is-on' : ''}${total === 0 ? ' is-empty' : ''}"
             style="${accentVars(d.accent)}"
-            data-action="open-domain" data-slug="${esc(d.slug)}">
-      <div class="level-head">
-        <span class="level-name">${esc(d.name)}</span>
-        <span class="level-count">${nothingLeft ? 'all done' : `${d.ready} ready`}</span>
-      </div>
-      <div class="level-tagline">${esc(d.tagline || '')}</div>
-      <div class="depth-dots">${dots}<span class="depth-label">
-        ${deepest ? `to depth ${deepest}` : 'empty'}
-      </span></div>
-      <div class="progress"><span style="width:${pct}%"></span></div>
-      <div class="level-meta">
-        <span>${d.completed} of ${d.total} discussed</span>
-        ${d.skipped ? `<span>${d.skipped} skipped</span>` : ''}
-      </div>
+            role="checkbox" aria-checked="${on}"
+            data-action="toggle-domain" data-slug="${esc(d.slug)}">
+      <span class="topic-tick" aria-hidden="true">${on ? '&#10003;' : ''}</span>
+      <span class="topic-main">
+        <span class="topic-name">${esc(d.name)}</span>
+        <span class="topic-tagline">${esc(d.tagline || '')}</span>
+      </span>
+      <span class="topic-count">${
+        total === 0 ? 'none at these depths' : ready === 0 ? 'all done' : `${ready}`
+      }</span>
     </button>`;
 }
 
-function viewDomains() {
+/**
+ * The start screen. Both axes are chosen here, then Start deals one shuffled
+ * deck from everything ticked.
+ *
+ * Depth is picked BEFORE a topic, not inside one. Narrowing depth after
+ * committing to a single topic was the wrong shape entirely: it made "one
+ * topic at a time" the only option and turned depth into a filter on a deck
+ * already in progress, when it is really half of what you are choosing.
+ */
+function viewSelection() {
   const c = state.couple;
   const partner = c.members.find((m) => m.id !== state.me.id);
   const solo = !partner;
 
-  const totalDone = state.domains.reduce((n, d) => n + d.completed, 0);
-  const totalAll = state.domains.reduce((n, d) => n + d.total, 0);
+  const doms = selectedDomains();
+  const deps = selectedDepths();
+  const ready = selectionReady();
   const chainCount = state.chains ? state.chains.length : null;
 
+  const totalDone = state.domains.reduce((n, d) => n + d.completed, 0);
+  const totalAll = state.domains.reduce((n, d) => n + d.total, 0);
+
   return `
-    <div class="screen">
+    <div class="screen has-start-bar">
       ${topbar(true)}
 
-      <div class="hero" style="text-align:left;margin-bottom:1.4rem">
+      <div class="hero" style="text-align:left;margin-bottom:1.2rem">
         <h1 style="font-size:1.7rem">${esc(c.name || 'Tonight')}</h1>
         <p style="margin:0.35rem 0 0;max-width:none">
           ${
@@ -589,14 +625,34 @@ function viewDomains() {
           : ''
       }
 
-      <button class="btn btn-block btn-ghost" data-action="open-chains" style="margin-bottom:1.4rem">
-        Guided sequences${chainCount ? ` · ${chainCount}` : ''}
-      </button>
+      <h2 class="section-title">How deep tonight?</h2>
+      <div class="depth-filter depth-filter--page" role="group" aria-label="Depth">
+        ${DEPTHS.map((depth) => {
+          const on = deps.includes(depth.n);
+          return `
+            <button class="depth-chip${on ? ' is-on' : ''}"
+                    data-action="toggle-depth" data-depth="${depth.n}"
+                    role="checkbox" aria-checked="${on}"
+                    title="${esc(depth.name)} — ${esc(depth.blurb)}">
+              D${depth.n}
+              <span class="depth-chip-n">${esc(depth.name)}</span>
+            </button>`;
+        }).join('')}
+      </div>
 
-      <h2 class="section-title">What would you like to talk about?</h2>
-      <div class="level-list">
+      <h2 class="section-title" style="margin-top:1.5rem">
+        What would you like to talk about?
+        <button class="btn-quiet" data-action="toggle-all-domains" style="float:right">
+          ${doms.length === state.domains.length ? 'Clear all' : 'Select all'}
+        </button>
+      </h2>
+      <div class="topic-list">
         ${state.domains.map(domainCard).join('')}
       </div>
+
+      <button class="btn btn-block btn-ghost" data-action="open-chains" style="margin-top:1.2rem">
+        Or run a guided sequence${chainCount ? ` · ${chainCount}` : ''}
+      </button>
 
       <div class="footer-note">
         <span class="version-badge${
@@ -607,67 +663,18 @@ function viewDomains() {
       : ''
   }</span>
       </div>
-    </div>`;
-}
+    </div>
 
-/**
- * Depth picker for the chosen subject.
- *
- * The second half of the two-axis choice: you have said what to talk about,
- * now say how exposing you want it. Depths with nothing in them are shown but
- * disabled rather than hidden, so the shape of the subject is visible - it is
- * useful to see that Home holds almost nothing above D3.
- */
-function viewDepthPicker() {
-  const d = state.domain;
-  if (!d) return viewDomains();
-
-  return `
-    <div class="screen" style="${accentVars(d.accent)}">
-      <div class="topbar">
-        <div class="brand">
-          <button class="icon-btn" data-action="go-domains" aria-label="Back">&larr;</button>
-          <span>${esc(d.name)}</span>
-        </div>
-      </div>
-
-      <div class="hero" style="text-align:left;margin-bottom:1.2rem">
-        <h1 style="font-size:1.6rem">${esc(d.name)}</h1>
-        <p style="margin:0.35rem 0 0;max-width:none">${esc(d.description || d.tagline || '')}</p>
-      </div>
-
-      <h2 class="section-title">How deep tonight?</h2>
-      <div class="level-list">
-        ${DEPTHS.map((depth) => {
-          const stat = d.depths.find((x) => x.depth === depth.n);
-          const ready = stat ? stat.ready : 0;
-          const total = stat ? stat.total : 0;
-          const empty = total === 0;
-          return `
-            <button class="level-card${empty || ready === 0 ? ' is-empty' : ''}"
-                    style="${accentVars(d.accent)}"
-                    ${empty ? 'disabled' : ''}
-                    data-action="open-deck" data-slug="${esc(d.slug)}" data-depth="${depth.n}">
-              <div class="level-head">
-                <span class="level-name">${depth.n}. ${esc(depth.name)}</span>
-                <span class="level-count">${
-                  empty ? 'none here' : ready === 0 ? 'all done' : `${ready} ready`
-                }</span>
-              </div>
-              <div class="level-tagline">${esc(depth.blurb)}</div>
-              ${
-                total
-                  ? `<div class="level-meta"><span>${stat.completed} of ${total} discussed</span>
-                     ${stat.skipped ? `<span>${stat.skipped} skipped</span>` : ''}</div>`
-                  : ''
-              }
-            </button>`;
-        }).join('')}
-      </div>
-
-      <button class="btn btn-block btn-ghost" data-action="open-deck"
-              data-slug="${esc(d.slug)}" style="margin-top:1rem">
-        Any depth — mix them
+    <div class="start-bar">
+      <button class="btn btn-block" data-action="start"
+              ${doms.length === 0 || ready === 0 || state.busy ? 'disabled' : ''}>
+        ${
+          doms.length === 0
+            ? 'Choose a topic'
+            : ready === 0
+              ? 'Nothing left in this selection'
+              : `Start &middot; ${plural(ready, 'question', 'questions')}`
+        }
       </button>
     </div>`;
 }
@@ -728,43 +735,8 @@ function viewChains() {
     </div>`;
 }
 
-/**
- * D1-D5 as toggles, above the card.
- *
- * Multi-select rather than a single choice, because "everything except the
- * deepest" is a normal thing to want on a weeknight. Unticking is the way you
- * exclude a depth; the last remaining one cannot be unticked, since a deck
- * with nothing selected is just an empty screen.
- */
-function depthFilterBar() {
-  const d = state.deck;
-  const on = d.selectedDepths || [1, 2, 3, 4, 5];
-  const counts = d.depthCounts || [];
-  const onlyOne = on.length === 1;
-
-  return `
-    <div class="depth-filter" role="group" aria-label="Depth">
-      ${DEPTHS.map((depth) => {
-        const stat = counts.find((x) => x.depth === depth.n);
-        const has = stat && stat.total > 0;
-        const active = on.includes(depth.n);
-        return `
-          <button class="depth-chip${active ? ' is-on' : ''}"
-                  data-action="toggle-depth" data-depth="${depth.n}"
-                  aria-pressed="${active}"
-                  title="${esc(depth.name)} — ${esc(depth.blurb)}"
-                  ${!has ? 'disabled' : ''}
-                  ${active && onlyOne ? 'data-last="1"' : ''}>
-            D${depth.n}
-            <span class="depth-chip-n">${stat ? stat.ready : 0}</span>
-          </button>`;
-      }).join('')}
-    </div>`;
-}
-
 function viewDeck() {
   const d = state.deck;
-  const lv = d.domain;
   const card = d.cards[d.index];
   const doneInDeck = d.index;
   const stats = d.stats || { completed: 0, total: 0, skipped: 0, available: 0 };
@@ -772,14 +744,18 @@ function viewDeck() {
   if (!card) return deckFinished();
 
   const inChain = !!d.chain;
-  const depthName = (DEPTHS.find((x) => x.n === card.depth) || {}).name || '';
+  const depth = DEPTHS.find((x) => x.n === card.depth) || { n: card.depth, name: '' };
+
+  // Each card carries its own topic colour, so a mixed selection is visibly
+  // moving between subjects rather than looking like one flat pile.
+  const accent = card.accent || (d.chain && d.chain.accent) || '#D8327C';
 
   return `
-    <div class="deck" style="${accentVars(lv.accent)}">
+    <div class="deck" style="${accentVars(accent)}">
       <div class="deck-bar">
         <button class="icon-btn" data-action="close-deck" aria-label="Back">&times;</button>
         <div class="deck-titles">
-          <div class="deck-level">${esc(inChain ? d.chain.name : lv.name)}</div>
+          <div class="deck-level">${esc(inChain ? d.chain.name : card.domainName || '')}</div>
           <div class="deck-progress-text">
             ${
               inChain
@@ -793,32 +769,36 @@ function viewDeck() {
         <button class="icon-btn" data-action="deck-menu" aria-label="Options">&hellip;</button>
       </div>
 
-      ${inChain ? '' : depthFilterBar()}
-
       <div class="deck-body">
         <div class="qcard entering" id="qcard">
-          <div class="qcard-eyebrow">
-            ${esc(inChain ? `${lv.name} · ${d.chain.name}` : lv.name)}
-            <span style="opacity:0.6">· ${card.depth}. ${esc(depthName)}</span>
+          <div class="qcard-top">
+            <span class="depth-badge">D${depth.n}${depth.name ? ` · ${esc(depth.name)}` : ''}</span>
             ${card.volatile ? '<span class="pill pill-warn">handle with care</span>' : ''}
           </div>
-          <div class="qtext">${esc(card.text)}</div>
 
-          ${
-            card.seenBefore
-              ? '<div class="qcard-note">You skipped this one before — it has come back around.</div>'
-              : ''
-          }
-
-          ${
-            card.context
-              ? state.revealed
+          <div class="qcard-middle">
+            <div class="qtext">${esc(card.text)}</div>
+            ${
+              card.seenBefore
+                ? '<div class="qcard-note">You skipped this one before — it has come back around.</div>'
+                : ''
+            }
+            ${
+              state.revealed && card.context
                 ? `<div class="qcard-context">${esc(card.context)}</div>`
-                : `<button class="qcard-help" data-action="reveal-context">
-                     <span aria-hidden="true">?</span> What does this mean
+                : ''
+            }
+          </div>
+
+          <div class="qcard-bottom">
+            ${
+              card.context && !state.revealed
+                ? `<button class="qcard-expand" data-action="reveal-context">
+                     <span aria-hidden="true">+</span> Expand
                    </button>`
-              : ''
-          }
+                : ''
+            }
+          </div>
         </div>
       </div>
 
@@ -833,16 +813,17 @@ function viewDeck() {
 
 function deckFinished() {
   const d = state.deck;
-  const lv = d.domain;
   const s = d.stats || { completed: 0, total: 0, skipped: 0 };
   const allDone = s.completed >= s.total && s.total > 0;
+  const inChain = !!d.chain;
+  const where = inChain ? d.chain.name : d.selection ? d.selection.names.join(', ') : 'this selection';
 
   return `
-    <div class="deck" style="${accentVars(lv.accent)}">
+    <div class="deck" style="${accentVars((d.chain && d.chain.accent) || '#D8327C')}">
       <div class="deck-bar">
-        <button class="icon-btn" data-action="close-deck" aria-label="Back to the decks">&times;</button>
+        <button class="icon-btn" data-action="close-deck" aria-label="Back">&times;</button>
         <div class="deck-titles">
-          <div class="deck-level">${esc(lv.name)}</div>
+          <div class="deck-level">${esc(where)}</div>
           <div class="deck-progress-text">${esc(s.completed)} of ${esc(s.total)} discussed</div>
         </div>
         <span style="width:38px"></span>
@@ -851,31 +832,41 @@ function deckFinished() {
       <div class="deck-body">
         <div class="deck-done">
           <div class="deck-done-mark" aria-hidden="true">${allDone ? '&#10003;' : '&#8987;'}</div>
-          <h2>${allDone ? 'That is the whole deck' : 'Nothing left for now'}</h2>
+          <h2>${
+            inChain
+              ? 'Sequence finished'
+              : allDone
+                ? 'That is everything you selected'
+                : 'Nothing left for now'
+          }</h2>
           <p>
             ${
-              allDone
-                ? `You have talked your way through all ${esc(s.total)} questions in ${esc(lv.name)}. That is not nothing.`
-                : `You have worked through everything currently available here.${
-                    s.skipped
-                      ? ` ${plural(s.skipped, 'question is', 'questions are')} on the skipped pile and will come back around in a couple of weeks.`
-                      : ''
-                  }`
+              inChain
+                ? 'You worked the whole arc. Stopping earlier would have been fine too.'
+                : allDone
+                  ? `You have talked your way through all ${esc(s.total)} questions in ${esc(where)}. That is not nothing.`
+                  : `You have worked through everything currently available here.${
+                      s.skipped
+                        ? ` ${plural(s.skipped, 'question is', 'questions are')} on the skipped pile and will come back around in a couple of weeks.`
+                        : ''
+                    }`
             }
           </p>
           <div class="stack">
             ${
-              s.skipped
+              s.skipped && !inChain
                 ? `<button class="btn btn-ghost" data-action="restore-skipped">
                      Bring back the ${plural(s.skipped, 'skipped one', 'skipped ones')} now
                    </button>`
                 : ''
             }
-            <button class="btn" data-action="close-deck">Choose another depth</button>
+            <button class="btn" data-action="close-deck">
+              ${inChain ? 'Back to sequences' : 'Change what you picked'}
+            </button>
             ${
-              s.completed
+              s.completed && !inChain
                 ? `<button class="btn btn-ghost danger" data-action="reset-deck">
-                     Start this deck again
+                     Start this selection again
                    </button>`
                 : ''
             }
@@ -1030,10 +1021,8 @@ function render() {
     html = viewAccount();
   } else if (state.view === 'chains') {
     html = viewChains();
-  } else if (state.view === 'depths' && state.domain) {
-    html = viewDepthPicker();
   } else {
-    html = viewDomains();
+    html = viewSelection();
   }
 
   root.innerHTML = html;
@@ -1136,20 +1125,50 @@ async function handleAction(action, el) {
       await doLogout();
       break;
 
-    case 'open-domain':
-      // Straight into the deck with every depth on. The depth filter lives
-      // above the cards, so choosing a subject is one tap rather than two.
-      state.domain = state.domains.find((d) => d.slug === el.dataset.slug) || null;
-      await openDeck(el.dataset.slug, null);
+    case 'toggle-domain': {
+      const slug = el.dataset.slug;
+      const on = new Set(selectedDomains());
+      if (on.has(slug)) on.delete(slug);
+      else on.add(slug);
+      state.selection.domains = [...on];
+      render();
+      break;
+    }
+
+    case 'toggle-all-domains':
+      state.selection.domains =
+        selectedDomains().length === state.domains.length ? [] : state.domains.map((d) => d.slug);
+      render();
       break;
 
-    case 'toggle-depth':
-      await toggleDepth(Number(el.dataset.depth), el);
+    case 'toggle-depth': {
+      const n = Number(el.dataset.depth);
+      const on = new Set(selectedDepths());
+      if (on.has(n)) {
+        if (on.size === 1) {
+          // Refuse visibly rather than leaving a selection that can serve
+          // nothing at all.
+          toast('Keep at least one depth switched on.');
+          el.classList.remove('shake');
+          void el.offsetWidth; // force a reflow so a repeated tap re-runs it
+          el.classList.add('shake');
+          break;
+        }
+        on.delete(n);
+      } else {
+        on.add(n);
+      }
+      state.selection.depths = [...on].sort();
+      render();
+      break;
+    }
+
+    case 'start':
+      await startDeck();
       break;
 
     case 'go-domains':
       state.view = 'levels';
-      state.domain = null;
       state.chain = null;
       render();
       break;
@@ -1164,10 +1183,6 @@ async function handleAction(action, el) {
       await openChain(Number(el.dataset.id));
       break;
 
-    case 'open-deck':
-      await openDeck(el.dataset.slug, el.dataset.depth ? Number(el.dataset.depth) : null);
-      break;
-
     case 'reveal-context':
       // Revealed per card, and reset on every advance. The point of hiding it
       // is that the question carries the moment; leaving it open would turn
@@ -1179,7 +1194,7 @@ async function handleAction(action, el) {
     case 'close-deck':
       state.deck = null;
       state.revealed = false;
-      state.view = state.chain ? 'chains' : state.domain ? 'depths' : 'levels';
+      state.view = state.chain ? 'chains' : 'levels';
       state.chain = null;
       render();
       break;
@@ -1413,15 +1428,29 @@ function copyText(text) {
  * deck releases them early - and the short-circuit meant that release could
  * never happen from the list. Let the server decide what is left.
  */
-async function openDeck(slug, depths) {
+/** Query string for the current selection. */
+function selectionQuery() {
+  return `domains=${selectedDomains().map(encodeURIComponent).join(',')}&depths=${selectedDepths().join(',')}`;
+}
+
+/** Deal one shuffled deck from everything ticked on the start screen. */
+async function startDeck() {
+  if (state.busy) return;
+  state.busy = true;
+  render();
+
   try {
-    const list = Array.isArray(depths) && depths.length ? depths : null;
-    const q = list ? `?depths=${list.join(',')}` : '';
-    const data = await api.get(`/api/deck/${encodeURIComponent(slug)}${q}`);
+    const data = await api.get(`/api/deck?${selectionQuery()}`);
+    state.busy = false;
+    if (!data.cards.length) {
+      render();
+      return uiAlert(
+        'Nothing left',
+        'You have worked through everything in this selection. Add a topic or a depth.'
+      );
+    }
     state.deck = {
-      domain: data.domain,
-      selectedDepths: data.selectedDepths,
-      depthCounts: data.depthCounts,
+      selection: data.selection,
       stats: data.stats,
       cards: data.cards,
       index: 0,
@@ -1431,74 +1460,13 @@ async function openDeck(slug, depths) {
     state.revealed = false;
     state.view = 'deck';
     render();
-    if (data.releasedEarly) {
-      toast('Bringing back questions you skipped earlier.');
-    }
+    if (data.releasedEarly) toast('Bringing back questions you skipped earlier.');
   } catch (err) {
-    uiAlert('Could not open that set', err.message);
-  }
-}
-
-// Increments on every depth toggle. A response is applied only if its token is
-// still the newest, so an earlier slow request cannot land on top of a later
-// one and leave the deck showing depths the chips say are off.
-let depthToken = 0;
-
-/**
- * Tick or untick one depth.
- *
- * Refetching rather than filtering in memory, because the deck only ever holds
- * a page of cards: ticking a depth back on has to pull in cards that were never
- * sent.
- *
- * The selection is applied to state and rendered BEFORE the request goes out.
- * An earlier version awaited the fetch first, so two quick taps both read the
- * same stale selection and the second silently undid the first - which on a
- * phone is just "tapping two chips", not an edge case.
- */
-async function toggleDepth(n, el) {
-  const d = state.deck;
-  if (!d) return;
-
-  const on = new Set(d.selectedDepths || [1, 2, 3, 4, 5]);
-
-  if (on.has(n) && on.size === 1) {
-    // Refuse visibly rather than emptying the deck.
-    toast('Keep at least one depth switched on.');
-    if (el) {
-      el.classList.remove('shake');
-      void el.offsetWidth; // force a reflow so a repeated tap re-runs it
-      el.classList.add('shake');
-    }
-    return;
-  }
-
-  if (on.has(n)) on.delete(n);
-  else on.add(n);
-
-  const next = [...on].sort();
-  const token = (depthToken += 1);
-
-  // Optimistic: the chips respond immediately and the next tap reads the truth.
-  d.selectedDepths = next;
-  render();
-
-  try {
-    const q = next.length === 5 ? '' : `?depths=${next.join(',')}`;
-    const data = await api.get(`/api/deck/${encodeURIComponent(d.domain.slug)}${q}`);
-    if (token !== depthToken || !state.deck) return; // a later toggle won
-
-    state.deck.cards = data.cards;
-    state.deck.stats = data.stats;
-    state.deck.depthCounts = data.depthCounts;
-    state.deck.selectedDepths = next;
-    state.deck.index = 0;
-    state.revealed = false;
+    state.busy = false;
     render();
-  } catch (err) {
-    if (token !== depthToken) return;
-    toast(err.message, true);
+    uiAlert('Could not start', err.message);
   }
+  return undefined;
 }
 
 // ---- Chains ---------------------------------------------------------------
@@ -1618,8 +1586,10 @@ async function answerCard(decision) {
     ]);
 
     state.domains = res.domains;
-    const fresh = res.domains.find((l) => l.slug === d.domain.slug);
-    if (fresh) d.stats = fresh;
+    // Progress moved by one, whichever topic the card came from. Recomputing
+    // the whole selection's total here would cost a round trip for a number
+    // that only ever changes by one.
+    d.stats = { ...d.stats, completed: d.stats.completed + (decision === 'completed' ? 1 : 0) };
 
     d.index += 1;
     // Each card earns its own reveal. Carrying it over would turn the next
@@ -1639,7 +1609,7 @@ async function answerCard(decision) {
     }
 
     // Top the deck up before it runs dry, so there is never a pause mid-flow.
-    if (d.index >= d.cards.length - 3 && fresh && (fresh.ready || 0) > 0) {
+    if (!d.chain && d.index >= d.cards.length - 3) {
       refillDeck().catch(() => {});
     }
 
@@ -1661,9 +1631,9 @@ async function answerCard(decision) {
  */
 async function refillDeck() {
   const d = state.deck;
-  if (!d) return;
-  const data = await api.get(`/api/deck/${encodeURIComponent(d.domain.slug)}${d.depth ? `?depth=${d.depth}` : ''}`);
-  if (!state.deck || state.deck.domain.slug !== d.domain.slug) return;
+  if (!d || d.chain) return;
+  const data = await api.get(`/api/deck?${selectionQuery()}`);
+  if (!state.deck || state.deck.chain) return;
 
   const have = new Set(d.cards.map((c) => c.id));
   const extra = data.cards.filter((c) => !have.has(c.id));
@@ -1686,14 +1656,22 @@ async function showDeckMenu() {
     actions.unshift({ label: 'Report this question', value: 'report', className: 'btn-ghost' });
   }
 
+  const card = d.cards[d.index];
+  const sel = d.selection;
+
   const choice = await dialog({
-    title: d.domain.name,
+    title: d.chain ? d.chain.name : 'This session',
     bodyHtml: `
-      <p>${esc(d.domain.description || d.domain.tagline || '')}</p>
+      ${
+        sel
+          ? `<p>${esc(sel.names.join(', '))} &middot; depth ${esc(sel.depths.join(', '))}</p>`
+          : ''
+      }
+      ${card ? `<p style="margin-top:0.6rem">This card is from <strong>${esc(card.domainName)}</strong>.</p>` : ''}
       <p style="margin-top:0.75rem">
         <strong>${esc(s.completed || 0)}</strong> discussed &middot;
         <strong>${esc(s.skipped || 0)}</strong> skipped &middot;
-        <strong>${esc(s.total || 0)}</strong> in the deck
+        <strong>${esc(s.total || 0)}</strong> in this selection
       </p>`,
     actions,
   });
@@ -1767,25 +1745,35 @@ async function resetDeck(scope) {
     return;
   }
 
+  // Scoped to the selection being played, and named, so "start again" can
+  // never quietly clear more than what is on screen.
+  const where = d.selection ? d.selection.names.join(', ') : 'this selection';
+
   const yes = await uiConfirm(
-    isSkipped ? 'Bring back skipped questions?' : `Start ${esc(d.domain.name)} again?`,
+    isSkipped ? 'Bring back skipped questions?' : 'Start this selection again?',
     isSkipped
       ? `The <strong>${count}</strong> question${count === 1 ? '' : 's'} you skipped in ${esc(
-          d.domain.name
+          where
         )} will go straight back into the deck. Nothing you marked as discussed is affected.`
       : `This clears all <strong>${count}</strong> record${
           count === 1 ? '' : 's'
-        } for ${esc(d.domain.name)} — every question becomes available again, as if you had never opened it. This cannot be undone.`,
+        } for ${esc(where)} at ${
+          d.selection ? `depth ${esc(d.selection.depths.join(', '))}` : 'these depths'
+        } — every question becomes available again, as if you had never opened it. This cannot be undone.`,
     isSkipped ? 'Bring them back' : `Clear ${count}`,
     !isSkipped
   );
   if (!yes) return;
 
   try {
-    const res = await api.post(`/api/deck/${encodeURIComponent(d.domain.slug)}/reset`, { scope, depth: d.depth || undefined });
+    const res = await api.post('/api/deck/reset', {
+      scope,
+      domains: selectedDomains(),
+      depths: selectedDepths(),
+    });
     state.domains = res.domains;
     toast(`Cleared ${plural(res.cleared, 'record', 'records')}.`);
-    await openDeck(d.domain.slug, d.depth || null);
+    await startDeck();
   } catch (err) {
     uiAlert('Could not reset', err.message);
   }
