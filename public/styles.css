@@ -499,6 +499,18 @@ a:hover { text-decoration-color: var(--lamplight); }
  *
  * The box keeps its size so the layout around it does not move; the type is
  * scaled up to fill the space the tile used to occupy. */
+/* The greeting, above the names rather than in front of them. Small and quiet:
+ * it is the same word every time, so it carries no information after the first
+ * reading, while the names are the one part of this screen that is theirs. */
+.hero-greeting {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--muted);
+  margin-bottom: 0.1rem;
+}
+
 .hero-mark {
   width: 68px;
   height: 68px;

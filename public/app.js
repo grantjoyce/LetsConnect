@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.11.2';
+const APP_VERSION = '1.11.3';
 
 // ---------------------------------------------------------------------------
 // State
@@ -517,8 +517,11 @@ function viewSelection() {
       ${topbar(true)}
 
       <div class="hero" style="text-align:left;margin-bottom:1.2rem">
-        <h1 style="font-size:1.7rem">Welcome ${esc(c.name)}</h1>
-        <p style="margin:0.35rem 0 0;max-width:none">What are you up for tonight?</p>
+        ${/* "Welcome" is the greeting; the names are the point. Dropping the
+             greeting to a small line above lets the names keep the full size
+             and stops a long pair - "Welcome Sipho and Nomvula" - wrapping
+             mid-phrase. */ ''}
+        <h1 style="font-size:1.7rem"><span class="hero-greeting">Welcome</span>${esc(c.name)}</h1>
       </div>
 
 

@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.11.2';
+const APP_VERSION = '1.11.3';
 
 const state = {
   ready: false,
