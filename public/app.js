@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.8.1';
+const APP_VERSION = '1.8.2';
 
 // ---------------------------------------------------------------------------
 // State
@@ -674,10 +674,24 @@ function viewDeck() {
             <span class="depth-badge">D${depth.n}${depth.name ? ` · ${esc(depth.name)}` : ''}</span>
             ${card.volatile ? '<span class="pill pill-warn">handle with care</span>' : ''}
             ${
-              card.lens
-                ? `<button class="lens-badge" data-action="show-lens" data-lens="${esc(card.lens)}"
-                           data-ref="${esc(card.ref || '')}"
-                           aria-label="About ${esc(card.lens)}">${esc(card.lens)}</button>`
+              // Subject on top, lens under it. These are two different things
+              // and the three-letter code alone could not say which it was -
+              // on a Money card the lens is MON, which read like a shortened
+              // topic rather than the way the question was written.
+              card.domainName || card.lens
+                ? `<div class="qcard-provenance">
+                     ${card.domainName ? `<span class="card-topic">${esc(card.domainName)}</span>` : ''}
+                     ${
+                       card.lens
+                         ? `<button class="lens-badge" data-action="show-lens"
+                                    data-lens="${esc(card.lens)}"
+                                    data-ref="${esc(card.ref || '')}"
+                                    aria-label="About the ${esc(card.lens)} lens">
+                              ${esc(card.lens)}
+                            </button>`
+                         : ''
+                     }
+                   </div>`
                 : ''
             }
           </div>
@@ -1093,10 +1107,9 @@ async function showLens(code, ref) {
       <p style="margin-top:0.9rem;font-size:0.85rem;color:var(--text-faint)">
         ${
           lens.author
-            ? `This question was written from that way of looking. It is not taken from ${esc(
-                possessive(lens.author)
-              )} material, they had no part in writing it, and they are not involved in this
-               app — every question here is newly written.`
+            ? `This question was written from that way of looking — newly written for this
+               app, and not taken from ${esc(possessive(lens.author))} published material.
+               Nobody named here is involved in this app.`
             : `No outside framework sits behind these. They are written straight to the
                subject, and every question here is newly written.`
         }

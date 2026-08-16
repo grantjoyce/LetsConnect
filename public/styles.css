@@ -871,8 +871,37 @@ a { color: var(--accent); }
 
 /* The framework code, in the card's top-right corner. Tappable: it opens a
  * short explanation of the way of looking the question came from. */
-.lens-badge {
+/* Provenance, top right of the card.
+ *
+ * Two lines, because they answer two different questions. The topic is what the
+ * question is ABOUT; the lens is the way of looking it was WRITTEN FROM. Three
+ * letters on their own could not say which - on a Money card the lens code is
+ * MON, which read like an abbreviated topic.
+ *
+ * The topic is quiet and the lens is the thing you can press, so the tappable
+ * one is visibly a control and the label above it is not.
+ */
+.qcard-provenance {
   margin-left: auto;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.card-topic {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  text-align: right;
+  line-height: 1.2;
+}
+
+.lens-badge {
   flex: none;
   background: transparent;
   border: 1px solid var(--line-strong);

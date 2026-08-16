@@ -179,7 +179,10 @@ const LENS_COPY = {
   EFT: [
     'The cycle underneath',
     'Treats most repeated arguments as one cycle playing out again, driven by a need neither person has said out loud. Drawn from Emotionally Focused work generally rather than one author.',
-    null,
+    // A framework without a single name behind it. Left as null it was reported
+    // as "written to the subject directly", which contradicted its own
+    // description - there IS a body of work here, it just has no one author.
+    'Emotionally Focused therapy',
     'A couple usually has one argument in many costumes, driven by attachment fear rather than the stated topic. Interrogate: the pursue-withdraw loop and each person’s move in it; the softer feeling underneath the loud one; what each partner is afraid the other will conclude about them; the moment a fight turns from an issue into a question about the bond.',
   ],
   SOL: [
