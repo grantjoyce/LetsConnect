@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.11.4';
+const APP_VERSION = '1.12.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -61,6 +61,11 @@ const state = {
 
   // App name, tagline and accent, set by the owner in the admin area.
   branding: null,
+
+  // The "how did that land?" list, from /api/data. Empty until the bootstrap
+  // returns, and empty for good on a database that has not run the feedback
+  // migration - the prompt simply never appears rather than erroring.
+  feedbackOptions: [],
 };
 
 const root = document.getElementById('app');
@@ -217,8 +222,18 @@ function dialog({ title, bodyHtml, actions }) {
     overlay.onclick = (e) => {
       if (e.target === overlay) close(null);
     };
-    overlay.querySelectorAll('[data-i]').forEach((btn) => {
+    // Scoped to .dialog-actions. It used to select every [data-i] in the
+    // overlay, so a body containing its own indexed buttons would resolve
+    // against the ACTIONS array - reading index 3 of a two-item list and
+    // throwing on undefined.value.
+    overlay.querySelectorAll('.dialog-actions [data-i]').forEach((btn) => {
       btn.onclick = () => close(actions[Number(btn.dataset.i)].value);
+    });
+
+    // A body may offer the real choices itself, when there are more of them
+    // than a row of buttons can carry. Resolves with the index as a number.
+    overlay.querySelectorAll('.dialog-body [data-choice]').forEach((btn) => {
+      btn.onclick = () => close(Number(btn.dataset.choice));
     });
 
     document.addEventListener('keydown', onKey);
@@ -1181,11 +1196,68 @@ async function answerCard(decision) {
     }
 
     render();
+
+    // Ask how it landed - but only after the next card is already on screen,
+    // and only for a completed one. Skipping a card has already said what the
+    // couple thought of it.
+    if (decision === 'completed') askHowItLanded(card);
   } catch (err) {
     state.busy = false;
     if (el) el.classList.remove('leaving-skip', 'leaving-done');
     render();
     toast(err.message, true);
+  }
+}
+
+/**
+ * "How did that land?"
+ *
+ * The only feedback loop the corpus has. 850 questions were written from
+ * research and judgement, and until now nothing told anyone which of them
+ * actually work in a living room.
+ *
+ * Deliberately easy to decline. The card is already marked completed before
+ * this opens, so dismissing it costs the couple nothing - no progress is
+ * riding on an answer, and a couple mid-conversation should never be made to
+ * fill in a form to get to the next question. It closes on Escape, on a tap
+ * outside, and on "Skip".
+ *
+ * Nothing about who answered is sent. See the route in server.js.
+ */
+async function askHowItLanded(card) {
+  const options = state.feedbackOptions || [];
+  if (!card || !options.length) return;
+
+  const choice = await dialog({
+    title: 'How did that land?',
+    bodyHtml: `
+      <p style="color:var(--text-dim);margin-bottom:0.9rem">
+        Only if you want to. It helps us write better questions — and it is not
+        stored against you, just against the question.
+      </p>
+      <div class="landed-list">
+        ${options
+          .map(
+            (o, i) =>
+              `<button class="landed-option" data-choice="${i}" type="button">${esc(o.label)}</button>`
+          )
+          .join('')}
+      </div>`,
+    // The six live in the body; the action row holds only the way out.
+    actions: [{ label: 'Skip', value: null, className: 'btn-quiet' }],
+  });
+
+  if (choice === null || choice === undefined) return;
+  const option = options[choice];
+  if (!option) return;
+
+  try {
+    await api.post('/api/answer/feedback', { questionId: card.id, optionId: option.id });
+  } catch (err) {
+    // Silent on purpose. This is a favour the couple did us; failing to record
+    // it is our problem, and an error toast mid-conversation would make it
+    // theirs.
+    console.error('[feedback]', err.message);
   }
 }
 
@@ -1527,6 +1599,7 @@ async function loadData() {
     state.couple = data.couple;
     state.domains = data.domains || [];
     state.depths = data.depths || [];
+    state.feedbackOptions = data.feedbackOptions || [];
     state.volatile = data.volatile || null;
     state.serverVersion = data.version;
     if (data.branding) {
@@ -1563,6 +1636,7 @@ document.addEventListener('visibilitychange', () => {
       state.couple = data.couple;
       state.domains = data.domains || [];
       state.depths = data.depths || [];
+    state.feedbackOptions = data.feedbackOptions || [];
       state.volatile = data.volatile || null;
       state.serverVersion = data.version;
       render();

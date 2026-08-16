@@ -80,6 +80,10 @@ const MIGRATIONS = [
   // The eleven topic colours, held at one luminance. Runs AFTER the seed and
   // after the domain split, so every topic it recolours exists by now.
   'migrate-domain-palette',
+
+  // How a question landed, recorded against the question and NOT the couple.
+  // References `questions`, so it runs after the seed.
+  'migrate-add-question-feedback',
 ];
 
 const SCRIPTS_DIR = __dirname;

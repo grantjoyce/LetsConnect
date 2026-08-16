@@ -1,6 +1,6 @@
 {
   "name": "lets-connect",
-  "version": "1.11.4",
+  "version": "1.12.0",
   "private": true,
   "description": "Let's Connect - a PWA that gives couples curated questions to discuss, one card at a time.",
   "main": "server.js",
@@ -25,6 +25,7 @@
     "migrate-add-brand-assets": "node scripts/migrate-add-brand-assets.js",
     "migrate-seed-corpus": "node scripts/migrate-seed-corpus.js",
     "migrate-domain-palette": "node scripts/migrate-domain-palette.js",
+    "migrate-add-question-feedback": "node scripts/migrate-add-question-feedback.js",
     "build-corpus": "node scripts/build-corpus.js",
     "seed-corpus": "node scripts/seed-corpus.js",
     "rewrite-questions": "node scripts/rewrite-questions.js",

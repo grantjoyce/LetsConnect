@@ -678,3 +678,14 @@ table.data td.actions { white-space: nowrap; text-align: right; }
   padding: 0.4rem 0.5rem;
   min-height: 0;
 }
+
+/* The per-question feedback breakdown.
+ *
+ * Eight columns, six of them with long headers, so the default 560px minimum
+ * lets the browser crush the question down to one word per line rather than
+ * scrolling. The question is the thing being read here - it gets a floor, and
+ * the table is allowed to be wider than the panel and scroll inside it. */
+table.data--feedback { min-width: 1020px; }
+table.data--feedback td:first-child,
+table.data--feedback th:first-child { min-width: 300px; }
+table.data--feedback td:first-child strong { font-weight: 600; line-height: 1.45; }

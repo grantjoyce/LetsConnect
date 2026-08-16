@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.11.4';
+const APP_VERSION = '1.12.0';
 
 const state = {
   ready: false,
@@ -1257,17 +1257,108 @@ function tabImport() {
     }`;
 }
 
+/**
+ * "How questions landed" - the feedback couples give after completing a card.
+ *
+ * Shown as a breakdown per question rather than a score. Averaging "brought us
+ * closer" and "not ready for this one" into one number would destroy the only
+ * useful information in the data, which is which of the two it was: the first
+ * says the question works, the second says it works but is being dealt too
+ * early. Those need opposite responses - leave it alone, or move its depth.
+ */
+function feedbackSection(f) {
+  if (!f || !f.options.length) return '';
+
+  const grandTotal = f.totals.reduce((n, t) => n + t.n, 0);
+  if (!grandTotal) {
+    return `
+      <h2 class="section-title">How questions landed</h2>
+      <div class="panel" style="margin-bottom:1.6rem">
+        <p class="hint" style="margin:0">
+          Nothing yet. Couples are asked this after they mark a card completed, and
+          answering is optional — so expect this to fill slowly.
+        </p>
+      </div>`;
+  }
+
+  const label = (id) => (f.options.find((o) => o.id === id) || {}).label || '?';
+
+  return `
+    <h2 class="section-title">How questions landed</h2>
+    <p class="hint" style="margin:-0.4rem 0 0.9rem">
+      ${grandTotal} response${grandTotal === 1 ? '' : 's'} so far. Recorded against the question
+      only — never against a couple — so none of this can be traced back to anyone.
+    </p>
+
+    <div class="table-wrap" style="margin-bottom:1.2rem">
+      <table class="data">
+        <thead><tr><th>Response</th><th class="num">Times</th><th>Share</th></tr></thead>
+        <tbody>
+          ${f.totals
+            .map((t) => {
+              const pct = Math.round((t.n / grandTotal) * 100);
+              return `<tr>
+                <td>${esc(label(t.id))}</td>
+                <td class="num">${t.n}</td>
+                <td>
+                  <div class="rate">
+                    <div class="rate-bar"><span style="width:${pct}%"></span></div>
+                    <div class="rate-num">${pct}%</div>
+                  </div>
+                </td>
+              </tr>`;
+            })
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="table-wrap" style="margin-bottom:1.6rem">
+      <table class="data data--feedback">
+        <thead>
+          <tr>
+            <th>Question</th>
+            <th class="num">All</th>
+            ${f.options.map((o) => `<th class="num">${esc(o.label)}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${f.questions
+            .map(
+              (q) => `<tr>
+              <td>
+                <strong>${esc(q.text)}</strong>
+                <div class="row-sub" style="color:var(--text-faint);font-size:0.78rem">
+                  ${esc(q.ref || '')} &middot; ${esc(q.domainName || '—')} &middot; D${esc(q.depth)}
+                  ${q.hidden ? ' &middot; hidden' : ''}
+                </div>
+              </td>
+              <td class="num">${q.total}</td>
+              ${f.options
+                .map((o) => `<td class="num">${q.counts[o.id] || ''}</td>`)
+                .join('')}
+            </tr>`
+            )
+            .join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
 function tabInsights() {
   const d = state.data.insights;
   if (!d) return loading();
 
   return `
     <div class="notice">
-      The app never records answers, so <strong>skips are the only quality signal there is</strong>.
-      A question that couples keep passing over is usually badly worded, too similar to another,
-      or lands harder than its group suggests. Only questions answered at least
-      ${d.minAnswers} times are ranked.
+      The app never records what anyone actually said, so quality has to be inferred.
+      There are two signals. A <strong>skip</strong> is one bit and it is ambiguous — badly
+      worded, too similar to another, or simply not tonight. <strong>How a question landed</strong>,
+      asked after a card is completed, says which. Only questions answered at least
+      ${d.minAnswers} times are ranked below.
     </div>
+
+    ${feedbackSection(d.feedback)}
 
     <h2 class="section-title">Skip rate by group</h2>
     <div class="table-wrap" style="margin-bottom:1.6rem">

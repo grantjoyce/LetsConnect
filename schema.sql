@@ -432,3 +432,40 @@ CREATE TABLE IF NOT EXISTS settings (
 
 -- NOTE: the `sessions` table is created by the app itself at boot (see the
 -- MySQLSessionStore in server.js) and is deliberately not defined here.
+
+-- ---------------------------------------------------------------------------
+-- Question feedback
+--
+-- How a question landed, recorded against the QUESTION and nobody else. There
+-- is deliberately no couple_id here and there must never be one: the app's
+-- promise is that what two people say to each other goes no further, and a row
+-- tying a named couple to "that one went badly" would break it outright.
+--
+-- `recorded_on` is a DATE for the same reason. Timestamps seconds apart are
+-- obviously one sitting, and an ordered run of those is a fingerprint that
+-- could be re-attached to whoever redeemed a code that day.
+--
+-- See scripts/migrate-add-question-feedback.js.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS `feedback_options` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `label` varchar(120) NOT NULL,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `is_active` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `question_feedback` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `question_id` int(11) NOT NULL,
+  `option_id` int(11) NOT NULL,
+  `recorded_on` date NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_feedback_question` (`question_id`),
+  KEY `idx_feedback_option` (`option_id`),
+  CONSTRAINT `fk_feedback_option` FOREIGN KEY (`option_id`) REFERENCES `feedback_options` (`id`),
+  CONSTRAINT `fk_feedback_question` FOREIGN KEY (`question_id`) REFERENCES `questions` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -1057,6 +1057,11 @@ app.get(
       // its own: it is small, it never changes mid-session, and the selection
       // screen cannot render without it.
       depths: await activeDepths(),
+      // The "how did that land?" list. Travels with the bootstrap for the same
+      // reason the ladder does - six short strings that never change during a
+      // session, and fetching them when the dialog opens would put a network
+      // round trip between tapping Completed and seeing the question.
+      feedbackOptions: await activeFeedbackOptions(),
       volatile,
     });
   })
@@ -1088,6 +1093,21 @@ app.post(
     res.json({ ok: true, unlocked: on });
   })
 );
+
+/** The "how did that land?" options, in display order. */
+async function activeFeedbackOptions() {
+  try {
+    const rows = await query(
+      'SELECT id, label FROM feedback_options WHERE is_active = 1 ORDER BY sort_order, id'
+    );
+    return rows.map((r) => ({ id: r.id, label: r.label }));
+  } catch (err) {
+    // A database that has not run the migration yet should lose the prompt, not
+    // the whole bootstrap call - /api/data is what the app boots on.
+    console.error('[feedback] options read failed:', err.message);
+    return [];
+  }
+}
 
 /** Whether this couple may be served volatile questions. */
 async function volatileUnlocked(coupleId) {
@@ -1512,6 +1532,61 @@ app.post(
 
     const domains = await domainsWithProgress(req.couple.id);
     res.json({ ok: true, domains });
+  })
+);
+
+/**
+ * How a question landed.
+ *
+ * Offered after a card is marked completed, and entirely optional - the card is
+ * already answered by the time this is asked, so declining costs the couple
+ * nothing and loses none of their progress.
+ *
+ * WHAT IS DELIBERATELY NOT STORED
+ * -------------------------------
+ * The couple. Not the id, not the code, nothing. requireCouple is here to stop
+ * the endpoint being a public write, not to identify anybody - req.couple.id is
+ * read to check the gate and then dropped on the floor.
+ *
+ * Nor a timestamp: only a date. Rows written seconds apart are obviously one
+ * sitting, and an ordered run of them could be re-attached to whoever redeemed a
+ * code that day. The date is all question development needs.
+ *
+ * The consequence, stated plainly because it is a real cost: nothing here can
+ * ever be corrected, withdrawn, or exported on request, because nothing knows
+ * whose it is.
+ */
+app.post(
+  '/api/answer/feedback',
+  requireCouple,
+  wrap(async (req, res) => {
+    const questionId = Number(req.body.questionId);
+    const optionId = Number(req.body.optionId);
+    if (!Number.isInteger(questionId) || questionId <= 0) return fail(res, 400, 'Missing question.');
+    if (!Number.isInteger(optionId) || optionId <= 0) return fail(res, 400, 'Missing option.');
+
+    const option = await queryOne(
+      'SELECT id FROM feedback_options WHERE id = ? AND is_active = 1',
+      [optionId]
+    );
+    if (!option) return fail(res, 400, 'That is not one of the options.');
+
+    // Only against a question the couple has actually answered. Without this the
+    // endpoint would let anyone with a code stuff the figures for any question
+    // in the corpus, which is the one thing that would make this data worthless.
+    const answered = await queryOne(
+      `SELECT 1 AS ok FROM couple_question_status
+        WHERE couple_id = ? AND question_id = ? AND status = 'completed'`,
+      [req.couple.id, questionId]
+    );
+    if (!answered) return fail(res, 400, 'That question has not been marked completed.');
+
+    await query(
+      'INSERT INTO question_feedback (question_id, option_id, recorded_on) VALUES (?, ?, CURDATE())',
+      [questionId, optionId]
+    );
+
+    res.json({ ok: true });
   })
 );
 
@@ -4270,9 +4345,93 @@ owner.get(
         skipped: Number(r.skipped) || 0,
         skipRate: Number(r.answered) ? Math.round((Number(r.skipped) / Number(r.answered)) * 100) : 0,
       })),
+      feedback: await feedbackInsights(),
     });
   })
 );
+
+/**
+ * What couples said about the questions they finished.
+ *
+ * This is a better signal than the skip rate and for a simple reason: a skip is
+ * one bit and it is ambiguous. A couple passes over a card because it is badly
+ * worded, or because they did that one last month, or because it is 11pm. This
+ * says which.
+ *
+ * Two views, because they answer different questions. `totals` is "what is the
+ * collection doing overall". `byQuestion` is the development list - every
+ * question anyone has said anything about, most-answered first, with the
+ * breakdown across the options so a pattern is visible rather than a score.
+ *
+ * Deliberately no single number per question. Averaging "brought us closer" and
+ * "not ready for this one" into a rating would throw away the only thing worth
+ * knowing, which is WHICH of them it was.
+ */
+async function feedbackInsights() {
+  try {
+    const options = await query(
+      'SELECT id, label FROM feedback_options WHERE is_active = 1 ORDER BY sort_order, id'
+    );
+
+    const totals = await query(
+      `SELECT o.id, COUNT(f.id) AS n
+         FROM feedback_options o
+         LEFT JOIN question_feedback f ON f.option_id = o.id
+        WHERE o.is_active = 1
+        GROUP BY o.id
+        ORDER BY o.sort_order, o.id`
+    );
+
+    const rows = await query(
+      `SELECT f.question_id, f.option_id, COUNT(*) AS n
+         FROM question_feedback f
+        GROUP BY f.question_id, f.option_id`
+    );
+
+    const byQuestion = new Map();
+    for (const r of rows) {
+      if (!byQuestion.has(r.question_id)) byQuestion.set(r.question_id, { counts: {}, total: 0 });
+      const e = byQuestion.get(r.question_id);
+      e.counts[r.option_id] = Number(r.n);
+      e.total += Number(r.n);
+    }
+
+    let questions = [];
+    if (byQuestion.size) {
+      const ids = [...byQuestion.keys()];
+      const meta = await query(
+        `SELECT q.id, q.ref, q.text, q.depth, q.admin_hidden, d.name AS domainName
+           FROM questions q
+           LEFT JOIN domains d ON d.id = q.domain_id
+          WHERE q.id IN (${ids.map(() => '?').join(',')})`,
+        ids
+      );
+      questions = meta
+        .map((q) => ({
+          id: q.id,
+          ref: q.ref,
+          text: q.text,
+          depth: q.depth,
+          domainName: q.domainName,
+          hidden: !!q.admin_hidden,
+          total: byQuestion.get(q.id).total,
+          counts: byQuestion.get(q.id).counts,
+        }))
+        .sort((a, b) => b.total - a.total);
+    }
+
+    return {
+      options: options.map((o) => ({ id: o.id, label: o.label })),
+      totals: totals.map((t) => ({ id: t.id, n: Number(t.n) || 0 })),
+      questions,
+    };
+  } catch (err) {
+    // The insights page predates this table and must still render on a database
+    // that has not run the migration.
+    console.error('[feedback] insights failed:', err.message);
+    return { options: [], totals: [], questions: [] };
+  }
+}
 
 owner.get(
   '/reports',

@@ -499,6 +499,38 @@ a:hover { text-decoration-color: var(--lamplight); }
  *
  * The box keeps its size so the layout around it does not move; the type is
  * scaled up to fill the space the tile used to occupy. */
+/* "How did that land?" ------------------------------------------------------
+ *
+ * A list, not a scale. The six are not ranked worst-to-best - "not ready for
+ * this one" is not a bad review, it is a depth mismatch - so nothing here
+ * colours or orders them as a gradient. They are six equal doors.
+ */
+.landed-list {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.landed-option {
+  appearance: none;
+  text-align: left;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  color: var(--lamplight);
+  border-radius: 11px;
+  padding: 0.75rem 0.95rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.landed-option:hover {
+  border-color: var(--edge-hi);
+  background: var(--slate);
+}
+
+.landed-option:active { background: var(--raised); }
+
 /* The greeting, above the names rather than in front of them. Small and quiet:
  * it is the same word every time, so it carries no information after the first
  * reading, while the names are the one part of this screen that is theirs. */
