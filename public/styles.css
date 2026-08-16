@@ -299,17 +299,11 @@ a { color: var(--accent); }
   width: 30px;
   height: 30px;
   flex: none;
-  border-radius: 9px;
-  /* Follows the accent rather than a baked-in pink, so changing the brand
-     colour in Settings actually changes the logo tile with it. */
-  background: linear-gradient(
-    160deg,
-    var(--accent),
-    color-mix(in srgb, var(--accent) 42%, var(--night))
-  );
+  background: none;
+  color: var(--lamplight);
   display: grid;
   place-items: center;
-  font-size: 15px;
+  font-size: 24px;
   line-height: 1;
 }
 
@@ -490,23 +484,25 @@ a { color: var(--accent); }
   margin-bottom: 2rem;
 }
 
+/* The mark, with no tile behind it.
+ *
+ * It used to sit on a coloured rounded square. The design system has no slot
+ * for a brand hue, so that square was the one piece of chrome competing with
+ * the depth ramp for attention - and on the night ground it read as a warning
+ * more than a logo. The glyph alone, in lamplight, is quieter and belongs.
+ *
+ * The box keeps its size so the layout around it does not move; the type is
+ * scaled up to fill the space the tile used to occupy. */
 .hero-mark {
   width: 68px;
   height: 68px;
-  border-radius: 20px;
   margin: 0 auto 1.1rem;
-  /* Follows the accent rather than a baked-in pink, so changing the brand
-     colour in Settings actually changes the logo tile with it. */
-  background: linear-gradient(
-    160deg,
-    var(--accent),
-    color-mix(in srgb, var(--accent) 42%, var(--night))
-  );
+  background: none;
+  color: var(--lamplight);
   display: grid;
   place-items: center;
-  font-size: 34px;
+  font-size: 54px;
   line-height: 1;
-  box-shadow: var(--shadow);
 }
 
 .hero h1 {
