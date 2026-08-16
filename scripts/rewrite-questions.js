@@ -110,6 +110,85 @@ const REWRITES = {
     'The one you would say if it carried no consequences.',
   ],
 
+
+  // ---- Sex ----------------------------------------------------------------
+  //
+  // Almost every one of these is the same fault: a pronoun standing in for the
+  // subject. "How do you feel about talking during?" - during WHAT. Read in the
+  // markdown, under a heading that says Sex, with the question above it still on
+  // screen, they are perfectly clear. Dealt one at a time on a phone with
+  // nothing else visible, half of them are unanswerable.
+  //
+  // The word being avoided is "sex". Naming it is not crudeness - it is the
+  // difference between a card that can be answered and one that cannot.
+
+  'MAR-451': ['How comfortable are you talking about sex with me at all?', 'How easy or hard you find this subject in general.'],
+  'MAR-459': ['How often would you like to have sex, if you could set the number honestly?', 'The honest number, not the diplomatic one.'],
+  'MAR-463': ['How do you feel about talking to each other during sex?', 'Whether talking helps you or interrupts you.'],
+  'MAR-464': ['How do you feel about talking afterwards, once sex is over?', 'Whether you want conversation then, and what kind.'],
+  'MAR-469': ['How would you tell me that something in bed was not working for you?', 'The method you would actually use, not the ideal one.'],
+  'MAR-470': ['What stops you telling me when something in bed is not working?', 'What gets in the way of raising it.'],
+  'MAR-475': ['What is your honest view of how often we have sex?', 'Your assessment of where we are, not where we should be.'],
+  'MAR-476': ['What has caused the biggest shift in how often we have sex?', 'The event or the period that moved it most.'],
+  'MAR-478': ['What do you believe about how much I want sex?', 'Your assumption about my side of it.'],
+  'MAR-491': ['How should we agree to raise sex in future without either of us bracing?', 'An opening that does not make either of us tense.'],
+  'MAR-492': ['When is a good time to talk about sex, and when is a terrible one?', 'Good timing and bad timing, said plainly.'],
+  'MAR-496': ['How do you feel about putting sex in the diary rather than waiting for the mood?', 'Scheduling divides people. Say where you sit.'],
+  'MAR-498': ['What is one thing about our sex life we could change immediately?', 'One change available this week.'],
+  'MAR-499': ['What is one thing about our sex life that will take longer to change?', 'One change that needs time rather than willingness.'],
+  'MAR-500': ['What do you need from me to keep sex something we can talk about?', 'What keeps the subject open rather than closed.'],
+  'MAR-490': ['What is the most exposing thing you could say to me about sex?', 'The thing that costs the most to say out loud.'],
+
+  'NAG-402': ['What kind of day shuts down any interest in sex completely?', 'The shape of a day that ends the possibility.'],
+  'NAG-421': ['When do you find yourself going through the motions during sex?', 'The times you are participating rather than present.'],
+  'NAG-422': ['What makes it hard to turn down sex without feeling guilty?', 'What makes refusing feel like a failure rather than a choice.'],
+  'NAG-423': ['What makes it hard to say yes to sex without feeling obliged?', 'What makes agreeing feel like a duty rather than a want.'],
+  'NAG-432': ['What would change if you stopped measuring our sex life against any standard?', 'Whose standard it is matters as much as what it is.'],
+  'NAG-445': ['What one small change to our circumstances would make closeness easier?', 'A change to conditions, not to either of us.'],
+  'NAG-449': ['What does good sex mean to you now, compared with earlier in your life?', 'Your current definition, which may have moved.'],
+  'NAG-450': ['What would tell you our sex life was in a good place?', 'The signal you would actually go by.'],
+
+  'OPN-593': ['How much do you think we should be talking about sex generally?', 'Enough, too little, or too much.'],
+
+  'LEH-502': ['What makes telling me one of your fantasies feel risky?', 'What the risk actually is, before any content.'],
+  'LEH-503': ['What would you need from me to make sharing a fantasy feel safe?', 'The conditions, said as plainly as you can.'],
+  'LEH-506': ['What draws you to trying something new, or does novelty not appeal at all?', 'Both answers are ordinary.'],
+  'LEH-509': ['What part does giving up control play in what you enjoy?', 'Letting go. Say whether it appeals or does not.'],
+  'LEH-510': ['What part does holding control play in what you enjoy?', 'Being the one in charge. Say whether it appeals or does not.'],
+  'LEH-516': ['If you told me a fantasy, what would you want me to say back?', 'The response that would make it survivable.'],
+  'LEH-517': ['If you told me a fantasy, what would you not want me to do with it afterwards?', 'What you would not want done with it later.'],
+  'LEH-518': ['How would you feel hearing one of my fantasies?', 'Your honest anticipated reaction, not the generous one.'],
+  'LEH-526': ['If we tried something new, how would we know it was time to stop?', 'A way to stop that leaves nobody feeling rejected.'],
+  'LEH-527': ['If we tried something new, how would we talk about it afterwards?', 'The conversation after, which is usually the harder one.'],
+  'LEH-528': ['What would help you talk about sex without feeling judged?', 'What removes the sense of being marked.'],
+  'LEH-539': ['What do you want to feel during sex that you are not currently feeling?', 'A feeling that is absent rather than a thing that is wrong.'],
+  'LEH-540': ['What is missing from our sex life, rather than actively wrong with it?', 'Missing and wrong are different complaints.'],
+  'LEH-541': ['What would you like us to plan together, rather than leave to the mood?', 'Something arranged rather than hoped for.'],
+  'LEH-543': ['What surroundings change how you feel physically, for better or worse?', 'Light, noise, tidiness, privacy, temperature.'],
+  'LEH-545': ['What small ritual around closeness would you want us to keep?', 'A practice worth protecting.'],
+
+
+  // ---- Attachment ---------------------------------------------------------
+  //
+  // Only four, out of 122. This set was written far more carefully than Sex was
+  // - almost every card already names its own subject, and several are the best
+  // in the corpus ("When did you last feel lonely inside this relationship?").
+  //
+  // All four here are the same follow-on fault: a question written directly
+  // beneath another one and leaning on it.
+
+  // Leans on MNN-258, "How much space do you need after conflict?"
+  'MNN-259': ['When you need space after a fight, how do you want me to read it?', 'What your need for space does not mean.'],
+
+  // Leans on MNN-281, "What is the need you have given up on having met?"
+  'MNN-282': ['What would have to change for you to ask again for something you gave up on?', 'What would have to be true before you tried once more.'],
+
+  // Leans on MNN-296's neighbours - "more of" what, from whom.
+  'MNN-296': ['What would you like more of from me that costs nothing?', 'Attention, words, presence, timing.'],
+
+  // Leans on EFT-181, "What would it mean to you if I said I need you?"
+  'EFT-182': ['How hard is it for you to tell me that you need me?', 'Saying it, rather than hearing it.'],
+
   // Same fault as MON-693, found in Conflict: REA-138 is "Where has it made you
   // harder?" - written directly under REA-137, and meaningless without it. The
   // corpus's DANGLING rule only catches a pronoun at the START of a question,
