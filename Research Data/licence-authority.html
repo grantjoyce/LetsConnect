@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="How the Launch shop and its subdomain apps should share licensing.">
+<title>The Licence Authority</title>
+<style>
+/* Dark-first, because the platform's own design system is. The complete dark
+   palette is the base; light is redefined at token level in two guarded blocks
+   so an explicit choice wins in both directions. */
+:root {
+  --ground: #11141B;
+  --card: #1A1E27;
+  --raised: #232833;
+  --hairline: #2E3440;
+  --ink: #E9E4DA;
+  --muted: #98A0AE;
+  --faint: #6B7382;
+  --brass: #C6A15B;
+  --ember: #CF5A52;
+  --focus: #8FB3D9;
+  --d1: #A6B7C6;
+  --d3: #C2AE8C;
+  --brass-wash: rgba(198, 161, 91, 0.09);
+  --ember-wash: rgba(207, 90, 82, 0.09);
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+
+  --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --ground: #F2EFE9;
+    --card: #FBFAF7;
+    --raised: #ECE7DD;
+    --hairline: #DDD6C9;
+    --ink: #20242C;
+    --muted: #5E6673;
+    --faint: #7C8493;
+    --brass: #8A6A28;
+    --ember: #A63B34;
+    --focus: #3B6C9E;
+    --d1: #4A6480;
+    --d3: #8A6A3C;
+    --brass-wash: rgba(138, 106, 40, 0.10);
+    --ember-wash: rgba(166, 59, 52, 0.09);
+    --shadow: 0 18px 50px rgba(32, 36, 44, 0.10);
+  }
+}
+
+:root[data-theme="light"] {
+  --ground: #F2EFE9;
+  --card: #FBFAF7;
+  --raised: #ECE7DD;
+  --hairline: #DDD6C9;
+  --ink: #20242C;
+  --muted: #5E6673;
+  --faint: #7C8493;
+  --brass: #8A6A28;
+  --ember: #A63B34;
+  --focus: #3B6C9E;
+  --d1: #4A6480;
+  --d3: #8A6A3C;
+  --brass-wash: rgba(138, 106, 40, 0.10);
+  --ember-wash: rgba(166, 59, 52, 0.09);
+  --shadow: 0 18px 50px rgba(32, 36, 44, 0.10);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wrap {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 22px 110px;
+}
+
+/* Masthead ---------------------------------------------------------------- */
+
+.mast { padding: 72px 0 12px; }
+
+.eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.17em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: 0 0 20px;
+}
+
+.mast h1 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: clamp(30px, 6vw, 46px);
+  line-height: 1.14;
+  letter-spacing: -0.012em;
+  text-wrap: balance;
+  margin: 0;
+}
+
+.mast h1 em { font-style: italic; color: var(--d3); }
+
+.standfirst {
+  color: var(--muted);
+  font-size: 17px;
+  max-width: 56ch;
+  margin: 20px 0 0;
+}
+
+/* Sections ---------------------------------------------------------------- */
+
+.sec { padding-top: 58px; }
+
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding-bottom: 7px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.sec-head h2 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 21px;
+  letter-spacing: -0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.sec-head span {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+p { margin: 0 0 14px; max-width: 68ch; }
+p:last-child { margin-bottom: 0; }
+
+strong { font-weight: 600; }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--raised);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* Callouts ---------------------------------------------------------------- */
+
+.rule {
+  margin: 20px 0 0;
+  padding: 2px 0 2px 16px;
+  border-left: 2px solid var(--d3);
+  color: var(--muted);
+  max-width: 68ch;
+}
+
+.rule b { color: var(--ink); font-weight: 600; }
+
+.finding {
+  background: var(--ember-wash);
+  border: 1px solid var(--ember);
+  border-radius: 11px;
+  padding: 18px 20px;
+  margin: 24px 0 0;
+}
+
+.finding .tag {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ember);
+  font-weight: 700;
+  margin-bottom: 9px;
+}
+
+.finding p { color: var(--ink); }
+
+/* Topology ---------------------------------------------------------------- */
+
+.topo {
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  padding: 26px 22px;
+  margin-top: 8px;
+}
+
+.node {
+  border: 1px solid var(--hairline);
+  border-radius: 11px;
+  background: var(--raised);
+  padding: 13px 16px;
+}
+
+.node .role {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 4px;
+}
+
+.node .who { font-weight: 600; font-size: 15px; display: block; }
+.node .host { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+
+.node.authority {
+  border-color: var(--brass);
+  background: var(--brass-wash);
+}
+.node.authority .role { color: var(--brass); }
+
+.spine {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0;
+  color: var(--faint);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.spine::before,
+.spine::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--hairline);
+}
+
+.consumers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.node.later { opacity: 0.62; border-style: dashed; }
+
+/* Tables ------------------------------------------------------------------ */
+
+.scroll { overflow-x: auto; margin-top: 4px; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+  min-width: 480px;
+}
+
+th {
+  text-align: left;
+  font-size: 10.5px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 700;
+  padding: 0 14px 10px 0;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: bottom;
+}
+
+td {
+  padding: 12px 14px 12px 0;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: top;
+  color: var(--muted);
+}
+
+td:first-child { color: var(--ink); font-weight: 500; }
+tr:last-child td { border-bottom: none; }
+
+.verdict {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.verdict.yes { color: var(--brass); }
+.verdict.no { color: var(--ember); }
+
+/* Phases ------------------------------------------------------------------ */
+
+.phases { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+
+.phase {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: 14px;
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 15px 17px;
+}
+
+.phase .n {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ground);
+  background: var(--d3);
+  border-radius: 6px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+}
+
+.phase h3 { margin: 0 0 3px; font-size: 15px; font-weight: 600; }
+.phase p { margin: 0; color: var(--muted); font-size: 14.5px; }
+.phase .when {
+  display: block;
+  margin-top: 7px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* Decisions --------------------------------------------------------------- */
+
+.decisions { display: grid; gap: 10px; margin-top: 4px; }
+
+.decision {
+  border: 1px solid var(--brass);
+  background: var(--brass-wash);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+
+.decision h3 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.decision .key {
+  width: 11px;
+  height: 11px;
+  flex: none;
+  border: 1.5px solid var(--brass);
+  border-radius: 3px;
+  position: relative;
+  top: 1px;
+}
+.decision .key::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  background: var(--brass);
+  border-radius: 1px;
+}
+
+.decision p { margin: 0; color: var(--muted); font-size: 14.5px; }
+.decision .lean {
+  display: block;
+  margin-top: 8px;
+  color: var(--ink);
+  font-size: 14px;
+}
+.decision .lean b { color: var(--brass); font-weight: 600; }
+
+/* Code -------------------------------------------------------------------- */
+
+.code {
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 16px 18px;
+  overflow-x: auto;
+  margin-top: 4px;
+}
+
+.code pre {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink);
+}
+
+.code .c { color: var(--faint); }
+.code .k { color: var(--d1); }
+
+/* Not-yet list ------------------------------------------------------------ */
+
+.nope { list-style: none; margin: 0; padding: 0; display: grid; gap: 11px; }
+.nope li {
+  padding-left: 24px;
+  position: relative;
+  color: var(--muted);
+  max-width: 68ch;
+}
+.nope li::before {
+  content: "—";
+  position: absolute;
+  left: 0;
+  color: var(--faint);
+}
+.nope b { color: var(--ink); font-weight: 600; }
+
+footer {
+  margin-top: 64px;
+  padding-top: 18px;
+  border-top: 1px solid var(--hairline);
+  color: var(--faint);
+  font-size: 13px;
+}
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+  <header class="mast">
+    <p class="eyebrow">Launch platform · architecture note</p>
+    <h1>One authority decides who has <em>paid</em>. Everything else asks.</h1>
+    <p class="standfirst">How the shop and its subdomain apps should share licensing — and the one thing in Let's Connect that has to change before you sell a subscription.</p>
+  </header>
+
+  <section class="sec">
+    <div class="sec-head"><h2>Start from what is actually built</h2><span>Today</span></div>
+
+    <p>Let's Connect issues its own codes. The shop calls <code>POST /api/shop/codes</code> with a shared key, the app mints a code against two names, and returns it once. That is a clean design and it works — for one app.</p>
+
+    <div class="finding">
+      <span class="tag">The gap</span>
+      <p>There is <strong>no licence expiry anywhere in the codebase</strong>. Every match for "expire" is a login session or a password reset. A code is <code>active</code> or <code>suspended</code>, and that is the whole model.</p>
+      <p style="margin-bottom:0">That is a <strong>perpetual licence</strong>. You are describing <strong>subscriptions</strong>. Nothing currently stops a code working forever, and nothing tells the app that a card payment failed in March.</p>
+    </div>
+
+    <div class="rule"><b>The good news is bigger than the gap.</b> The app re-reads the licence from the database on <em>every single request</em> rather than trusting the session cookie, so revoking access takes effect on the next tap. That was built so a refund could kill a code immediately. It is exactly the hook a central authority needs — it is simply reading a local row today instead of asking the shop.</div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>The shape</h2><span>Where licences live</span></div>
+
+    <p>With one app, it does not matter much who owns the licence. With many, it decides everything. The moment a second app exists, the question "has this person paid, and are they still paying?" must have exactly one answer, in one place.</p>
+
+    <p><strong>The shop owns customers, orders, subscriptions and licences. Apps own their own subject matter and nothing else.</strong> An app never decides whether someone has paid — it asks, and caches the answer.</p>
+
+    <div class="topo">
+      <div class="node authority">
+        <span class="role">Licence authority · sells, renews, revokes</span>
+        <span class="who">Launch shop</span>
+        <span class="host">launchyourlife.co.za</span>
+      </div>
+
+      <div class="spine">verify · renew · revoke</div>
+
+      <div class="consumers">
+        <div class="node">
+          <span class="role">Live</span>
+          <span class="who">Let's Connect</span>
+          <span class="host">connect.launchyourlife.co.za</span>
+        </div>
+        <div class="node later">
+          <span class="role">Later</span>
+          <span class="who">App two</span>
+          <span class="host">&lt;name&gt;.launchyourlife.co.za</span>
+        </div>
+        <div class="node later">
+          <span class="role">Later</span>
+          <span class="who">App three</span>
+          <span class="host">&lt;name&gt;.launchyourlife.co.za</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="rule"><b>Why this way round.</b> A subscription changes state without anyone touching the app: it renews, it lapses, a card expires, someone cancels in month four. If each app holds its own copy of the truth, every one of those events has to be pushed to every app, and any app that misses a push is quietly wrong — still letting someone in, or locking out someone who paid.</div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>The two ways to wire it</h2><span>Pick one now</span></div>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>&nbsp;</th>
+            <th>Shop as authority</th>
+            <th>Shop pushes to each app</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Who knows if a subscription is live</td>
+            <td>The shop. One answer.</td>
+            <td>Every app holds a copy that can drift.</td>
+          </tr>
+          <tr>
+            <td>Adding app number four</td>
+            <td>It calls one endpoint. Nothing in the shop changes.</td>
+            <td>Shop learns a fourth API; four places to update on renewal.</td>
+          </tr>
+          <tr>
+            <td>A renewal fails in month six</td>
+            <td>Shop marks it lapsed. Every app sees it on the next check.</td>
+            <td>Shop must reach all four apps. A missed call means free access.</td>
+          </tr>
+          <tr>
+            <td>Customer buys two apps</td>
+            <td>One account, two licences, one invoice.</td>
+            <td>Two unrelated codes and no relationship between them.</td>
+          </tr>
+          <tr>
+            <td>Shop is down for an hour</td>
+            <td>Apps run on cached entitlement. Needs designing.</td>
+            <td>Apps unaffected — the one real advantage.</td>
+          </tr>
+          <tr>
+            <td>Work to build the first one</td>
+            <td>More up front.</td>
+            <td>Less up front, then compounding.</td>
+          </tr>
+          <tr>
+            <td>&nbsp;</td>
+            <td><span class="verdict yes">Recommended</span></td>
+            <td><span class="verdict no">Only if one app, forever</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="rule"><b>The outage risk is real and solvable.</b> Verify when a code is first redeemed, then cache the entitlement locally with the date it was last confirmed. Re-check in the background, perhaps daily. If the shop cannot be reached, <em>fail open</em> for a grace period of a week or so. A couple sitting down on a Sunday evening should never be locked out of something they paid for because a server in Johannesburg is restarting.</div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>The contract between them</h2><span>Small on purpose</span></div>
+
+    <p>This is the entire coupling. Two endpoints and a shared secret — no shared code, no shared database, no shared repo.</p>
+
+    <div class="code">
+<pre><span class="c">// The shop, after a successful payment. Creates the licence and returns it.</span>
+<span class="k">POST</span> launchyourlife.co.za/api/licences
+     x-api-key: &lt;per-app key&gt;
+     { product: "lets-connect", customer: {...}, plan: "monthly" }
+  →  { key: "SXKS-6G2X-RMWT", expiresAt: "2026-09-16", status: "active" }
+
+<span class="c">// The app, on redemption and then periodically. The only question it asks.</span>
+<span class="k">POST</span> launchyourlife.co.za/api/licences/verify
+     x-api-key: &lt;per-app key&gt;
+     { product: "lets-connect", key: "SXKS-6G2X-RMWT" }
+  →  { valid: true, expiresAt: "2026-09-16",
+       holder: { partnerA: "Mark", partnerB: "Nikki" } }</pre>
+    </div>
+
+    <div class="rule"><b>Per-app keys, not one shared key.</b> Each app gets its own, so a leaked key from a future app cannot mint licences for this one, and you can rotate one without touching the others. The comparison must be constant-time — Let's Connect already does this correctly with <code>crypto.timingSafeEqual</code>, and that code is worth copying forward.</div>
+
+    <div class="rule"><b>The holder's names come back with the licence.</b> That is what lets Let's Connect say "Welcome Mark and Nikki" without ever storing a customer record. The app stays account-free, which was the whole point of the redesign.</div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>Repos and deploys</h2><span>One per deployable</span></div>
+
+    <p>Plesk pulls one repository into one site. That is the unit, and it is why the answer is not "one project with two halves". Your <code>ClaudeCode</code> folder already holds eighteen projects this way.</p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr><th>Repository</th><th>Deploys to</th><th>Owns</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Launch shop</td>
+            <td><code>launchyourlife.co.za</code></td>
+            <td>Customers, payments, subscriptions, licences, invoices</td>
+          </tr>
+          <tr>
+            <td>Let's Connect</td>
+            <td><code>connect.launchyourlife.co.za</code></td>
+            <td>Questions, decks, progress, its own admin</td>
+          </tr>
+          <tr>
+            <td>Each later app</td>
+            <td>Its own subdomain</td>
+            <td>Its own subject, and nothing about money</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="rule"><b>Never one repository for two sites.</b> Both Plesk sites would pull the same commits, so a shop styling tweak drags a pull onto the app site too. Your own deploy notes record what that costs: a pull that includes a changed <code>server.js</code> without a restart leaves the old code running, and the document root silently reverted once and returned a 403 for the whole site. A Friday shop change should not be able to touch what two people are using that evening.</div>
+
+    <div class="rule"><b>Shared context is a folder, not a repository.</b> Keep them as siblings under <code>ClaudeCode</code> and open the parent folder when the work crosses both. I can read across both while git, Plesk and the deploy cycles stay completely separate. That gives you the shared understanding you want without the shared blast radius you do not.</div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>How to get there from here</h2><span>In this order</span></div>
+
+    <ol class="phases">
+      <li class="phase">
+        <span class="n">1</span>
+        <div>
+          <h3>Ship Let's Connect as it stands</h3>
+          <p>Perpetual codes, issued from its own admin. You can sell manually — generate a code, email it yourself — and take real money before any of this exists. Nothing below is required to make the first sale.</p>
+          <span class="when">Blocked only on a GitHub repo</span>
+        </div>
+      </li>
+      <li class="phase">
+        <span class="n">2</span>
+        <div>
+          <h3>Add expiry to the licence</h3>
+          <p>An <code>expires_at</code> column and a check in the place that already re-reads the code on every request. Small, and it is the difference between a perpetual licence and a subscription. Null means perpetual, so every existing code keeps working.</p>
+          <span class="when">Do this before the shop, not after</span>
+        </div>
+      </li>
+      <li class="phase">
+        <span class="n">3</span>
+        <div>
+          <h3>Build the shop against the contract</h3>
+          <p>Payment, orders, and the licence table. It calls the app's existing endpoint at first — no rewrite needed, because the endpoint already takes names and returns a code.</p>
+          <span class="when">The real build</span>
+        </div>
+      </li>
+      <li class="phase">
+        <span class="n">4</span>
+        <div>
+          <h3>Invert, when app two is real</h3>
+          <p>Move the licence table to the shop and point the app's verification at it. Because the app already re-checks every request, this is a change to <em>where</em> the check reads from, not a change to when or whether it happens.</p>
+          <span class="when">Not before there is a second app</span>
+        </div>
+      </li>
+    </ol>
+
+    <div class="rule"><b>Phase two is the one people skip.</b> Selling a subscription against a licence that cannot expire means every refund and every cancellation is a manual job you will do by hand, forever, and will eventually forget to do.</div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>Decide before I build</h2><span>Yours to call</span></div>
+
+    <div class="decisions">
+      <div class="decision">
+        <h3><span class="key"></span>Subscription or one-off?</h3>
+        <p>You said subscription tokens, but the app sells a perpetual code. For a couples question deck, a one-off purchase is an easier sell and needs no expiry at all — people do not expect to rent a conversation.</p>
+        <span class="lean">My lean: <b>one-off for this app, subscriptions for later tools.</b> The platform should support both from day one.</span>
+      </div>
+
+      <div class="decision">
+        <h3><span class="key"></span>Tokens as a wallet, or a licence per app?</h3>
+        <p>"Subscription tokens for all of the apps" could mean a shared balance spent across apps, or simply one licence per app bought. These are very different builds — a wallet needs a ledger, balances and refund arithmetic.</p>
+        <span class="lean">My lean: <b>a licence per app.</b> Add a wallet only if you actually want cross-app bundles.</span>
+      </div>
+
+      <div class="decision">
+        <h3><span class="key"></span>WooCommerce, or a custom shop?</h3>
+        <p>WooCommerce gives you cart, VAT invoices, refunds, failed payments and PayFast integration off the shelf — and you already have a PayFast project. Custom means building all of that, none of which is your product.</p>
+        <span class="lean">My lean: <b>WooCommerce plus a small plugin</b> unless the storefront itself is the differentiator.</span>
+      </div>
+
+      <div class="decision">
+        <h3><span class="key"></span>What does a lapsed subscription feel like?</h3>
+        <p>When a subscription ends, does the deck stop dead, or go read-only, or keep the questions already seen? This is a product decision with real emotional weight — locking two people out mid-conversation is a bad memory of your brand.</p>
+        <span class="lean">My lean: <b>finish the current session, then ask.</b> Never interrupt a card.</span>
+      </div>
+
+      <div class="decision">
+        <h3><span class="key"></span>Who sends the email?</h3>
+        <p>Still unanswered from before, and it belongs to the shop now. The app returns a code once and never sees the customer again. The shop already owns the order confirmation.</p>
+        <span class="lean">My lean: <b>the shop sends it</b>, alongside the receipt.</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>What not to build yet</h2><span>Deliberate</span></div>
+
+    <ul class="nope">
+      <li><b>No shared login across apps.</b> Let's Connect is deliberately account-free — two people, one screen, one code. Do not let a platform login creep in and undo that.</li>
+      <li><b>No shared component library.</b> Two apps is not enough to know what is common. Copy the design system file into each; extract a library at four apps, if ever.</li>
+      <li><b>No single sign-on, no user profiles, no cross-app analytics.</b> Each is a real project and none earns money until several apps exist.</li>
+      <li><b>No monorepo tooling.</b> Nothing here needs a workspace manager. Two folders and two remotes is the whole system.</li>
+    </ul>
+
+    <div class="rule"><b>The pattern worth holding to.</b> The shop is the only thing that knows about money. Every app knows only its own subject and one question it can ask. Keep that line clean and adding the fifth app stays a weekend; blur it and each new app inherits the last one's billing bugs.</div>
+  </section>
+
+  <footer>
+    Written against Let's Connect v1.11.1. Verified in code: no licence expiry exists; the couple's licence is re-read on every request at <code>server.js:567</code>; codes are issued via <code>POST /api/shop/codes</code> guarded by a constant-time key comparison.
+  </footer>
+
+</div>
+</body>
+</html>
