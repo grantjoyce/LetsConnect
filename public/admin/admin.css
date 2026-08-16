@@ -177,6 +177,14 @@ table.data td.num {
   white-space: nowrap;
 }
 
+/* A sub-line inside a numeric cell needs its own row. nowrap above keeps the
+ * figure from breaking, and without this the qualifier runs straight into it -
+ * "50" plus "5 volatile" read as "505 volatile". */
+table.data td.num .row-sub {
+  display: block;
+  white-space: normal;
+}
+
 table.data td.actions { white-space: nowrap; text-align: right; }
 
 .mini {

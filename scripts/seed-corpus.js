@@ -23,38 +23,32 @@ const { pool } = require('../db');
 const CORPUS = path.join(__dirname, '..', 'data', 'corpus.json');
 
 /**
- * EIGHT categories. Depth is the other axis and stays at five.
+ * The corpus's eleven subjects, kept as eleven.
  *
- * The corpus tags questions against eleven subjects, so four of them fold into
- * the eight the product ships. The mapping is not arbitrary - it follows what
- * the corpus itself says Everyday was:
+ * An earlier version of this folded them into eight - Home, Work and Social
+ * into an "Everyday" bucket, and Meaning into Self - because two of them are
+ * very small (Meaning has 4 questions, Social 3). That was wrong. A subject
+ * with four questions is a thin subject, not a subject that belongs inside
+ * another one, and merging Meaning into Self quietly told a couple that "what
+ * am I for" is the same question as "who am I". The fix for thin is to write
+ * more, which is what the generator is for.
  *
- *   "ordinary life has real subjects underneath it: work, home, money,
- *    friendship"
- *
- * Home, Work and Social ARE that ordinary life, so Everyday becomes their
- * container rather than the register it used to be. It now spans D1 to D4,
- * which is what the corpus requires of a real domain: a set that caps at D2 by
- * definition is a register and should be rejected.
- *
- * Meaning holds four questions about belief and purpose, which sit closest to
- * Self - the person rather than the partnership.
- *
- * Nothing is discarded: all 850 questions land somewhere. To change any of
- * this, edit the map and re-run `npm run seed-corpus -- --replace`.
+ * Identity map rather than no map, so the shape stays visible: this is the one
+ * place the corpus's subjects turn into the app's topics, and the next person
+ * to want a rename does it here rather than hunting for a string.
  */
 const DOMAIN_MAP = {
   Self: 'Self',
-  Meaning: 'Self',
+  Meaning: 'Meaning',
   Attachment: 'Attachment',
   Conflict: 'Conflict',
   Origin: 'Origin',
   Sex: 'Sex',
   Future: 'Future',
   Money: 'Money',
-  Home: 'Everyday',
-  Work: 'Everyday',
-  Social: 'Everyday',
+  Home: 'Home',
+  Work: 'Work',
+  Social: 'Social',
 };
 
 /**
@@ -62,61 +56,82 @@ const DOMAIN_MAP = {
  * ordinary before they meet Sex and Conflict.
  */
 const DOMAIN_PRESENTATION = {
-  Everyday: {
-    tagline: 'Home, work, and everyone else in your life',
-    description:
-      'The practical business of two people sharing a life. Chores, space, rest, ambition, and the friends and family around the pair of you. Unglamorous, and the source of most ordinary friction.',
-    accent: '#35B7A6',
-    order: 1,
-  },
   Self: {
     tagline: 'Who each of you actually is right now',
     description:
-      'The person rather than the partnership. What you are carrying, enjoying, avoiding and becoming, and what you believe you are for. The broadest set here, and the easiest place to start.',
+      'The person rather than the partnership. What you are carrying, enjoying, avoiding and becoming. The broadest set here, and the easiest place to start.',
     accent: '#F2A33C',
-    order: 2,
+    order: 1,
   },
   Attachment: {
     tagline: 'How you reach for each other, and what happens when you miss',
     description:
       'Needing, being needed, being noticed. The small bids for attention that make up most of a relationship, and what it feels like when they land or do not.',
     accent: '#D8327C',
-    order: 3,
+    order: 2,
   },
   Origin: {
     tagline: 'What you each learned before you met',
     description:
       'Childhood, family, and the lessons about love that arrived before either of you was old enough to question them.',
     accent: '#7C6CF0',
+    order: 3,
+  },
+  Home: {
+    tagline: 'The place you actually live in',
+    description:
+      'Space, chores, rest, and the invisible work of running a life together. Unglamorous, and the source of most ordinary friction.',
+    accent: '#35B7A6',
     order: 4,
   },
-  Future: {
-    tagline: 'Plans, ageing, and the things not yet said',
+  Work: {
+    tagline: 'What it takes, and what it costs the two of you',
     description:
-      'Where this is going, practically as well as hopefully. Useful when a decision is coming and neither of you has said out loud what you want.',
-    accent: '#3D9BE9',
+      'Ambition, identity tied to a job, and the hours that never make it home. Whose career is being deferred, and whether that was ever agreed out loud.',
+    accent: '#C98A2E',
     order: 5,
+  },
+  Social: {
+    tagline: 'Everyone else in your life',
+    description:
+      'Friends, family and the people you are a couple in front of. Who gets your time, who you defend, and who you have quietly stopped seeing.',
+    accent: '#4FB0C6',
+    order: 6,
   },
   Money: {
     tagline: 'The one most couples avoid',
     description:
       'Earning, spending, fairness, secrecy and fear. Among the most common subjects of recurring conflict, and the one people are least practised at discussing calmly.',
     accent: '#7FB069',
-    order: 6,
+    order: 7,
+  },
+  Future: {
+    tagline: 'Plans, ageing, and the things not yet said',
+    description:
+      'Where this is going, practically as well as hopefully. Useful when a decision is coming and neither of you has said out loud what you want.',
+    accent: '#3D9BE9',
+    order: 8,
   },
   Sex: {
     tagline: 'Wanting, being wanted, and what gets in the way',
     description:
       'Attraction, initiation, fantasy and the gap between what people want and what they say. Honest and adult throughout, never crude. Best somewhere private.',
     accent: '#8E2D63',
-    order: 7,
+    order: 9,
   },
   Conflict: {
     tagline: 'How you fight, and how you come back',
     description:
       'Arguments, resentment, rupture and repair. The deepest set here by some margin, and the one to open when you both have the time to sit with the answers.',
     accent: '#E2574C',
-    order: 8,
+    order: 10,
+  },
+  Meaning: {
+    tagline: 'What the two of you are for',
+    description:
+      'Purpose, mortality, and what you want this to have added up to. The smallest set here by a distance — four questions — and the one most worth adding to.',
+    accent: '#A88BD4',
+    order: 11,
   },
 };
 

@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -76,6 +76,18 @@ function esc(v) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/**
+ * "Esther Perel's", "The Gottmans'".
+ *
+ * A plain `${name}'s` produced "The Gottmans's" on screen, because several of
+ * these authorities are plural or already end in s.
+ */
+function possessive(name) {
+  const n = String(name || '').trim();
+  if (!n) return '';
+  return /s$/i.test(n) ? `${n}'` : `${n}'s`;
 }
 
 function plural(n, one, many) {
@@ -664,6 +676,7 @@ function viewDeck() {
             ${
               card.lens
                 ? `<button class="lens-badge" data-action="show-lens" data-lens="${esc(card.lens)}"
+                           data-ref="${esc(card.ref || '')}"
                            aria-label="About ${esc(card.lens)}">${esc(card.lens)}</button>`
                 : ''
             }
@@ -931,7 +944,7 @@ async function handleAction(action, el) {
       break;
 
     case 'show-lens':
-      await showLens(el.dataset.lens);
+      await showLens(el.dataset.lens, el.dataset.ref);
       break;
 
     case 'reveal-context':
@@ -1031,7 +1044,21 @@ function copyText(text) {
  * The lens list is loaded once with the rest of the app data, so tapping the
  * badge opens instantly rather than waiting on a request.
  */
-async function showLens(code) {
+/**
+ * What the three letters in the corner mean.
+ *
+ * The code comes from the question's own ID - GOT-001 is the first question
+ * written through the Gottman lens - so the badge is provenance, not decoration.
+ *
+ * The attribution is careful on purpose, and it is the same line the corpus
+ * draws. A lens is a WAY OF LOOKING: an approach that somebody's work made
+ * legible. Frameworks are ideas and can be built on freely; expression is
+ * protected. So the modal names whose thinking shaped the question, and says
+ * plainly that the question is newly written and that nobody named is involved
+ * in this app. Five of the sixteen lenses have no authority behind them at all
+ * and say so, because attaching Money to a name would be a false attribution.
+ */
+async function showLens(code, ref) {
   if (!code) return;
 
   if (!state.lenses) {
@@ -1051,11 +1078,35 @@ async function showLens(code) {
   await dialog({
     title: `${code} · ${lens.name}`,
     bodyHtml: `
+      ${
+        lens.author
+          ? `<p style="margin-bottom:0.7rem;font-size:0.85rem;letter-spacing:0.04em;
+                       text-transform:uppercase;color:var(--accent);font-weight:800">
+               Influenced by ${esc(lens.author)}
+             </p>`
+          : `<p style="margin-bottom:0.7rem;font-size:0.85rem;letter-spacing:0.04em;
+                       text-transform:uppercase;color:var(--text-faint);font-weight:800">
+               Written to the subject directly
+             </p>`
+      }
       <p>${esc(lens.description || '')}</p>
       <p style="margin-top:0.9rem;font-size:0.85rem;color:var(--text-faint)">
-        Every question here is original. Groupings name the way of looking a question
-        was written from, not anybody's book or deck.
-      </p>`,
+        ${
+          lens.author
+            ? `This question was written from that way of looking. It is not taken from ${esc(
+                possessive(lens.author)
+              )} material, they had no part in writing it, and they are not involved in this
+               app — every question here is newly written.`
+            : `No outside framework sits behind these. They are written straight to the
+               subject, and every question here is newly written.`
+        }
+      </p>
+      ${
+        ref
+          ? `<p style="margin-top:0.9rem;font-size:0.78rem;color:var(--text-faint);
+                       letter-spacing:0.08em">This card is ${esc(ref)}.</p>`
+          : ''
+      }`,
     actions: [{ label: 'Close', value: true, className: 'btn' }],
   });
   return undefined;

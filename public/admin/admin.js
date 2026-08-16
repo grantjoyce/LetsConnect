@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 
 const state = {
   ready: false,
@@ -455,7 +455,8 @@ function tabOverview() {
 function tabStructure() {
   const d = state.data.groups;
   const dep = state.data.depths;
-  if (!d || !dep) return loading();
+  const len = state.data.lenses;
+  if (!d || !dep || !len) return loading();
   const levels = d.domains;
 
   return `
@@ -552,7 +553,63 @@ function tabStructure() {
       </table>
     </div>
 
-    <button class="btn btn-ghost" data-action="depth-new">Add a depth</button>`;
+    <button class="btn btn-ghost" data-action="depth-new">Add a depth</button>
+
+    <h2 class="section-title" style="margin-top:2rem">Lens mapping</h2>
+    <p class="hint" style="margin-bottom:0.8rem">
+      The third axis. A lens is the way of looking a question was written from, and its
+      three letters are the front of the question's own ID — <code>GOT-001</code> is the
+      first question written through the Gottman lens. Couples see those letters in the
+      corner of every card and can tap them.
+      <br><br>
+      Where a lens <em>lands</em> is worked out from the questions themselves rather than
+      declared here, so it cannot go stale. Write the copy on
+      <button class="btn-quiet" data-action="tab" data-tab="develop">Develop</button>.
+    </p>
+
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr><th>Lens</th><th>Influenced by</th><th>Topics it covers</th><th>Depth</th>
+              <th class="num">Questions</th></tr>
+        </thead>
+        <tbody>
+          ${
+            len.lenses.length
+              ? len.lenses
+                  .map(
+                    (l) => `<tr>
+            <td style="${l.isActive ? '' : 'opacity:0.55'}">
+              <strong>${esc(l.code)}</strong>
+              ${l.isActive ? '' : '<span class="pill pill-off">off</span>'}
+              <span class="row-sub">${esc(l.name)}</span>
+            </td>
+            <td>
+              ${
+                l.author
+                  ? esc(l.author)
+                  : '<span class="row-sub">No authority — written to the subject directly</span>'
+              }
+            </td>
+            <td>
+              ${
+                l.topics
+                  ? esc(l.topics)
+                  : '<span class="row-sub">Nothing carries this badge yet</span>'
+              }
+            </td>
+            <td>${l.minDepth === null ? '—' : `D${l.minDepth}–D${l.maxDepth}`}</td>
+            <td class="num">${l.questions}${
+                      l.volatileCount ? `<span class="row-sub">${l.volatileCount} volatile</span>` : ''
+                    }</td>
+          </tr>`
+                  )
+                  .join('')
+              : '<tr><td colspan="5">No lenses yet.</td></tr>'
+          }
+        </tbody>
+      </table>
+    </div>`;
 }
 
 function tabQuestions() {
@@ -1965,6 +2022,7 @@ async function loadTab() {
     } else if (t === 'structure') {
       if (!state.data.groups) state.data.groups = await api.get('/api/owner/domains');
       if (!state.data.depths) state.data.depths = await api.get('/api/owner/depths');
+      if (!state.data.lenses) state.data.lenses = await api.get('/api/owner/lenses');
     } else if (t === 'develop') {
       // Five payloads, fetched together rather than one per section, because the
       // page is a single flow and staggering them would show it assembling.

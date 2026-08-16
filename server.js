@@ -1212,8 +1212,11 @@ app.get(
   '/api/lenses',
   requireCouple,
   wrap(async (req, res) => {
+    // `author` comes down, `brief` deliberately does not. The brief is written
+    // for the generator and reads like a construct list; putting it in front of
+    // a couple would be showing them the workings.
     const rows = await query(
-      'SELECT code, name, description FROM lenses WHERE is_active = 1 ORDER BY sort_order'
+      'SELECT code, name, author, description FROM lenses WHERE is_active = 1 ORDER BY sort_order'
     );
     res.json({ lenses: rows });
   })
@@ -2893,11 +2896,24 @@ owner.delete(
 owner.get(
   '/lenses',
   wrap(async (req, res) => {
+    // The mapping, not just the list. A lens is the THIRD axis - topics and
+    // depths are the other two - and the only question worth asking about it is
+    // where it actually lands: which subjects it covers and how deep it goes.
+    // Answering that from the questions themselves means it cannot go stale.
     const rows = await query(
       `SELECT l.id, l.code, l.name, l.author, l.description, l.brief,
               l.sort_order, l.is_active,
-              (SELECT COUNT(*) FROM questions q WHERE q.lens = l.code) AS questions
+              COUNT(q.id) AS questions,
+              MIN(q.depth) AS minDepth,
+              MAX(q.depth) AS maxDepth,
+              SUM(CASE WHEN q.is_volatile = 1 THEN 1 ELSE 0 END) AS volatileCount,
+              COUNT(DISTINCT q.domain_id) AS topicCount,
+              GROUP_CONCAT(DISTINCT d.name ORDER BY d.sort_order SEPARATOR ', ') AS topics
          FROM lenses l
+         LEFT JOIN questions q ON q.lens = l.code AND q.is_active = 1
+         LEFT JOIN domains d ON d.id = q.domain_id
+        GROUP BY l.id, l.code, l.name, l.author, l.description, l.brief,
+                 l.sort_order, l.is_active
         ORDER BY l.sort_order, l.code`
     );
     res.json({
@@ -2911,6 +2927,11 @@ owner.get(
         sortOrder: r.sort_order,
         isActive: !!r.is_active,
         questions: Number(r.questions) || 0,
+        minDepth: r.minDepth === null ? null : Number(r.minDepth),
+        maxDepth: r.maxDepth === null ? null : Number(r.maxDepth),
+        volatileCount: Number(r.volatileCount) || 0,
+        topicCount: Number(r.topicCount) || 0,
+        topics: r.topics || '',
         // The brief is what the generator reads. Without one it would be
         // writing to a name, so the UI says so rather than quietly producing
         // generic questions under a respected label.

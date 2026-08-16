@@ -63,6 +63,11 @@ const MIGRATIONS = [
   // product does not have. Extends `couples`.
   'migrate-add-access-codes',
 
+  // Eight topics back to the corpus's eleven. Moves questions between topics,
+  // which touches no progress at all - couple_question_status is keyed on the
+  // QUESTION. Reads data/corpus.json, so it runs after the seed exists.
+  'migrate-split-domains',
+
   // FIRST-RUN SEED ONLY. Does nothing at all on a database that already has
   // questions - content belongs to the admin area once it exists.
   'migrate-seed-corpus',
