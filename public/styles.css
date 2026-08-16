@@ -838,6 +838,29 @@ a { color: var(--accent); }
   min-height: 1px;
 }
 
+/* The framework code, in the card's top-right corner. Tappable: it opens a
+ * short explanation of the way of looking the question came from. */
+.lens-badge {
+  margin-left: auto;
+  flex: none;
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--text-faint);
+  border-radius: 999px;
+  padding: 0.22rem 0.6rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.lens-badge:hover {
+  color: var(--text);
+  border-color: var(--lv-accent, var(--accent));
+  background: rgba(255, 255, 255, 0.05);
+}
+
 .depth-badge {
   font-size: 0.68rem;
   font-weight: 800;

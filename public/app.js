@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -598,22 +598,26 @@ function viewSelection() {
   const ready = selectionReady();
   const chainCount = state.chains ? state.chains.length : null;
 
-  const totalDone = state.domains.reduce((n, d) => n + d.completed, 0);
-  const totalAll = state.domains.reduce((n, d) => n + d.total, 0);
-
   return `
     <div class="screen has-start-bar">
       ${topbar(true)}
 
       <div class="hero" style="text-align:left;margin-bottom:1.2rem">
         <h1 style="font-size:1.7rem">${esc(c.name || 'Tonight')}</h1>
-        <p style="margin:0.35rem 0 0;max-width:none">
-          ${
-            solo
-              ? `Your invite code is <strong style="color:var(--text);letter-spacing:0.15em">${esc(c.inviteCode)}</strong> — send it to your partner so you share progress.`
-              : `${esc(totalDone)} of ${esc(totalAll)} questions discussed with ${esc(partner.displayName)}.`
-          }
-        </p>
+        ${
+          // Only the invite code appears here, and only while you are unpaired,
+          // because it is the one thing you still need to act on. The running
+          // "N of 850 discussed" total that used to sit here was noise: a
+          // lifetime tally against a corpus this size never moves visibly, and
+          // it is not what anyone opens the app to find out.
+          solo
+            ? `<p style="margin:0.35rem 0 0;max-width:none">
+                 Your invite code is <strong style="color:var(--text);letter-spacing:0.15em">${esc(
+                   c.inviteCode
+                 )}</strong> — send it to your partner so you share progress.
+               </p>`
+            : ''
+        }
       </div>
 
       ${
@@ -753,7 +757,9 @@ function viewDeck() {
   return `
     <div class="deck" style="${accentVars(accent)}">
       <div class="deck-bar">
-        <button class="icon-btn" data-action="close-deck" aria-label="Back">&times;</button>
+        <button class="icon-btn" data-action="close-deck" aria-label="Close">&times;</button>
+        <button class="icon-btn" data-action="prev-card" aria-label="Previous card"
+                ${d.index === 0 ? 'disabled' : ''}>&larr;</button>
         <div class="deck-titles">
           <div class="deck-level">${esc(inChain ? d.chain.name : card.domainName || '')}</div>
           <div class="deck-progress-text">
@@ -774,6 +780,12 @@ function viewDeck() {
           <div class="qcard-top">
             <span class="depth-badge">D${depth.n}${depth.name ? ` · ${esc(depth.name)}` : ''}</span>
             ${card.volatile ? '<span class="pill pill-warn">handle with care</span>' : ''}
+            ${
+              card.lens
+                ? `<button class="lens-badge" data-action="show-lens" data-lens="${esc(card.lens)}"
+                           aria-label="About ${esc(card.lens)}">${esc(card.lens)}</button>`
+                : ''
+            }
           </div>
 
           <div class="qcard-middle">
@@ -1183,6 +1195,21 @@ async function handleAction(action, el) {
       await openChain(Number(el.dataset.id));
       break;
 
+    case 'prev-card':
+      // Steps back through the cards already dealt. It does NOT undo the
+      // answer: the couple asked to look at it again, not to un-discuss it.
+      // Answering again upserts, so nothing is double counted either way.
+      if (state.deck && state.deck.index > 0) {
+        state.deck.index -= 1;
+        state.revealed = false;
+        render();
+      }
+      break;
+
+    case 'show-lens':
+      await showLens(el.dataset.lens);
+      break;
+
     case 'reveal-context':
       // Revealed per card, and reset on every advance. The point of hiding it
       // is that the question carries the moment; leaving it open would turn
@@ -1428,6 +1455,42 @@ function copyText(text) {
  * deck releases them early - and the short-circuit meant that release could
  * never happen from the list. Let the server decide what is left.
  */
+/**
+ * What the three-letter code on a card means.
+ *
+ * The lens list is loaded once with the rest of the app data, so tapping the
+ * badge opens instantly rather than waiting on a request.
+ */
+async function showLens(code) {
+  if (!code) return;
+
+  if (!state.lenses) {
+    try {
+      const res = await api.get('/api/lenses');
+      state.lenses = res.lenses;
+    } catch (err) {
+      return uiAlert('Could not load that', err.message);
+    }
+  }
+
+  const lens = (state.lenses || []).find((l) => l.code === code);
+  if (!lens) {
+    return uiAlert(esc(code), 'No description has been written for this grouping yet.');
+  }
+
+  await dialog({
+    title: `${code} · ${lens.name}`,
+    bodyHtml: `
+      <p>${esc(lens.description || '')}</p>
+      <p style="margin-top:0.9rem;font-size:0.85rem;color:var(--text-faint)">
+        Every question here is original. Groupings name the way of looking a question
+        was written from, not anybody's book or deck.
+      </p>`,
+    actions: [{ label: 'Close', value: true, className: 'btn' }],
+  });
+  return undefined;
+}
+
 /** Query string for the current selection. */
 function selectionQuery() {
   return `domains=${selectedDomains().map(encodeURIComponent).join(',')}&depths=${selectedDepths().join(',')}`;

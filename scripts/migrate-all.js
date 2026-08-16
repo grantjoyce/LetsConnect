@@ -50,6 +50,9 @@ const MIGRATIONS = [
   // Retires the old single-axis `levels` table, so it MUST run before the seed.
   'migrate-corpus-model',
 
+  // The framework each question was written against, so a card can show it.
+  'migrate-add-lenses',
+
   // FIRST-RUN SEED ONLY. Does nothing at all on a database that already has
   // questions - content belongs to the admin area once it exists.
   'migrate-seed-corpus',

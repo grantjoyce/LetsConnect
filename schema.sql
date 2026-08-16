@@ -111,6 +111,24 @@ CREATE TABLE IF NOT EXISTS domains (
   UNIQUE KEY uq_domains_slug (slug)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- The framework a question was written against, shown as a three-letter code
+-- in the card's top corner and explained when tapped.
+--
+-- questions.lens holds the code with NO foreign key, on purpose: the lens is
+-- provenance, and a question whose lens was renamed or removed must keep being
+-- served rather than break.
+CREATE TABLE IF NOT EXISTS lenses (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  code        VARCHAR(3) NOT NULL,
+  name        VARCHAR(100) NOT NULL,
+  description TEXT NULL,
+  sort_order  INT NOT NULL DEFAULT 0,
+  is_active   TINYINT(1) NOT NULL DEFAULT 1,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_lenses_code (code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- A recommended running order over cards that circle the same construct at
 -- increasing exposure. Every card still stands alone - pull one out of a chain
 -- and it makes complete sense. The chain only adds value played in order.
@@ -161,6 +179,7 @@ CREATE TABLE IF NOT EXISTS questions (
   -- The deck query filters on all four of these together.
   KEY idx_questions_axes (domain_id, depth, is_active, admin_hidden),
   KEY idx_questions_source (source),
+  KEY idx_questions_lens (lens),
   KEY idx_questions_chain (chain_id, chain_position),
   CONSTRAINT fk_questions_domain FOREIGN KEY (domain_id)
     REFERENCES domains (id) ON DELETE CASCADE,

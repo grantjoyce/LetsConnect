@@ -120,6 +120,36 @@ const DOMAIN_PRESENTATION = {
   },
 };
 
+/**
+ * Couple-facing copy for each lens, shown when someone taps the code on a card.
+ *
+ * Written to describe the WAY OF LOOKING, never a book, a deck or an author's
+ * published material. That is the same line the corpus draws: frameworks are
+ * ideas and can be built on freely; expression is protected. Naming the person
+ * whose framework it is is attribution, not reproduction.
+ *
+ * The corpus supplies a one-line note per block; these are longer and written
+ * for someone holding a phone, not for a content editor.
+ */
+const LENS_COPY = {
+  GOT: ['Everyday connection', 'Built on the idea that relationships are made in small moments rather than grand ones: noticing each other, turning towards the little bids for attention, and keeping the rituals that hold a couple together. Named for the Gottmans, whose framework this follows.'],
+  PER: ['Desire and distance', 'Looks at the tension between wanting security and wanting freedom, and at how closeness and mystery both feed attraction. Follows Esther Perel’s framework.'],
+  REA: ['Honesty without blame', 'Concerns the difference between speaking plainly and attacking, and what people do with their own part in a problem. Follows Terry Real’s framework.'],
+  EFT: ['The cycle underneath', 'Treats most repeated arguments as one cycle playing out again, driven by a need neither person has said out loud. Drawn from Emotionally Focused work generally rather than one author.'],
+  SOL: ['Knowing your own patterns', 'About seeing your own habits clearly enough to choose differently, rather than explaining your partner to themselves. Follows Alexandra Solomon’s framework.'],
+  MNN: ['How you attach', 'Concerns what each of you does when you feel disconnected — reach harder, or go quiet — and how those reactions collide. Follows Elizabeth Menanno’s framework.'],
+  PHA: ['What you inherited', 'About the family you each grew up in, and the rules about love you absorbed before you were old enough to question them. Follows Vienna Pharaon’s framework.'],
+  TUR: ['Your side of it', 'Stays firmly on what is yours to own, change or admit, rather than what your partner should do differently. Follows Jerry Turecki’s framework.'],
+  NAG: ['How desire works', 'Based on the idea that desire has accelerators and brakes, and that taking your foot off the brake matters more than pressing harder. Follows Emily Nagoski’s framework.'],
+  MAR: ['Saying what you want', 'About being able to talk plainly about sex — what you like, what you do not, and what is hard to raise. Follows Vanessa Marin’s framework.'],
+  LEH: ['Fantasy and novelty', 'Concerns imagination, curiosity and the agreements a couple needs before exploring anything new. Follows Justin Lehmiller’s framework.'],
+  OPN: ['Opening questions', 'Light, low-risk questions written to start a conversation rather than to test one. Not drawn from any framework.'],
+  MON: ['Money', 'Written to the subject directly. No relationship framework covers money properly, and it is among the most common things couples fight about.'],
+  HOM: ['Home and household', 'Written to the subject directly: space, chores, rest, and the invisible work of running a life together.'],
+  FUT: ['The future and ageing', 'Written to the subject directly: plans, decisions, getting older, and the practical arrangements couples avoid making.'],
+  WRK: ['Work and ambition', 'Written to the subject directly: what work takes, what it gives, and what it costs the two of you.'],
+};
+
 function slugify(v) {
   return String(v).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
@@ -134,9 +164,31 @@ async function run(options = {}) {
 
   const conn = await pool.getConnection();
   try {
+    // ---- lenses -----------------------------------------------------------
+    // Seeded BEFORE the content check and on every run, because lenses are a
+    // lookup table: no user content hangs off them, so there is nothing to
+    // destroy. Putting them after the early return meant a new lens could only
+    // arrive via --replace, which would have made adding one cost every
+    // couple's progress.
+    let lensesAdded = 0;
+    for (let i = 0; i < (corpus.lenses || []).length; i += 1) {
+      const l = corpus.lenses[i];
+      const copy = LENS_COPY[l.prefix];
+      const [res] = await conn.query(
+        `INSERT INTO lenses (code, name, description, sort_order, is_active)
+         VALUES (?, ?, ?, ?, 1)
+         ON DUPLICATE KEY UPDATE sort_order = VALUES(sort_order), is_active = 1`,
+        [l.prefix, copy ? copy[0] : l.title, copy ? copy[1] : l.note || null, i + 1]
+      );
+      if (res.affectedRows === 1) lensesAdded += 1;
+    }
+
     const [[existing]] = await conn.query('SELECT COUNT(*) AS n FROM questions');
     if (Number(existing.n) > 0 && !replace) {
-      return `skipped - ${existing.n} questions already present (use --replace to rebuild)`;
+      return (
+        `${lensesAdded} lens description(s) added; ` +
+        `skipped content - ${existing.n} questions already present (use --replace to rebuild)`
+      );
     }
 
     await conn.beginTransaction();
@@ -158,6 +210,9 @@ async function run(options = {}) {
       await conn.query('DELETE FROM questions');
       await conn.query('DELETE FROM chains');
       await conn.query('DELETE FROM domains');
+      // Lenses are deliberately NOT deleted here. They carry no couple data,
+      // they are seeded above on every run, and wiping them would throw away
+      // any description the owner had reworded.
     }
 
     // ---- domains ----------------------------------------------------------

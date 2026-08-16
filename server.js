@@ -1091,7 +1091,7 @@ app.get(
     const seed = req.couple.shuffle_seed;
 
     const select = (withCooloff) => `
-      SELECT q.id, q.ref, q.text, q.context, q.depth, q.is_volatile,
+      SELECT q.id, q.ref, q.text, q.context, q.depth, q.is_volatile, q.lens,
              d.slug AS domain_slug, d.name AS domain_name, d.accent AS domain_accent,
              q.chain_id, q.chain_position, ch.name AS chain_name, ch.total AS chain_total,
              s.status AS prior_status
@@ -1158,6 +1158,8 @@ app.get(
         context: c.context,
         depth: c.depth,
         volatile: !!c.is_volatile,
+        // The three-letter framework code shown in the card's top corner.
+        lens: c.lens,
         domainSlug: c.domain_slug,
         domainName: c.domain_name,
         accent: c.domain_accent,
@@ -1167,6 +1169,24 @@ app.get(
         seenBefore: !!c.prior_status,
       })),
     });
+  })
+);
+
+/**
+ * Every lens, sent once with the app data rather than fetched per tap.
+ *
+ * There are sixteen of them and they are a few hundred bytes each, so a
+ * round trip every time somebody taps a code on a card would be pure latency
+ * for content that never changes mid-session.
+ */
+app.get(
+  '/api/lenses',
+  requireAuth,
+  wrap(async (req, res) => {
+    const rows = await query(
+      'SELECT code, name, description FROM lenses WHERE is_active = 1 ORDER BY sort_order'
+    );
+    res.json({ lenses: rows });
   })
 );
 
