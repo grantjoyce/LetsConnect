@@ -11,6 +11,9 @@
 
 :root {
   --bg: #170a14;
+  /* Below the page, not above it. The one surface that is DARKER than --bg,
+     for the fixed footer - a floor reads as a floor when it recedes. */
+  --bg-sunk: #100710;
   --bg-raised: #22101d;
   --surface: #2b1526;
   --surface-hi: #371c30;
@@ -713,17 +716,45 @@ a { color: var(--accent); }
    Start bar - pinned, because the selection above it can be long
    --------------------------------------------------------------------------- */
 
-.screen.has-start-bar { padding-bottom: 0.5rem; }
-
+/* The start bar -------------------------------------------------------------
+ *
+ * Its own footer, not a button floating over the list.
+ *
+ * This used to be a sticky pill on a gradient that faded to transparent, and
+ * the topic cards showed through underneath it - so it read as something
+ * hovering over the content rather than as a fixed part of the screen. The
+ * gradient was the whole problem: a soft edge tells the eye the surfaces are
+ * continuous, and they are not.
+ *
+ * Now it is a real band. Fixed to the bottom, edge to edge, its own darker
+ * surface, with a hard hairline along the top and a shadow lifting it off what
+ * scrolls underneath. The content inside stays on the app's 560px measure so it
+ * lines up with everything above it.
+ */
 .start-bar {
-  position: sticky;
+  position: fixed;
+  left: 0;
+  right: 0;
   bottom: 0;
   z-index: 20;
+  padding: 0.85rem 1.15rem calc(var(--safe-bottom) + 0.85rem);
+  /* Darker than the page, not lighter. A footer is the floor of the screen. */
+  background: var(--bg-sunk);
+  border-top: 1px solid var(--line-strong);
+  box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.45);
+}
+
+.start-bar > * {
   width: 100%;
   max-width: 560px;
   margin: 0 auto;
-  padding: 0.75rem 1.15rem calc(var(--safe-bottom) + 0.9rem);
-  background: linear-gradient(to top, var(--bg) 62%, transparent);
+  display: block;
+}
+
+/* Room for the bar, so the last topic card can be scrolled clear of it rather
+ * than sitting permanently underneath. */
+.screen.has-start-bar {
+  padding-bottom: calc(var(--safe-bottom) + 6.5rem);
 }
 
 .depth-chip {
