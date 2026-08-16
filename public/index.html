@@ -57,13 +57,44 @@
 })();
 
 // The service worker is what makes this installable and usable offline.
-if ('serviceWorker' in navigator) {
+//
+// NOT on localhost, deliberately. Two reasons, both about development rather
+// than about the worker being wrong:
+//
+//   1. It is the stickiest cache in the stack. Everything else here already
+//      fights staleness - the ?v= buster above, no-store on /api - because
+//      testing against code that is not the code you just wrote has cost real
+//      hours on this project. A worker that serves a cached shell is that
+//      failure with a longer half-life.
+//   2. Under tooling that proxies the page, fetch() inside the worker can fail
+//      while the page's own fetch works. Every /api/ GET then comes back as the
+//      worker's 503 "You are offline" and the app reads that as logged out, so
+//      it drops to the sign-in screen on every reload while the session is
+//      perfectly valid. That is a debugging trap, not a real symptom.
+//
+// Production is untouched: the worker installs on the deployed host exactly as
+// before, so installability and offline use are unchanged. An install left over
+// from a previous localhost session is actively removed, otherwise this guard
+// does nothing for the one browser that most needs it.
+(function () {
+  if (!('serviceWorker' in navigator)) return;
+
+  var host = location.hostname;
+  var isLocal = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '';
+
+  if (isLocal) {
+    navigator.serviceWorker.getRegistrations().then(function (regs) {
+      regs.forEach(function (r) { r.unregister(); });
+    }).catch(function () {});
+    return;
+  }
+
   window.addEventListener('load', function () {
     navigator.serviceWorker.register('/sw.js').catch(function (err) {
       console.warn('Service worker registration failed:', err);
     });
   });
-}
+})();
 </script>
 
 </body>
