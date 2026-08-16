@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.10.1';
 
 // ---------------------------------------------------------------------------
 // State
@@ -349,12 +349,13 @@ function viewAccount() {
       </div>
 
       <div class="panel">
-        <h2 class="panel-title">The hardest questions</h2>
+        <h2 class="panel-title">The ones with consequences</h2>
         <p class="hint" style="margin-bottom:0.9rem">
           ${plural(v.available || 0, 'question is', 'questions are')} held back until you
-          both say so. They are the ones that can genuinely damage things — not
-          uncomfortable, <strong>costly</strong>. Decide out loud, together, before
-          you turn them on.
+          both say so. These are not the most exposing questions — they are the ones
+          where an honest answer <strong>forces something to happen</strong>. A hidden
+          debt, a crossed line, a doubt about staying. Decide out loud, together,
+          before you turn them on.
         </p>
         <button class="btn ${v.unlocked ? 'btn-ghost' : ''} btn-block" data-action="volatile">
           ${v.unlocked ? 'Put them away again' : 'We both agree — include them'}
@@ -608,7 +609,7 @@ function viewDeck() {
         <div class="qcard entering" id="qcard">
           <div class="qcard-top">
             <span class="depth-badge">D${depth.n}${depth.name ? ` · ${esc(depth.name)}` : ''}</span>
-            ${card.volatile ? '<span class="pill pill-warn">handle with care</span>' : ''}
+            ${card.volatile ? '<span class="pill pill-warn">this one has consequences</span>' : ''}
             ${
               // A sequence is not a mode you enter - it arrives. The card says
               // where it sits so the couple knows more is coming, and the
@@ -1108,9 +1109,10 @@ async function toggleVolatile() {
 
   if (turningOn) {
     const yes = await uiConfirm(
-      'Include the hardest questions?',
-      `<strong>${v.available}</strong> questions are held back because they can do real damage ` +
-        'if they arrive in a bad week — betrayal, leaving, what it would take to walk away.' +
+      'Include the ones with consequences?',
+      `<strong>${v.available}</strong> questions are held back — not because they are the most ` +
+        'exposing, but because an honest answer to them forces something to happen. A hidden ' +
+        'debt, a crossed line, a doubt about staying.' +
         '<br><br>Say it out loud to each other before you tap. Either of you can put them away ' +
         'again at any point, and that needs no discussion at all.',
       'We both agree'

@@ -25,7 +25,28 @@
 const fs = require('fs');
 const path = require('path');
 
-const SOURCE = path.join(__dirname, '..', 'Research Data', 'couples-question-corpus.md');
+/**
+ * The corpus, wherever it currently sits.
+ *
+ * Resolved by pattern rather than by exact name because the file arrives by
+ * download and comes back as "couples-question-corpus (1).md" when it is
+ * replaced. That is not worth a failed build, and renaming somebody else's
+ * source file to suit a script is the wrong way round.
+ */
+function findCorpus() {
+  const dir = path.join(__dirname, '..', 'Research Data');
+  const exact = path.join(dir, 'couples-question-corpus.md');
+  if (fs.existsSync(exact)) return exact;
+  const matches = fs
+    .readdirSync(dir)
+    .filter((f) => /^couples-question-corpus.*\.md$/i.test(f))
+    // Newest wins, so a freshly downloaded replacement is picked up.
+    .map((f) => ({ f, m: fs.statSync(path.join(dir, f)).mtimeMs }))
+    .sort((a, b) => b.m - a.m);
+  return matches.length ? path.join(dir, matches[0].f) : exact;
+}
+
+const SOURCE = findCorpus();
 const OUT = path.join(__dirname, '..', 'data', 'corpus.json');
 
 // | ID | Depth | Domain | Vol | Chain | Question | Context |
