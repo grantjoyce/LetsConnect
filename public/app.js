@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.11.3';
+const APP_VERSION = '1.11.4';
 
 // ---------------------------------------------------------------------------
 // State
@@ -256,7 +256,7 @@ function showHowItWorks() {
     ['Sit down together', 'This is one phone between two people, not two apps talking to each other. Put it somewhere you can both see and give it an hour.'],
     ['Choose the ground', 'Tick the topics you are up for and how deep you want to go. Depth is about exposure, not difficulty - D1 costs nothing to answer, D5 changes something.'],
     ['Talk about the card', 'One question fills the screen. There is no timer and nothing to type - the app never records a single answer, only whether you dealt with the card.'],
-    ['Completed or Skip', '<strong>Completed</strong> retires the question for good. <strong>Skip</strong> means &ldquo;not tonight&rdquo; - it drops out of the deck and comes back around in a couple of weeks.'],
+    ['Completed or Skip', '<strong>Completed</strong> retires the question for good. <strong>Skip</strong> means &ldquo;not this time&rdquo; - it drops out of the deck and comes back around in a couple of weeks.'],
     ['Come back to it', 'Your code keeps your place. Close the app, sit down again next month, and it carries on from where the two of you left off.'],
   ];
   return dialog({
@@ -525,7 +525,10 @@ function viewSelection() {
       </div>
 
 
-      <h2 class="section-title">How deep tonight?</h2>
+      ${/* Not "tonight". Nothing here knows when they are playing, and a
+           Sunday-afternoon couple should not be told they are doing it at the
+           wrong time of day. */ ''}
+      <h2 class="section-title">How deep?</h2>
       <div class="depth-filter depth-filter--page" role="group" aria-label="Depth">
         ${depthLadder().map((depth) => {
           const on = deps.includes(depth.n);
