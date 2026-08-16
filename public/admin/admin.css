@@ -110,13 +110,17 @@
   gap: 0.75rem;
 }
 
+/* A label, so it is styled as one. --faint is the palette's slot for "labels,
+ * IDs, metadata", and this badge says nothing more than which half of the app
+ * you are in. As a filled pink pill it was the loudest object on the page. */
 .admin-badge {
   font-size: 0.62rem;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  background: var(--accent);
-  color: #fff;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  color: var(--faint);
   padding: 0.15rem 0.45rem;
   border-radius: 999px;
 }
@@ -201,11 +205,16 @@ table.data td.actions { white-space: nowrap; text-align: right; }
 
 .mini:hover { background: rgba(255, 255, 255, 0.07); color: var(--text); }
 
-.mini.danger { border-color: rgba(226, 87, 76, 0.5); color: #ff9d94; }
-.mini.danger:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+/* Ember, and outline only - a filled red button gets pressed by accident. */
+.mini.danger { border-color: var(--destruct); color: var(--destruct); }
+.mini.danger:hover {
+  background: color-mix(in srgb, var(--destruct) 10%, transparent);
+  border-color: var(--destruct);
+  color: var(--destruct);
+}
 
-.mini.go { border-color: var(--accent); color: var(--accent); }
-.mini.go:hover { background: var(--accent); color: #fff; }
+.mini.go { border-color: var(--edge-hi); color: var(--lamplight); }
+.mini.go:hover { background: var(--raised); color: var(--lamplight); }
 
 /* Skip-rate bar ----------------------------------------------------------- */
 
@@ -229,7 +238,7 @@ table.data td.actions { white-space: nowrap; text-align: right; }
   display: block;
   height: 100%;
   border-radius: 999px;
-  background: var(--rate-colour, var(--accent));
+  background: var(--rate-colour, var(--faint));
 }
 
 .rate-num {
@@ -324,7 +333,7 @@ table.data td.actions { white-space: nowrap; text-align: right; }
 
 .dropzone:hover,
 .dropzone.is-over {
-  border-color: var(--accent);
+  border-color: var(--edge-hi);
   background: var(--surface);
 }
 
@@ -345,8 +354,8 @@ table.data td.actions { white-space: nowrap; text-align: right; }
 .problem-list {
   max-height: 260px;
   overflow-y: auto;
-  border: 1px solid rgba(226, 87, 76, 0.4);
-  background: rgba(226, 87, 76, 0.07);
+  border: 1px solid var(--destruct);
+  background: color-mix(in srgb, var(--destruct) 8%, transparent);
   border-radius: var(--radius);
   padding: 0.5rem 0.8rem;
   font-size: 0.85rem;
@@ -354,7 +363,7 @@ table.data td.actions { white-space: nowrap; text-align: right; }
 
 .problem-list div { padding: 0.3rem 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
 .problem-list div:last-child { border-bottom: none; }
-.problem-list b { color: #ffb3ac; font-weight: 700; }
+.problem-list b { color: var(--destruct); font-weight: 700; }
 
 /* Login ------------------------------------------------------------------- */
 
@@ -402,9 +411,9 @@ table.data td.actions { white-space: nowrap; text-align: right; }
   margin-bottom: 0.8rem;
 }
 
-.draft.is-ok { border-left-color: #35B7A6; }
-.draft.is-review { border-left-color: #F2A33C; }
-.draft.is-rejected { border-left-color: #E2574C; }
+.draft.is-ok { border-left-color: var(--d2); }
+.draft.is-review { border-left-color: var(--d3); }
+.draft.is-rejected { border-left-color: var(--destruct); }
 
 .draft-q {
   font-size: 1.05rem;
@@ -431,7 +440,7 @@ table.data td.actions { white-space: nowrap; text-align: right; }
 
 .draft-issues {
   font-size: 0.8rem;
-  color: #ffb3ac;
+  color: var(--destruct);
   margin-bottom: 0.6rem;
 }
 
@@ -468,10 +477,10 @@ table.data td.actions { white-space: nowrap; text-align: right; }
  * from two numbers in a header. */
 .chain-gate {
   padding: 0.5rem 0.9rem;
-  background: rgba(226, 87, 76, 0.1);
-  border-bottom: 1px solid rgba(226, 87, 76, 0.3);
+  background: color-mix(in srgb, var(--destruct) 9%, transparent);
+  border-bottom: 1px solid var(--destruct);
   font-size: 0.8rem;
-  color: #ffb3ac;
+  color: var(--destruct);
   font-weight: 700;
 }
 

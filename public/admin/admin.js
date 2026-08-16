@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.11.1';
+const APP_VERSION = '1.11.2';
 
 const state = {
   ready: false,
@@ -102,10 +102,21 @@ function plural(n, one, many) {
 }
 
 /** Red for a high skip rate, amber in the middle, calm below that. */
+/**
+ * Skip rate, coloured on the depth ramp rather than as a traffic light.
+ *
+ * It was green-amber-red, which is the reflex and is wrong here for the same
+ * reason the design system gives for the depth ladder: a high skip rate is not
+ * a hazard. It usually means the question is too exposing for where it sits, or
+ * badly worded - both worth looking at, neither an alarm.
+ *
+ * The ramp already encodes "further along" without encoding "more dangerous",
+ * which is exactly the reading this wants.
+ */
 function rateColour(pct) {
-  if (pct >= 60) return '#E2574C';
-  if (pct >= 35) return '#F2A33C';
-  return '#35B7A6';
+  if (pct >= 60) return 'var(--d5)';
+  if (pct >= 35) return 'var(--d4)';
+  return 'var(--d1)';
 }
 
 // ---------------------------------------------------------------------------
@@ -374,8 +385,10 @@ function tabOverview() {
       ${statTile('Couples', c.couples)}
       ${statTile('Groups', c.groups)}
       ${statTile('Live questions', c.liveQuestions)}
-      ${statTile('Discussed', c.completed, '#35B7A6')}
-      ${statTile('Skipped', c.skipped, '#F2A33C')}
+      ${/* No tints. These are counts, not verdicts - "skipped" in amber read as
+           a problem when it is simply how many cards were passed over. */ ''}
+      ${statTile('Discussed', c.completed)}
+      ${statTile('Skipped', c.skipped)}
     </div>
 
     ${
@@ -1176,10 +1189,13 @@ function tabImport() {
       p
         ? `
       <div class="import-summary">
-        ${statTile('New', p.summary.create, '#35B7A6')}
-        ${statTile('Updated', p.summary.update, '#3D9BE9')}
+        ${/* Only Problems is tinted, and only when there are some. A count of
+             rows that will import cleanly does not need celebrating in green;
+             a count of rows that will not is the one thing worth spotting. */ ''}
+        ${statTile('New', p.summary.create)}
+        ${statTile('Updated', p.summary.update)}
         ${statTile('Unchanged', p.summary.unchanged)}
-        ${statTile('Problems', p.summary.problems, p.summary.problems ? '#E2574C' : undefined)}
+        ${statTile('Problems', p.summary.problems, p.summary.problems ? 'var(--destruct)' : undefined)}
       </div>
 
       ${

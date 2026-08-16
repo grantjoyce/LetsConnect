@@ -213,7 +213,13 @@ h1, h2, h3, h4 {
 p { margin: 0 0 0.75rem; }
 p:last-child { margin-bottom: 0; }
 
-a { color: var(--accent); }
+a {
+  color: var(--lamplight);
+  text-decoration-color: var(--faint);
+  text-underline-offset: 3px;
+}
+
+a:hover { text-decoration-color: var(--lamplight); }
 
 /* ---------------------------------------------------------------------------
    Layout
@@ -253,8 +259,8 @@ a { color: var(--accent); }
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  border: 3px solid var(--accent-soft);
-  border-top-color: var(--accent);
+  border: 3px solid var(--hairline);
+  border-top-color: var(--lamplight);
   animation: spin 0.9s linear infinite;
 }
 
@@ -445,7 +451,7 @@ a { color: var(--accent); }
 
 .input:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--focus);
   background: var(--surface);
 }
 
@@ -1400,8 +1406,8 @@ a { color: var(--accent); }
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--raised);
+  color: var(--lamplight);
   font-weight: 800;
   font-size: 0.82rem;
   display: grid;
@@ -1547,10 +1553,14 @@ a { color: var(--accent); }
 
 .tab:hover { color: var(--text); border-color: var(--line-strong); }
 
+/* Selected, without a hue. The design system has no accent colour, and a
+ * warm-white fill here would make the nav the brightest thing on screen,
+ * competing with the one primary action. So selection is carried by surface
+ * and contrast: it lifts to --raised and the label goes to full strength. */
 .tab.is-on {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  background: var(--raised);
+  border-color: var(--edge-hi);
+  color: var(--lamplight);
 }
 
 .tab-body { flex: 1; }
@@ -1574,12 +1584,17 @@ a { color: var(--accent); }
   overflow: hidden;
 }
 
+/* The rail is structure, not meaning. It used to default to the brand pink and
+ * carried a different colour per tile - teal for discussed, amber for skipped -
+ * which made a count look like a verdict. "Skipped" is not a warning; it is a
+ * number. Callers can still pass --stat-accent where a colour genuinely says
+ * something, and nothing does by default. */
 .stat::before {
   content: '';
   position: absolute;
   inset: 0 auto 0 0;
   width: 3px;
-  background: var(--stat-accent, var(--accent));
+  background: var(--stat-accent, var(--hairline));
 }
 
 .stat-value {
@@ -1637,8 +1652,8 @@ a { color: var(--accent); }
   letter-spacing: 0.06em;
   padding: 0.1rem 0.42rem;
   border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--raised);
+  color: var(--muted);
   vertical-align: middle;
   margin-left: 0.35rem;
 }
@@ -1680,7 +1695,7 @@ a { color: var(--accent); }
 .check input[type='checkbox'] {
   width: 20px;
   height: 20px;
-  accent-color: var(--accent);
+  accent-color: var(--lamplight);
   flex: none;
 }
 
@@ -1702,9 +1717,16 @@ code {
   border-radius: 4px;
 }
 
+/* Neutral, deliberately. This was a plum panel, which read as an alarm for
+ * something that is only a setting that has not been filled in yet.
+ *
+ * The design system leaves nowhere for it to go: there is no warning amber, and
+ * brass is spent the moment it appears on anything other than Stakes. So the
+ * notice carries its weight with words and a raised surface - the first
+ * sentence says what is wrong and the link says where to fix it. */
 .notice {
-  background: var(--accent-soft);
-  border: 1px solid rgba(216, 50, 124, 0.35);
+  background: var(--raised);
+  border: 1px solid var(--hairline);
   border-radius: var(--radius);
   padding: 0.85rem 1rem;
   font-size: 0.9rem;
