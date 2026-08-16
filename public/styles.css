@@ -1563,3 +1563,22 @@ code {
   white-space: nowrap;
   border: 0;
 }
+
+/* "Card 2 of 5" ------------------------------------------------------------
+ *
+ * A sequence is no longer a mode you choose - it arrives inside the ordinary
+ * deck, and this is the only thing that tells you so. Quiet, because it is a
+ * fact about the card rather than an instruction, but present enough that the
+ * couple knows more is coming before they answer. */
+
+.chain-step {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--lv-accent, var(--accent));
+  color: var(--lv-accent, var(--accent));
+  white-space: nowrap;
+}

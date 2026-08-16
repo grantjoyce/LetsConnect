@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.8.2';
+const APP_VERSION = '1.9.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -47,8 +47,8 @@ const state = {
   // deck per topic. Null means "not chosen yet", which resolves to everything.
   selection: { domains: null, depths: null },
 
-  chains: null,
-  chain: null, // { chain, cards, position } while running a sequence
+  // Sequences are not a mode. A chained card is dealt like any other and the
+  // rest of its run follows it, so there is no sequence state to hold.
   volatile: null, // { unlocked, available }
 
   serverVersion: null,
@@ -510,7 +510,6 @@ function viewSelection() {
   const doms = selectedDomains();
   const deps = selectedDepths();
   const ready = selectionReady();
-  const chainCount = state.chains ? state.chains.length : null;
 
   return `
     <div class="screen has-start-bar">
@@ -547,10 +546,6 @@ function viewSelection() {
         ${state.domains.map(domainCard).join('')}
       </div>
 
-      <button class="btn btn-block btn-ghost" data-action="open-chains" style="margin-top:1.2rem">
-        Or run a guided sequence${chainCount ? ` · ${chainCount}` : ''}
-      </button>
-
       <div class="footer-note">
         <span class="version-badge${
           state.serverVersion && state.serverVersion !== APP_VERSION ? ' mismatch' : ''
@@ -577,61 +572,6 @@ function viewSelection() {
 }
 
 /** The list of guided sequences. */
-function viewChains() {
-  const chains = state.chains;
-
-  return `
-    <div class="screen">
-      <div class="topbar">
-        <div class="brand">
-          <button class="icon-btn" data-action="go-domains" aria-label="Back">&larr;</button>
-          <span>Guided sequences</span>
-        </div>
-      </div>
-
-      <div class="notice">
-        A sequence is a handful of cards that circle the same thing, getting more
-        exposing as you go. Every card still stands on its own, so stopping early is a
-        complete conversation rather than an abandoned one.
-      </div>
-
-      ${
-        !chains
-          ? '<div class="boot" style="min-height:30vh"><div class="boot-mark"></div></div>'
-          : chains.length
-            ? `<div class="level-list">
-                 ${chains
-                   .map(
-                     (c) => `
-                   <button class="level-card" style="${accentVars(c.accent)}"
-                           data-action="open-chain" data-id="${c.id}">
-                     <div class="level-head">
-                       <span class="level-name">${esc(c.name)}</span>
-                       <span class="level-count">${c.total} card${c.total === 1 ? '' : 's'}</span>
-                     </div>
-                     <div class="level-tagline">${esc(c.domainName || '')} · depth ${c.minDepth}${
-                       c.maxDepth !== c.minDepth ? ` to ${c.maxDepth}` : ''
-                     }</div>
-                     ${
-                       c.gateAt
-                         ? '<div class="level-meta"><span>Goes deep — you will be asked before it does</span></div>'
-                         : ''
-                     }
-                     ${
-                       c.completed
-                         ? `<div class="level-meta"><span>${c.completed} of ${c.total} done</span></div>`
-                         : ''
-                     }
-                   </button>`
-                   )
-                   .join('')}
-               </div>`
-            : `<div class="empty-state"><h3>Nothing left</h3>
-                 <p>You have worked through every sequence available to you.</p></div>`
-      }
-    </div>`;
-}
-
 function viewDeck() {
   const d = state.deck;
   const card = d.cards[d.index];
@@ -640,12 +580,11 @@ function viewDeck() {
 
   if (!card) return deckFinished();
 
-  const inChain = !!d.chain;
   const depth = depthLadder().find((x) => x.n === card.depth) || { n: card.depth, name: '' };
 
   // Each card carries its own topic colour, so a mixed selection is visibly
   // moving between subjects rather than looking like one flat pile.
-  const accent = card.accent || (d.chain && d.chain.accent) || '#D8327C';
+  const accent = card.accent || '#D8327C';
 
   return `
     <div class="deck" style="${accentVars(accent)}">
@@ -654,12 +593,9 @@ function viewDeck() {
         <button class="icon-btn" data-action="prev-card" aria-label="Previous card"
                 ${d.index === 0 ? 'disabled' : ''}>&larr;</button>
         <div class="deck-titles">
-          <div class="deck-level">${esc(inChain ? d.chain.name : card.domainName || '')}</div>
+          <div class="deck-level">${esc(card.domainName || '')}</div>
           <div class="deck-progress-text">
-            ${
-              inChain
-                ? `Card ${d.index + 1} of ${d.cards.length}`
-                : `${esc(stats.completed)} of ${esc(stats.total)} discussed${
+            ${`${esc(stats.completed)} of ${esc(stats.total)} discussed${
                     doneInDeck ? ` &middot; ${plural(doneInDeck, 'card', 'cards')} this sitting` : ''
                   }`
             }
@@ -673,6 +609,18 @@ function viewDeck() {
           <div class="qcard-top">
             <span class="depth-badge">D${depth.n}${depth.name ? ` · ${esc(depth.name)}` : ''}</span>
             ${card.volatile ? '<span class="pill pill-warn">handle with care</span>' : ''}
+            ${
+              // A sequence is not a mode you enter - it arrives. The card says
+              // where it sits so the couple knows more is coming, and the
+              // position counts against the sequence's real length, not the run
+              // being dealt now: "3 of 5" stays true when 1 and 2 were answered
+              // last month.
+              card.chain
+                ? `<span class="chain-step" title="${esc(card.chain.name)}">
+                     Card ${card.chain.position} of ${card.chain.total}
+                   </span>`
+                : ''
+            }
             ${
               // Subject on top, lens under it. These are two different things
               // and the three-letter code alone could not say which it was -
@@ -735,11 +683,10 @@ function deckFinished() {
   const d = state.deck;
   const s = d.stats || { completed: 0, total: 0, skipped: 0 };
   const allDone = s.completed >= s.total && s.total > 0;
-  const inChain = !!d.chain;
-  const where = inChain ? d.chain.name : d.selection ? d.selection.names.join(', ') : 'this selection';
+  const where = d.selection ? d.selection.names.join(', ') : 'this selection';
 
   return `
-    <div class="deck" style="${accentVars((d.chain && d.chain.accent) || '#D8327C')}">
+    <div class="deck" style="${accentVars('#D8327C')}">
       <div class="deck-bar">
         <button class="icon-btn" data-action="close-deck" aria-label="Back">&times;</button>
         <div class="deck-titles">
@@ -752,39 +699,29 @@ function deckFinished() {
       <div class="deck-body">
         <div class="deck-done">
           <div class="deck-done-mark" aria-hidden="true">${allDone ? '&#10003;' : '&#8987;'}</div>
-          <h2>${
-            inChain
-              ? 'Sequence finished'
-              : allDone
-                ? 'That is everything you selected'
-                : 'Nothing left for now'
-          }</h2>
+          <h2>${allDone ? 'That is everything you selected' : 'Nothing left for now'}</h2>
           <p>
             ${
-              inChain
-                ? 'You worked the whole arc. Stopping earlier would have been fine too.'
-                : allDone
-                  ? `You have talked your way through all ${esc(s.total)} questions in ${esc(where)}. That is not nothing.`
-                  : `You have worked through everything currently available here.${
-                      s.skipped
-                        ? ` ${plural(s.skipped, 'question is', 'questions are')} on the skipped pile and will come back around in a couple of weeks.`
-                        : ''
-                    }`
+              allDone
+                ? `You have talked your way through all ${esc(s.total)} questions in ${esc(where)}. That is not nothing.`
+                : `You have worked through everything currently available here.${
+                    s.skipped
+                      ? ` ${plural(s.skipped, 'question is', 'questions are')} on the skipped pile and will come back around in a couple of weeks.`
+                      : ''
+                  }`
             }
           </p>
           <div class="stack">
             ${
-              s.skipped && !inChain
+              s.skipped
                 ? `<button class="btn btn-ghost" data-action="restore-skipped">
                      Bring back the ${plural(s.skipped, 'skipped one', 'skipped ones')} now
                    </button>`
                 : ''
             }
-            <button class="btn" data-action="close-deck">
-              ${inChain ? 'Back to sequences' : 'Change what you picked'}
-            </button>
+            <button class="btn" data-action="close-deck">Change what you picked</button>
             ${
-              s.completed && !inChain
+              s.completed
                 ? `<button class="btn btn-ghost danger" data-action="reset-deck">
                      Start this selection again
                    </button>`
@@ -812,8 +749,6 @@ function render() {
     html = viewDeck();
   } else if (state.view === 'account') {
     html = viewAccount();
-  } else if (state.view === 'chains') {
-    html = viewChains();
   } else {
     html = viewSelection();
   }
@@ -932,18 +867,7 @@ async function handleAction(action, el) {
 
     case 'go-domains':
       state.view = 'levels';
-      state.chain = null;
       render();
-      break;
-
-    case 'open-chains':
-      state.view = 'chains';
-      render();
-      await loadChains();
-      break;
-
-    case 'open-chain':
-      await openChain(Number(el.dataset.id));
       break;
 
     case 'prev-card':
@@ -972,8 +896,7 @@ async function handleAction(action, el) {
     case 'close-deck':
       state.deck = null;
       state.revealed = false;
-      state.view = state.chain ? 'chains' : 'levels';
-      state.chain = null;
+      state.view = 'levels';
       render();
       break;
 
@@ -1168,69 +1091,6 @@ async function startDeck() {
 
 // ---- Chains ---------------------------------------------------------------
 
-async function loadChains() {
-  try {
-    const data = await api.get('/api/chains');
-    state.chains = data.chains;
-    if (state.view === 'chains') render();
-  } catch (err) {
-    toast(err.message, true);
-  }
-}
-
-/**
- * Run a guided sequence.
- *
- * The consent gate sits at the transition INTO depth 4, not at the start, so
- * the couple opts in with a clear view of where the arc is heading rather than
- * agreeing blind at card one.
- */
-async function openChain(id) {
-  try {
-    const data = await api.get(`/api/chains/${id}`);
-    if (!data.cards.length) {
-      return uiAlert('Nothing left', 'You have already worked through this sequence.');
-    }
-
-    // Resume where they stopped, but never past the end.
-    const start = Math.min(data.position || 0, data.cards.length - 1);
-
-    if (data.chain.maxDepth >= 4) {
-      const yes = await uiConfirm(
-        `${esc(data.chain.name)}`,
-        `This sequence starts gently and ends at depth <strong>${data.chain.maxDepth}</strong> — ` +
-          'shame, fear, or things that cannot be unsaid. ' +
-          `${data.cards.length} cards, perhaps twenty minutes.<br><br>` +
-          'You can stop after any card and still have had a whole conversation.',
-        'Start it',
-        false
-      );
-      if (!yes) return undefined;
-    }
-
-    state.chain = data.chain;
-    state.deck = {
-      domain: {
-        slug: data.chain.domainSlug,
-        name: data.chain.domainName,
-        accent: data.chain.accent,
-      },
-      depth: null,
-      stats: { completed: data.position || 0, total: data.cards.length, skipped: 0 },
-      cards: data.cards,
-      index: start,
-      chain: data.chain,
-      releasedEarly: false,
-    };
-    state.revealed = false;
-    state.view = 'deck';
-    render();
-  } catch (err) {
-    uiAlert('Could not open that sequence', err.message);
-  }
-  return undefined;
-}
-
 /**
  * Open, or close, the hardest questions.
  *
@@ -1301,19 +1161,12 @@ async function answerCard(decision) {
     state.revealed = false;
     state.busy = false;
 
-    // Keep a chain session's position on the server, so stopping and coming
-    // back resumes rather than restarting.
-    if (d.chain) {
-      api
-        .post(`/api/chains/${d.chain.id}/progress`, {
-          position: d.index,
-          status: d.index >= d.cards.length ? 'done' : 'active',
-        })
-        .catch(() => {});
-    }
-
     // Top the deck up before it runs dry, so there is never a pause mid-flow.
-    if (!d.chain && d.index >= d.cards.length - 3) {
+    //
+    // No separate chain bookkeeping any more. A sequence's place is not session
+    // state to be resumed - it is simply which of its cards are still
+    // unanswered, which the deck query already knows.
+    if (d.index >= d.cards.length - 3) {
       refillDeck().catch(() => {});
     }
 
@@ -1335,9 +1188,9 @@ async function answerCard(decision) {
  */
 async function refillDeck() {
   const d = state.deck;
-  if (!d || d.chain) return;
+  if (!d) return;
   const data = await api.get(`/api/deck?${selectionQuery()}`);
-  if (!state.deck || state.deck.chain) return;
+  if (!state.deck) return;
 
   const have = new Set(d.cards.map((c) => c.id));
   const extra = data.cards.filter((c) => !have.has(c.id));
@@ -1364,7 +1217,7 @@ async function showDeckMenu() {
   const sel = d.selection;
 
   const choice = await dialog({
-    title: d.chain ? d.chain.name : 'This session',
+    title: 'This session',
     bodyHtml: `
       ${
         sel
@@ -1611,7 +1464,6 @@ async function leaveSession() {
   }
   state.couple = null;
   state.deck = null;
-  state.chain = null;
   state.selection = { domains: null, depths: null };
   state.view = 'levels';
   state.form = {};

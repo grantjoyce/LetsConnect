@@ -1088,6 +1088,65 @@ function parseSelection(req, domainRows, depthRows) {
 }
 
 /**
+ * Keeps a sequence together, in order, wherever the shuffle happened to drop it.
+ *
+ * A sequence is a run of cards that circle the same thing at rising exposure,
+ * and it only means anything played in order. It used to be a separate mode -
+ * a button, a list, a screen of its own - which made a good idea into a chore
+ * nobody would choose mid-conversation.
+ *
+ * So sequences are not a mode any more. They are dealt like everything else,
+ * and when one of their cards comes up the rest follow immediately behind it.
+ * The couple never chooses a sequence; they just notice the card saying "2 of
+ * 5" and keep going.
+ *
+ * The FIRST member to appear in the shuffle decides where the run lands, so
+ * where a sequence turns up is still random. From that point the order is the
+ * authored one, not the shuffle's.
+ *
+ * The card is numbered against THE RUN BEING DEALT, not against the sequence's
+ * authored length. A sequence can span topics and depths, so with Attachment
+ * alone selected, ASKING deals its 1st, 3rd and 5th cards - and labelling those
+ * "1 of 5, 3 of 5, 5 of 5" shows the couple gaps they cannot do anything about.
+ * Numbered over the run they get "1 of 3, 2 of 3, 3 of 3", which is what the
+ * counter is actually promising: how many more of these are coming.
+ *
+ * The cost is that the total shifts between sittings - answer two tonight and
+ * the rest arrive as "1 of 3" next month rather than "3 of 5". That is the
+ * lesser oddity: within one sitting the numbers always run consecutively, which
+ * is the only place anybody is comparing them.
+ */
+function clusterChains(cards) {
+  const out = [];
+  const placed = new Set();
+
+  for (const card of cards) {
+    if (placed.has(card.id)) continue;
+
+    if (!card.chain_id) {
+      out.push(card);
+      placed.add(card.id);
+      continue;
+    }
+
+    // Pull every servable sibling forward to sit behind this one, in the order
+    // they were authored.
+    const run = cards
+      .filter((c) => c.chain_id === card.chain_id && !placed.has(c.id))
+      .sort((a, b) => (a.chain_position || 0) - (b.chain_position || 0));
+
+    run.forEach((c, i) => {
+      c.run_position = i + 1;
+      c.run_total = run.length;
+      out.push(c);
+      placed.add(c.id);
+    });
+  }
+
+  return out;
+}
+
+/**
  * A shuffled deck drawn from everything the couple selected.
  *
  * ONE deck across all chosen topics, not one deck per topic. The couple picks
@@ -1151,6 +1210,8 @@ app.get(
       releasedEarly = cards.length > 0;
     }
 
+    cards = clusterChains(cards);
+
     // Totals across the whole selection, so the header counts what is actually
     // in play rather than any one topic.
     const all = await domainsWithProgress(req.couple.id);
@@ -1192,9 +1253,13 @@ app.get(
         domainSlug: c.domain_slug,
         domainName: c.domain_name,
         accent: c.domain_accent,
-        chain: c.chain_id
-          ? { id: c.chain_id, name: c.chain_name, position: c.chain_position, total: c.chain_total }
-          : null,
+        // position/total are the RUN's, not the authored sequence's - see
+        // clusterChains. A single-card run is not labelled at all: "1 of 1"
+        // announces a sequence the couple will never see the rest of.
+        chain:
+          c.chain_id && c.run_total > 1
+            ? { id: c.chain_id, name: c.chain_name, position: c.run_position, total: c.run_total }
+            : null,
         seenBefore: !!c.prior_status,
       })),
     });
@@ -1222,144 +1287,18 @@ app.get(
   })
 );
 
-// ---- Chains ---------------------------------------------------------------
-
-/**
- * Chains available to this couple, with how far through each they are.
- *
- * A chain is offered only if it still has an unanswered card, so finished
- * chains drop off the list rather than sitting there as clutter.
- */
-app.get(
-  '/api/chains',
-  requireCouple,
-  wrap(async (req, res) => {
-    const allowVolatile = await volatileUnlocked(req.couple.id);
-    const rows = await query(
-      `SELECT ch.id, ch.name, ch.total, ch.min_depth, ch.max_depth,
-              d.slug AS domainSlug, d.name AS domainName, d.accent,
-              COUNT(q.id) AS servable,
-              SUM(CASE WHEN s.status = 'completed' THEN 1 ELSE 0 END) AS completed,
-              p.position AS position, p.status AS sessionStatus
-         FROM chains ch
-         LEFT JOIN domains d ON d.id = ch.domain_id
-         LEFT JOIN questions q ON q.chain_id = ch.id AND ${servableWhere(allowVolatile)}
-         LEFT JOIN couple_question_status s ON s.question_id = q.id AND s.couple_id = ?
-         LEFT JOIN couple_chain_progress p ON p.chain_id = ch.id AND p.couple_id = ?
-        WHERE ch.is_active = 1
-        GROUP BY ch.id, ch.name, ch.total, ch.min_depth, ch.max_depth,
-                 d.slug, d.name, d.accent, p.position, p.status
-       HAVING servable > 0
-        ORDER BY d.sort_order, ch.name`,
-      [req.couple.id, req.couple.id]
-    );
-
-    res.json({
-      chains: rows
-        .map((r) => ({
-          id: r.id,
-          name: r.name,
-          total: Number(r.servable),
-          declaredTotal: Number(r.total),
-          minDepth: Number(r.min_depth),
-          maxDepth: Number(r.max_depth),
-          domainSlug: r.domainSlug,
-          domainName: r.domainName,
-          accent: r.accent || '#D8327C',
-          completed: Number(r.completed) || 0,
-          position: r.position === null ? 0 : Number(r.position),
-          sessionStatus: r.sessionStatus,
-          // The corpus puts the consent gate at the transition into D4/D5
-          // rather than at the start, so a couple opts in with a clear view of
-          // where the arc is heading rather than blind at card one.
-          gateAt: Number(r.max_depth) >= 4 ? 4 : null,
-        }))
-        .filter((c) => c.completed < c.total),
-    });
-  })
-);
-
-/** The ordered cards of one chain, with where the couple has got to. */
-app.get(
-  '/api/chains/:id',
-  requireCouple,
-  wrap(async (req, res) => {
-    const id = Number(req.params.id);
-    const chain = await queryOne(
-      `SELECT ch.id, ch.name, ch.total, ch.min_depth, ch.max_depth,
-              d.slug AS domainSlug, d.name AS domainName, d.accent
-         FROM chains ch LEFT JOIN domains d ON d.id = ch.domain_id
-        WHERE ch.id = ? AND ch.is_active = 1`,
-      [id]
-    );
-    if (!chain) return fail(res, 404, 'That sequence does not exist.');
-
-    const allowVolatile = await volatileUnlocked(req.couple.id);
-    const cards = await query(
-      `SELECT q.id, q.ref, q.text, q.context, q.depth, q.is_volatile, q.chain_position,
-              s.status AS prior_status
-         FROM questions q
-         LEFT JOIN couple_question_status s ON s.question_id = q.id AND s.couple_id = ?
-        WHERE q.chain_id = ? AND ${servableWhere(allowVolatile)}
-        ORDER BY q.chain_position`,
-      [req.couple.id, id]
-    );
-
-    const progress = await queryOne(
-      'SELECT position, status FROM couple_chain_progress WHERE couple_id = ? AND chain_id = ?',
-      [req.couple.id, id]
-    );
-
-    res.json({
-      chain: {
-        id: chain.id,
-        name: chain.name,
-        total: cards.length,
-        minDepth: Number(chain.min_depth),
-        maxDepth: Number(chain.max_depth),
-        domainSlug: chain.domainSlug,
-        domainName: chain.domainName,
-        accent: chain.accent || '#D8327C',
-      },
-      position: progress ? Number(progress.position) : 0,
-      status: progress ? progress.status : null,
-      cards: cards.map((c) => ({
-        id: c.id,
-        ref: c.ref,
-        text: c.text,
-        context: c.context,
-        depth: c.depth,
-        volatile: !!c.is_volatile,
-        position: c.chain_position,
-        seenBefore: !!c.prior_status,
-      })),
-    });
-  })
-);
-
-/** Start, advance, or stop a chain session. */
-app.post(
-  '/api/chains/:id/progress',
-  requireCouple,
-  wrap(async (req, res) => {
-    const id = Number(req.params.id);
-    const chain = await queryOne('SELECT id FROM chains WHERE id = ?', [id]);
-    if (!chain) return fail(res, 404, 'That sequence does not exist.');
-
-    const position = Math.max(0, Number(req.body.position) || 0);
-    const status = ['active', 'done', 'abandoned'].includes(String(req.body.status))
-      ? req.body.status
-      : 'active';
-
-    await query(
-      `INSERT INTO couple_chain_progress (couple_id, chain_id, position, status)
-       VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE position = VALUES(position), status = VALUES(status)`,
-      [req.couple.id, id, position, status]
-    );
-    res.json({ ok: true });
-  })
-);
+// The couple-facing chain endpoints are gone.
+//
+// A sequence used to be a mode: a list to browse, a session to start, and a
+// position on the server to resume. That made a good idea into a chore nobody
+// would choose in the middle of a conversation.
+//
+// Sequences are now dealt inside the ordinary deck - see clusterChains above.
+// Nothing needs listing, starting or resuming, because a sequence's place is
+// not session state: it is simply which of its cards are still unanswered, and
+// the deck query already knows that.
+//
+// The chains themselves stay, and are still authored in the admin area.
 
 /**
  * Record a decision on a card. NO ANSWER IS STORED - only that the card has
