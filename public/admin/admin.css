@@ -474,3 +474,198 @@ table.data td.actions { white-space: nowrap; text-align: right; }
   color: #ffb3ac;
   font-weight: 700;
 }
+
+/* ---------------------------------------------------------------------------
+   Brand colours
+
+   The palette editor. Every row is one CSS custom property, and the swatch is
+   the point of the row - it sits first and at a size you can actually judge a
+   colour by, because picking "the card background" from a column of hex codes
+   is not something anyone can do.
+   --------------------------------------------------------------------------- */
+
+.swatch-group {
+  margin: 0 0 0.7rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  font-weight: 800;
+  color: var(--text-faint);
+}
+
+.swatch-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.swatch-row:first-of-type { border-top: 0; }
+
+/* Browsers draw their own chrome inside a colour input. Stripping it back to a
+   plain rounded tile is the only way this reads as a swatch rather than as a
+   form control that happens to be coloured. */
+.swatch-dot {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: none;
+  cursor: pointer;
+}
+
+.swatch-dot::-webkit-color-swatch-wrapper { padding: 2px; }
+.swatch-dot::-webkit-color-swatch { border: none; border-radius: 8px; }
+.swatch-dot::-moz-color-swatch { border: none; border-radius: 8px; }
+
+.swatch-meta { flex: 1; min-width: 0; }
+
+/* inline-block, not block: this is a <code>, and the admin's global code rule
+   gives it a tinted background. Full width turned that into a bar running the
+   length of the row. */
+.swatch-name {
+  display: inline-block;
+  margin-bottom: 0.15rem;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.swatch-use {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  line-height: 1.4;
+}
+
+.swatch-hex {
+  flex: none;
+  width: 9.5rem;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------------------------
+   Logo and favicon
+   --------------------------------------------------------------------------- */
+
+.asset-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.asset-row:first-of-type { border-top: 0; padding-top: 0; }
+
+/* A checkerboard, so a transparent PNG is obviously transparent rather than
+   looking like it has a dark background baked into it. */
+.asset-preview {
+  flex: none;
+  width: 84px;
+  height: 84px;
+  border-radius: 12px;
+  border: 1px solid var(--line-strong);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background-color: var(--bg-raised);
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.05) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255, 255, 255, 0.05) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.05) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.05) 75%);
+  background-size: 14px 14px;
+  background-position: 0 0, 0 7px, 7px -7px, -7px 0;
+}
+
+.asset-preview img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.asset-preview.is-empty {
+  background-image: none;
+  color: var(--text-faint);
+  font-size: 0.78rem;
+}
+
+.asset-meta { flex: 1; min-width: 0; }
+.asset-meta strong { display: block; margin-bottom: 0.15rem; }
+.asset-meta .hint { margin: 0.15rem 0 0; }
+
+.asset-actions {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+/* Narrow: the swatch and its hex field stop fitting on one line long before
+   the rest of the admin does. */
+@media (max-width: 760px) {
+  .swatch-row { flex-wrap: wrap; }
+  .swatch-hex { width: 100%; order: 3; }
+  .asset-row { flex-wrap: wrap; }
+  .asset-actions { flex-direction: row; width: 100%; }
+}
+
+/* ---------------------------------------------------------------------------
+   Topic colours
+
+   A grid, not a list. "Held at one luminance" is a property of the set, so the
+   layout has to let you compare them against each other at a glance - a column
+   of rows makes you scroll to find the one that is too bright.
+   --------------------------------------------------------------------------- */
+
+.dom-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 0.7rem;
+}
+
+.dom-cell {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 0.6rem;
+  background: var(--bg-raised);
+}
+
+/* Wide and short, like the design system's own domain grid - a broad band
+   reads its colour more honestly than a small square does. */
+.dom-swatch {
+  width: 100%;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  display: block;
+}
+
+.dom-swatch::-webkit-color-swatch-wrapper { padding: 1px; }
+.dom-swatch::-webkit-color-swatch { border: none; border-radius: 5px; }
+.dom-swatch::-moz-color-swatch { border: none; border-radius: 5px; }
+
+.dom-cell strong {
+  display: block;
+  margin: 0.5rem 0 0.35rem;
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.dom-hex {
+  width: 100%;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  padding: 0.4rem 0.5rem;
+  min-height: 0;
+}

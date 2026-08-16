@@ -421,9 +421,12 @@ CREATE TABLE IF NOT EXISTS audit_log (
 -- hard-coded. Code defaults apply when a key is absent.
 -- ---------------------------------------------------------------------------
 
+-- setting_value is MEDIUMTEXT, not TEXT: the brand logo and favicon are stored
+-- here base64-encoded, and TEXT's 64KB limit truncates an image silently rather
+-- than raising an error. See scripts/migrate-add-brand-assets.js.
 CREATE TABLE IF NOT EXISTS settings (
   setting_key   VARCHAR(100) NOT NULL PRIMARY KEY,
-  setting_value TEXT NULL,
+  setting_value MEDIUMTEXT NULL,
   updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

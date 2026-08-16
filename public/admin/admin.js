@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.10.1';
+const APP_VERSION = '1.11.0';
 
 const state = {
   ready: false,
@@ -149,6 +149,9 @@ const api = {
   },
   get: (p) => api.call('GET', p),
   post: (p, b) => api.call('POST', p, b),
+  // Multipart. The Content-Type header is deliberately NOT set - the browser
+  // has to write it itself so it can include the multipart boundary.
+  postForm: (p, b) => api.call('POST', p, b, true),
   patch: (p, b) => api.call('PATCH', p, b),
   put: (p, b) => api.call('PUT', p, b),
   del: (p, b) => api.call('DELETE', p, b),
@@ -1527,6 +1530,183 @@ function tabAudit() {
     }`;
 }
 
+/**
+ * The palette editor.
+ *
+ * Generated entirely from what the server sends, so this function never needs
+ * touching when a token is added, removed or renamed - PALETTE in server.js is
+ * the single list. Grouped the way the palette itself is organised, because
+ * "which of these is the card background" is the actual question someone has
+ * when they open this screen.
+ *
+ * Each token gets both a colour well and a hex field. The well is for picking,
+ * the text is for pasting a value from a brand document, and they are kept in
+ * step by wire(). Only the hex field is submitted.
+ */
+function paletteEditor(b) {
+  const tokens = b.palette || [];
+  if (!tokens.length) return '';
+
+  const current = (b.branding && b.branding.palette) || {};
+  const groups = [];
+  for (const t of tokens) {
+    let g = groups.find((x) => x.name === t.group);
+    if (!g) groups.push((g = { name: t.group, items: [] }));
+    g.items.push(t);
+  }
+
+  return `
+    <h2 class="section-title" style="margin-top:2rem">Brand colours</h2>
+    <p class="hint" style="margin:-0.4rem 0 0.9rem">
+      These drive the whole app — both this admin area and the couple's screens.
+      Clear a field and save to put that colour back to its built-in value.
+    </p>
+    ${groups
+      .map(
+        (g) => `
+      <div class="panel" style="margin-bottom:0.9rem">
+        <h3 class="swatch-group">${esc(g.name)}</h3>
+        ${g.items
+          .map((t) => {
+            const value = current[t.css] || t.default;
+            return `
+            <div class="swatch-row">
+              <input type="color" class="swatch-dot" aria-label="${esc(t.name)}"
+                     data-swatch="${esc(t.name)}" value="${esc(value)}">
+              <div class="swatch-meta">
+                <code class="swatch-name">${esc(t.css)}</code>
+                <span class="swatch-use">${esc(t.use)}</span>
+              </div>
+              <input class="input swatch-hex" type="text" spellcheck="false"
+                     data-swatch-hex="${esc(t.name)}"
+                     value="${esc(value)}" placeholder="${esc(t.default)}"
+                     aria-label="${esc(t.name)} hex">
+            </div>`;
+          })
+          .join('')}
+      </div>`
+      )
+      .join('')}`;
+}
+
+/**
+ * The eleven topic colours, edited as a set.
+ *
+ * Each topic already has a colour field inside its own edit dialog, and that
+ * stays. This is a different job: the design system holds every domain at
+ * roughly one lightness and saturation so that no subject looks heavier than
+ * another, and that is a property of the SET. You cannot see it - never mind
+ * correct it - one modal at a time.
+ *
+ * Laid out as a grid rather than a list for the same reason: the whole point is
+ * comparing them against each other.
+ */
+function domainColours() {
+  const groups = state.data.groups;
+  if (!groups || !groups.domains || !groups.domains.length) return '';
+
+  return `
+    <form id="domain-colours-form">
+      <h2 class="section-title" style="margin-top:2rem">Topic colours</h2>
+      <p class="hint" style="margin:-0.4rem 0 0.9rem">
+        Held at one luminance on purpose — every topic sits at roughly the same lightness,
+        so none looks more important than another. No green for Money, no red for Sex:
+        a colour that editorialises tells a couple which conversations are the dangerous
+        ones before they have had any of them.
+      </p>
+      <div class="panel">
+        <div class="dom-grid">
+          ${groups.domains
+            .map(
+              (d) => `
+            <div class="dom-cell">
+              <input type="color" class="dom-swatch" data-dom="${d.id}"
+                     aria-label="${esc(d.name)}" value="${esc(d.accent)}">
+              <strong>${esc(d.name)}</strong>
+              <input class="input dom-hex" type="text" spellcheck="false"
+                     data-dom-hex="${d.id}" value="${esc(d.accent)}"
+                     aria-label="${esc(d.name)} hex">
+            </div>`
+            )
+            .join('')}
+        </div>
+      </div>
+      <button class="btn btn-block" type="submit" style="margin-top:1rem">Save topic colours</button>
+    </form>`;
+}
+
+/**
+ * Logo and favicon.
+ *
+ * Kept OUT of the branding form on purpose. A file upload is its own request
+ * with its own encoding, and folding it into the form would mean either
+ * uploading an unchanged image on every colour tweak or reading the file into
+ * the JSON body. Uploading takes effect immediately; the colours still need a
+ * Save. The buttons say so.
+ */
+function brandAssets(b) {
+  const limits = b.assetLimits || { logo: {}, favicon: {} };
+  const assets = (b.branding && b.branding.assets) || {};
+
+  const row = (which, title, hint, has, url, limit) => `
+    <div class="asset-row">
+      <div class="asset-preview${has ? '' : ' is-empty'}">
+        ${has ? `<img src="${esc(url)}" alt="${esc(title)}">` : '<span>None</span>'}
+      </div>
+      <div class="asset-meta">
+        <strong>${esc(title)}</strong>
+        <p class="hint">${hint}</p>
+        <p class="hint">
+          ${esc(String(limit.maxKb || ''))}KB max &middot;
+          ${esc((limit.types || []).map((t) => t.replace('image/', '').replace('svg+xml', 'svg')
+            .replace('x-icon', 'ico').replace('vnd.microsoft.icon', 'ico').toUpperCase())
+            .filter((v, i, a) => a.indexOf(v) === i).join(', '))}
+        </p>
+      </div>
+      <div class="asset-actions">
+        <input type="file" hidden id="file-${which}" data-asset-input="${which}"
+               accept="${esc((limit.types || []).join(','))}">
+        <button class="btn btn-ghost" type="button" data-action="pick-asset" data-which="${which}">
+          ${has ? 'Replace' : 'Upload'}
+        </button>
+        ${
+          has
+            ? `<button class="btn btn-ghost danger" type="button"
+                       data-action="clear-asset" data-which="${which}">Remove</button>`
+            : ''
+        }
+      </div>
+    </div>`;
+
+  return `
+    <h2 class="section-title" style="margin-top:2rem">Logo &amp; favicon</h2>
+    <div class="panel">
+      ${row(
+        'logo',
+        'Logo',
+        'Replaces the character tile on the welcome screen and in the header. '
+          + 'A transparent PNG or an SVG works best.',
+        !!assets.logo,
+        assets.logoUrl,
+        limits.logo || {}
+      )}
+      ${row(
+        'favicon',
+        'Favicon',
+        'The small icon in the browser tab. Square, and legible at 16 pixels.',
+        !!assets.favicon,
+        assets.faviconUrl,
+        limits.favicon || {}
+      )}
+      <p class="hint" style="margin-top:0.8rem">
+        Uploads save immediately — no need to press Save branding.
+        These are stored in the database, so they survive a redeploy.
+        The installed app icon (the one on a phone's home screen) is a separate
+        set of PNGs in <code>public/icons</code> and is not changed here.
+      </p>
+    </div>`;
+}
+
 function tabSettings() {
   const s = state.data.settings;
   const b = state.data.branding;
@@ -1560,11 +1740,19 @@ function tabSettings() {
           <input class="input" id="b-mark" name="brand_mark" type="text" maxlength="2"
                  value="${esc(b.branding.brand_mark)}">
           <p class="hint">One or two characters shown in the logo tile — an emoji works well.
-          The installed app icon is a PNG and is not changed by this.</p>
+          Ignored if you upload a logo below. The installed app icon is a PNG and is not
+          changed by this.</p>
         </div>
       </div>
+
+      ${paletteEditor(b)}
+
       <button class="btn btn-block" type="submit" style="margin-top:1rem">Save branding</button>
     </form>
+
+    ${domainColours()}
+
+    ${brandAssets(b)}
 
     <form id="settings-form" style="margin-top:2rem">
       <h2 class="section-title">How the decks behave</h2>
@@ -1755,6 +1943,51 @@ function wire() {
 
   const branding = document.getElementById('branding-form');
   if (branding) branding.onsubmit = onSaveBranding;
+
+  const domColours = document.getElementById('domain-colours-form');
+  if (domColours) domColours.onsubmit = onSaveDomainColours;
+
+  document.querySelectorAll('[data-dom]').forEach((well) => {
+    well.oninput = () => {
+      const hex = document.querySelector(`[data-dom-hex="${well.dataset.dom}"]`);
+      if (hex) hex.value = well.value.toUpperCase();
+    };
+  });
+  document.querySelectorAll('[data-dom-hex]').forEach((hex) => {
+    hex.oninput = () => {
+      const well = document.querySelector(`[data-dom="${hex.dataset.domHex}"]`);
+      if (well && /^#[0-9a-f]{6}$/i.test(hex.value.trim())) well.value = hex.value.trim();
+    };
+  });
+
+  // Swatch well and hex field are two views of one value, so each writes to the
+  // other. Assignment rather than addEventListener, because wire() runs again
+  // after every render and listeners would stack.
+  document.querySelectorAll('[data-swatch]').forEach((well) => {
+    well.oninput = () => {
+      const hex = document.querySelector(`[data-swatch-hex="${well.dataset.swatch}"]`);
+      if (hex) hex.value = well.value.toUpperCase();
+    };
+  });
+  document.querySelectorAll('[data-swatch-hex]').forEach((hex) => {
+    hex.oninput = () => {
+      const well = document.querySelector(`[data-swatch="${hex.dataset.swatchHex}"]`);
+      // A colour input rejects anything that is not a full hex, and silently
+      // resets itself to black when given one. Only follow a complete value,
+      // so typing "#1a1" mid-edit does not throw the well to black.
+      if (well && /^#[0-9a-f]{6}$/i.test(hex.value.trim())) well.value = hex.value.trim();
+    };
+  });
+
+  // Choosing a file uploads it. There is no separate confirm step: the preview
+  // updating IS the confirmation, and Remove undoes it.
+  document.querySelectorAll('[data-asset-input]').forEach((input) => {
+    input.onchange = () => {
+      if (input.files && input.files[0]) uploadAsset(input.dataset.assetInput, input.files[0]);
+      // Cleared so choosing the same file twice in a row still fires a change.
+      input.value = '';
+    };
+  });
 
   const qLevel = document.getElementById('q-level');
   if (qLevel) {
@@ -1969,6 +2202,16 @@ async function handleAction(action, el) {
     case 'shop-key': await shopKey(); break;
 
     case 'test-email': await testEmail(); break;
+
+    // The visible button opens the hidden file input, because a bare
+    // <input type="file"> cannot be styled to match anything else here.
+    case 'pick-asset': {
+      const input = document.getElementById(`file-${el.dataset.which}`);
+      if (input) input.click();
+      break;
+    }
+    case 'clear-asset': await clearAsset(el.dataset.which); break;
+
     default: break;
   }
 }
@@ -2081,6 +2324,9 @@ async function loadTab() {
     } else if (t === 'settings') {
       if (!state.data.settings) state.data.settings = await api.get('/api/owner/settings');
       if (!state.data.branding) state.data.branding = await api.get('/api/owner/branding');
+      // The topic colours are edited here as a set. They live on `domains`, not
+      // in settings, so this tab needs that list too.
+      if (!state.data.groups) state.data.groups = await api.get('/api/owner/domains');
     } else {
       return;
     }
@@ -3343,11 +3589,19 @@ async function onSaveBranding(e) {
   e.preventDefault();
   const f = e.target;
   try {
+    // Read the palette off the hex fields rather than a kept-in-sync object.
+    // The DOM is what the person is looking at, so it is the thing to believe.
+    const palette = {};
+    f.querySelectorAll('[data-swatch-hex]').forEach((el) => {
+      palette[el.dataset.swatchHex] = el.value.trim();
+    });
+
     const res = await api.put('/api/owner/branding', {
       app_name: f.app_name.value,
       app_tagline: f.app_tagline.value,
       brand_accent: f.brand_accent.value,
       brand_mark: f.brand_mark.value,
+      palette,
     });
     state.branding = res.branding;
     state.data.branding = null;
@@ -3356,6 +3610,87 @@ async function onSaveBranding(e) {
     toast('Branding saved.');
   } catch (err) {
     uiAlert('Could not save', err.message);
+  }
+}
+
+async function onSaveDomainColours(e) {
+  e.preventDefault();
+  const colours = {};
+  e.target.querySelectorAll('[data-dom-hex]').forEach((el) => {
+    colours[el.dataset.domHex] = el.value.trim();
+  });
+  try {
+    const res = await api.put('/api/owner/domains/colours', { colours });
+    // The topic list is now stale in two places - here and on Topics & depths,
+    // which renders the same accents.
+    state.data.groups = null;
+    invalidateContent();
+    await loadTab();
+    toast(res.changed ? `${res.changed} topic colour(s) saved.` : 'No changes to save.');
+  } catch (err) {
+    uiAlert('Could not save', err.message);
+  }
+}
+
+const ASSET_LABEL = { logo: 'Logo', favicon: 'Favicon' };
+
+/**
+ * Send one image up.
+ *
+ * The size and type are checked here as well as on the server, not instead of
+ * it: this one exists so a 4MB photo fails instantly rather than after being
+ * pushed over the wire, and the server's is the one that actually enforces.
+ */
+async function uploadAsset(which, file) {
+  const limits = (state.data.branding && state.data.branding.assetLimits) || {};
+  const limit = limits[which] || {};
+
+  if (limit.maxKb && file.size > limit.maxKb * 1024) {
+    return uiAlert(
+      'Too big',
+      `That file is ${Math.round(file.size / 1024)}KB and the limit is ${limit.maxKb}KB. `
+        + 'Try exporting it smaller.'
+    );
+  }
+  if (limit.types && limit.types.length && !limit.types.includes(file.type)) {
+    return uiAlert('Wrong kind of file', `A ${ASSET_LABEL[which].toLowerCase()} has to be one of: `
+      + `${limit.types.map((t) => t.replace('image/', '')).join(', ')}.`);
+  }
+
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const res = await api.postForm(`/api/owner/branding/${which}`, form);
+    state.branding = res.branding;
+    state.data.branding = null;
+    applyBranding();
+    await loadTab();
+    toast(`${ASSET_LABEL[which]} uploaded.`);
+  } catch (err) {
+    uiAlert('Could not upload', err.message);
+  }
+  return undefined;
+}
+
+async function clearAsset(which) {
+  const ok = await uiConfirm(
+    `Remove the ${ASSET_LABEL[which].toLowerCase()}?`,
+    which === 'logo'
+      ? 'The character tile comes back in its place.'
+      : 'The built-in icon comes back in its place.',
+    'Remove',
+    true
+  );
+  if (!ok) return;
+  try {
+    const res = await api.del(`/api/owner/branding/${which}`);
+    state.branding = res.branding;
+    state.data.branding = null;
+    applyBranding();
+    await loadTab();
+    toast(`${ASSET_LABEL[which]} removed.`);
+  } catch (err) {
+    uiAlert('Could not remove', err.message);
   }
 }
 
@@ -3375,6 +3710,18 @@ async function testEmail() {
 function applyBranding() {
   const b = state.branding;
   if (!b) return;
+
+  // The admin shares the couple app's stylesheet, so it shares the palette.
+  // That is deliberate: an owner tuning colours here should be able to see what
+  // they did without switching apps.
+  if (b.palette) {
+    for (const [prop, value] of Object.entries(b.palette)) {
+      if (/^--[a-z0-9-]+$/i.test(prop) && /^#[0-9a-f]{6}$/i.test(value)) {
+        document.documentElement.style.setProperty(prop, value);
+      }
+    }
+  }
+
   if (b.brand_accent) document.documentElement.style.setProperty('--accent', b.brand_accent);
   document.title = `Admin · ${b.app_name}`;
 }

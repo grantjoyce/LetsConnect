@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design system — couples question app</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;1,6..72,300&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* ground */
+  --night:#11141B;
+  --slate:#1A1E27;
+  --raised:#232833;
+  --hairline:#2E3440;
+
+  /* light on the ground */
+  --lamplight:#E9E4DA;
+  --muted:#98A0AE;
+  --faint:#6B7382;
+
+  /* depth ramp: daylight to candlelight */
+  --d1:#A6B7C6;
+  --d2:#9BB0A6;
+  --d3:#C2AE8C;
+  --d4:#C48D5F;
+  --d5:#A6604B;
+
+
+  /* ---------- interaction layer ---------- */
+  --edge:#3A414F; --edge-hi:#5A6472;
+  --act-fill:#E9E4DA; --act-ink:#14171E;
+  --act-hover:#FFFCF4; --act-press:#CFC9BE;
+  --act-off-fill:#262B36; --act-off-ink:#59616F;
+  --focus:#8FB3D9; --destruct:#CF5A52;
+
+  /* stakes */
+  --brass:#C6A15B;
+
+  /* domains */
+  --dom-self:#8C9AAE;
+  --dom-attachment:#AF8FA0;
+  --dom-conflict:#B58C7E;
+  --dom-origin:#A99A7E;
+  --dom-sex:#B0788A;
+  --dom-money:#7FA391;
+  --dom-home:#98A47F;
+  --dom-work:#7E9CA4;
+  --dom-future:#8E96B8;
+  --dom-meaning:#9186B5;
+  --dom-social:#83A5A8;
+
+  /* day mode */
+  --day-ground:#F2EFE9;
+  --day-card:#FBFAF7;
+  --day-ink:#20242C;
+  --day-muted:#5E6673;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--night);
+  color:var(--lamplight);
+  font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:15px;
+  line-height:1.55;
+  padding:0 0 96px;
+}
+.wrap{max-width:760px;margin:0 auto;padding:0 22px}
+
+/* ---------- masthead ---------- */
+.mast{padding:64px 0 40px}
+.eyebrow{
+  font-size:11px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:18px;
+}
+.mast h1{
+  font-family:Newsreader,Georgia,serif;
+  font-weight:300;font-size:clamp(30px,6.4vw,46px);
+  line-height:1.12;letter-spacing:-.01em;
+}
+.mast h1 em{font-style:italic;color:var(--d4)}
+.mast p{color:var(--muted);max-width:52ch;margin-top:18px;font-size:15px}
+
+/* ---------- section furniture ---------- */
+.sec{padding-top:56px}
+.sec-head{
+  display:flex;align-items:baseline;gap:14px;
+  padding-bottom:6px;margin-bottom:22px;
+  border-bottom:1px solid var(--hairline);
+}
+.sec-head h2{
+  font-family:Newsreader,Georgia,serif;font-weight:400;
+  font-size:20px;letter-spacing:-.01em;
+}
+.sec-head span{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-left:auto}
+.note{color:var(--muted);max-width:60ch;font-size:14px}
+.note + .note{margin-top:12px}
+
+/* ---------- the live card ---------- */
+.stage{
+  background:
+    radial-gradient(120% 88% at 50% -14%, var(--halo) 0%, transparent 62%),
+    var(--slate);
+  border:1px solid var(--hairline);
+  border-radius:18px;
+  padding:34px 26px 26px;
+  transition:background .5s ease;
+}
+.card-meta{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  font-size:11px;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--faint);margin-bottom:22px;
+}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--domc);transition:background .35s}
+.card-meta .id{margin-left:auto;letter-spacing:.08em}
+.qtext{
+  font-family:Newsreader,Georgia,serif;
+  font-weight:300;font-size:clamp(21px,4.6vw,28px);
+  line-height:1.34;letter-spacing:-.005em;
+  color:var(--lamplight);
+  min-height:2.7em;
+}
+.ctx{
+  margin-top:20px;padding-top:16px;
+  border-top:1px solid var(--hairline);
+  color:var(--muted);font-size:14px;
+  display:none;
+}
+.ctx.on{display:block}
+.reveal{
+  margin-top:20px;background:none;border:none;padding:0;
+  font-family:inherit;font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--faint);cursor:pointer;
+}
+.reveal:hover,.reveal:focus-visible{color:var(--depthc)}
+.stakes-bar{
+  display:none;align-items:center;gap:10px;
+  margin-top:22px;padding:11px 14px;
+  border:1px solid var(--brass);border-radius:9px;
+  color:var(--brass);font-size:12px;letter-spacing:.06em;
+}
+.stakes-bar.on{display:flex}
+.key{width:13px;height:13px;flex:none;border:1.5px solid var(--brass);border-radius:3px;position:relative}
+.key::after{content:"";position:absolute;inset:3px;background:var(--brass);border-radius:1px}
+
+/* ---------- ladder ---------- */
+.ladder{display:flex;gap:6px;margin-top:26px}
+.rung{
+  flex:1;background:var(--raised);border:1px solid var(--hairline);
+  color:var(--muted);border-radius:9px;padding:11px 4px 10px;
+  font-family:inherit;font-size:11px;letter-spacing:.06em;cursor:pointer;
+  transition:border-color .25s,color .25s,background .25s;
+}
+.rung b{display:block;font-size:14px;font-weight:500;margin-bottom:3px;color:var(--lamplight)}
+.rung:hover{border-color:var(--faint)}
+.rung[aria-pressed="true"]{background:var(--raised);border-color:var(--rc);color:var(--rc)}
+.rung[aria-pressed="true"] b{color:var(--rc)}
+
+/* ---------- chips ---------- */
+.chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:16px}
+.chip{
+  border:1px solid var(--hairline);background:transparent;color:var(--muted);
+  border-radius:999px;padding:6px 13px;font-family:inherit;font-size:12.5px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;transition:border-color .2s,color .2s;
+}
+.chip i{width:7px;height:7px;border-radius:50%;background:var(--c);font-style:normal}
+.chip:hover{border-color:var(--faint)}
+.chip[aria-pressed="true"]{border-color:var(--c);color:var(--lamplight)}
+
+/* ---------- ramp ---------- */
+.ramp{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.ramp div{border-radius:11px;padding:14px 10px 12px;color:#11141B}
+.ramp b{display:block;font-size:13px;font-weight:600}
+.ramp span{font-size:10.5px;letter-spacing:.05em;opacity:.72;font-variant-numeric:tabular-nums}
+.ramp em{display:block;font-style:normal;font-size:11px;margin-top:6px;opacity:.8}
+
+/* ---------- domain grid ---------- */
+.doms{display:grid;grid-template-columns:repeat(auto-fill,minmax(126px,1fr));gap:8px}
+.dm{border:1px solid var(--hairline);border-radius:11px;padding:12px 13px;background:var(--slate)}
+.sw{height:26px;border-radius:6px;margin-bottom:10px}
+.dm b{display:block;font-size:13px;font-weight:500}
+.dm span{font-size:10.5px;color:var(--faint);letter-spacing:.05em;font-variant-numeric:tabular-nums}
+
+/* ---------- day strip ---------- */
+.day{background:var(--day-ground);border-radius:16px;padding:22px}
+.day-card{background:var(--day-card);border:1px solid #E2DDD3;border-radius:13px;padding:20px}
+.day-card .lbl{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--day-muted);margin-bottom:13px}
+.day-card .q{font-family:Newsreader,Georgia,serif;font-weight:300;font-size:19px;line-height:1.38;color:var(--day-ink)}
+.day p{color:var(--day-muted);font-size:12.5px;margin-top:14px}
+
+/* ---------- tokens ---------- */
+.tok{width:100%;border-collapse:collapse;font-size:13px}
+.tok th{
+  text-align:left;font-weight:500;font-size:10.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--faint);padding:0 10px 9px 0;
+  border-bottom:1px solid var(--hairline);
+}
+.tok td{padding:9px 10px 9px 0;border-bottom:1px solid var(--hairline);vertical-align:middle}
+.tok td:first-child{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--muted);white-space:nowrap}
+.tok td:nth-child(2){font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--lamplight)}
+.tok .pip{width:15px;height:15px;border-radius:4px;display:inline-block;vertical-align:-3px}
+.tok td:last-child{color:var(--muted)}
+
+.rule{margin-top:16px;padding-left:15px;border-left:2px solid var(--d4);color:var(--muted);font-size:14px}
+.rule b{color:var(--lamplight);font-weight:500}
+
+
+/* ---------- buttons ---------- */
+.panel{background:var(--slate);border:1px solid var(--hairline);border-radius:16px;padding:22px}
+.panel + .panel{margin-top:10px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.lbl{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);margin-bottom:13px}
+.btn{font-family:inherit;font-size:14.5px;font-weight:500;border-radius:10px;
+  padding:12px 22px;cursor:pointer;border:1px solid transparent;transition:.18s}
+.b-pri{background:var(--act-fill);color:var(--act-ink)}
+.b-pri:hover{background:var(--act-hover)}
+.b-pri:active{background:var(--act-press)}
+.b-sec{background:transparent;color:var(--lamplight);border-color:var(--edge)}
+.b-sec:hover{border-color:var(--edge-hi)}
+.b-sec:active{background:var(--raised)}
+.b-ter{background:transparent;color:var(--muted);padding-left:6px;padding-right:6px}
+.b-ter:hover{color:var(--lamplight)}
+.b-off{background:var(--act-off-fill);color:var(--act-off-ink);cursor:not-allowed}
+.b-key{background:transparent;color:var(--brass);border-color:var(--brass)}
+.b-key:hover{background:rgba(198,161,91,.09)}
+.b-del{background:transparent;color:var(--destruct);border-color:var(--destruct)}
+.b-del:hover{background:rgba(207,90,82,.1)}
+.b-focus{background:transparent;color:var(--lamplight);border-color:var(--edge);outline:2px solid var(--focus);outline-offset:3px}
+.field{background:var(--raised);border:1px solid var(--edge);border-radius:10px;padding:12px 14px;
+  color:var(--lamplight);font-family:inherit;font-size:14.5px;width:100%}
+.field::placeholder{color:var(--faint)}
+.field.on{border-color:var(--focus);outline:2px solid rgba(143,179,217,.24)}
+.rule.warn{border-left-color:var(--destruct)}
+.rule + .rule{margin-top:12px}
+
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+:focus-visible{outline:2px solid var(--brass);outline-offset:3px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="mast">
+    <div class="eyebrow">Design system · couples question app</div>
+    <h1>Depth is rendered as <em>light</em>, not as danger.</h1>
+    <p>The cards get opened at night, on a phone, by two tired people. So the ground is dark and the palette moves from cold morning light to candlelight as the questions get harder. Nothing turns red. Nothing warns you. It just gets later in the evening.</p>
+  </header>
+
+  <section class="sec">
+    <div class="sec-head"><h2>The card</h2><span>Live</span></div>
+    <p class="note" style="margin-bottom:20px">Move the depth ladder and change the domain. This is the palette doing its actual job rather than sitting in a swatch grid.</p>
+
+    <div class="stage" id="stage">
+      <div class="card-meta">
+        <span class="dot" id="dot"></span>
+        <span id="mDom">Attachment</span>
+        <span id="mDep">Personal</span>
+        <span class="id" id="mId">EFT-165</span>
+      </div>
+      <div class="qtext" id="q">What is your raw spot, the thing that hurts faster than it should?</div>
+      <div class="ctx" id="ctx">The subject or tone that hurts disproportionately fast.</div>
+      <button class="reveal" id="rev" aria-expanded="false">Show context</button>
+      <div class="stakes-bar" id="sb"><span class="key"></span><span>Stakes. Both of you unlock this one.</span></div>
+    </div>
+
+    <div class="ladder" id="ladder"></div>
+    <div class="chips" id="chips"></div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>Depth ramp</h2><span>D1 → D5</span></div>
+    <div class="ramp" id="rampBox"></div>
+    <div class="rule"><b>Why not a heat map.</b> Green to red is the reflex, and it would be wrong. D5 holds a question about the worst year of someone's childhood. That is not a hazard, it is the most trusting thing in the deck. Colouring it like a fire alarm tells the couple to be afraid of their own conversation.</div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>Domains</h2><span>Eleven</span></div>
+    <div class="doms" id="domBox"></div>
+    <div class="rule"><b>Held at one luminance.</b> Every domain sits at roughly the same lightness and saturation, so none looks heavier than another. No green for Money, no red for Sex. A colour that editorialises about the subject tells the couple which conversations are the dangerous ones before they have had any of them.</div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>Stakes</h2><span>27 of 850</span></div>
+    <div class="stage" style="--halo:transparent">
+      <div class="stakes-bar on" style="margin-top:0"><span class="key"></span><span>Stakes. Both of you unlock this one.</span></div>
+      <p class="note" style="margin-top:18px">Brass, one weight of hairline, no fill. It is the only colour in the system that appears nowhere else, which is what makes it register. Twenty seven cards carry it out of 850, so it stays rare enough to mean something.</p>
+    </div>
+    <div class="rule"><b>Not red.</b> Red says you have done something wrong. These questions are the ones worth asking most carefully, not the ones to avoid. Brass reads as a key, and a key is an invitation with a condition attached.</div>
+  </section>
+
+  <section class="sec">
+    <div class="sec-head"><h2>Day</h2><span>Secondary</span></div>
+    <div class="day">
+      <div class="day-card">
+        <div class="lbl">Home · Reflective</div>
+        <div class="q">Who actually notices when something needs doing in this house?</div>
+      </div>
+      <p>Warm paper rather than white. Same ink, same hues at higher contrast. Dark is the default because the deck lives in the evening, but a Saturday morning conversation should not feel like using the app wrong.</p>
+    </div>
+  </section>
+
+<section class="sec">
+  <div class="sec-head"><h2>Button hierarchy</h2><span>Four levels</span></div>
+  <p class="note">One primary per screen. If a screen appears to need two, the screen is doing two jobs.</p>
+
+  <div class="panel">
+    <div class="lbl">Primary · the one action</div>
+    <div class="row"><button class="btn b-pri">Start the session</button><button class="btn b-pri">Next card</button></div>
+  </div>
+  <div class="panel">
+    <div class="lbl">Secondary · the reasonable alternative</div>
+    <div class="row"><button class="btn b-sec">Skip this one</button><button class="btn b-sec">Change the deck</button></div>
+  </div>
+  <div class="panel">
+    <div class="lbl">Tertiary · low weight, always available</div>
+    <div class="row"><button class="btn b-ter">Show context</button><button class="btn b-ter">End session</button></div>
+  </div>
+  <div class="panel">
+    <div class="lbl">Unavailable · says why, never just dims</div>
+    <div class="row"><button class="btn b-off" disabled>Waiting for Orla</button></div>
+  </div>
+
+  <div class="rule"><b>Primary is warm white, not a hue.</b> On a dark ground the highest contrast object available is a near white fill, so the action wins attention without competing with the depth ramp. It also means the button never accidentally implies a mood the question does not have.</div>
+</section>
+
+<section class="sec">
+  <div class="sec-head"><h2>Reserved colours</h2><span>Do not reuse</span></div>
+  <div class="panel">
+    <div class="lbl">Brass · stakes unlock only</div>
+    <div class="row"><button class="btn b-key">Unlock together</button></div>
+    <p class="note" style="margin:16px 0 0">Brass appears on 27 cards out of 850 and on this one control. Use it on a settings toggle and it stops meaning anything.</p>
+  </div>
+  <div class="panel">
+    <div class="lbl">Ember · destructive only</div>
+    <div class="row"><button class="btn b-del">Delete our history</button></div>
+    <p class="note" style="margin:16px 0 0">Outline, never filled. A filled red button gets pressed by accident.</p>
+  </div>
+
+  <div class="rule warn"><b>The one real collision.</b> Ember <code>#CF5A52</code> sits close to D5 Unspoken <code>#A6604B</code>. They must never appear on the same screen. Destructive actions live in settings and account. D5 lives on cards. Enforce that in code review, not in the palette.</div>
+</section>
+
+<section class="sec">
+  <div class="sec-head"><h2>Fields and focus</h2><span>Input</span></div>
+  <div class="panel">
+    <div class="lbl">Rest, then focused</div>
+    <input class="field" placeholder="Write your answer, or say it out loud" style="margin-bottom:10px">
+    <input class="field on" value="Write your answer, or say it out loud">
+  </div>
+  <div class="panel">
+    <div class="lbl">Keyboard focus ring</div>
+    <div class="row"><button class="btn b-focus">Next card</button></div>
+  </div>
+  <div class="rule"><b>Focus blue is its own colour.</b> It is the only cool accent in the system and belongs to neither content nor action, which is exactly why it reads as the machine talking rather than the deck.</div>
+</section>
+
+<section class="sec">
+  <div class="sec-head"><h2>What has no colour</h2><span>Deliberate</span></div>
+  <div class="rule"><b>There is no success green.</b> A finished session gets a sentence, not a tick. Green rewards completion, completion becomes the goal, and a couple starts racing the deck instead of talking. Say <em>That was eleven minutes on Money</em> and stop.</div>
+  <div class="rule"><b>There is no streak colour, no progress bar, no badge.</b> Every one of those turns an intimate conversation into a performance for the app. If you want a metric, keep it on your side of the screen.</div>
+  <div class="rule"><b>There is no warning amber.</b> The only thing worth gating is Stakes, and that already has brass.</div>
+</section>
+
+
+  <section class="sec">
+    <div class="sec-head"><h2>Tokens</h2><span>Full set</span></div>
+    <table class="tok" id="tokBox">
+      <thead><tr><th>Token</th><th>Hex</th><th></th><th>Use</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+</div>
+
+<script>
+const DOMS=[
+ ["Self","#8C9AAE"],["Attachment","#AF8FA0"],["Conflict","#B58C7E"],["Origin","#A99A7E"],
+ ["Sex","#B0788A"],["Money","#7FA391"],["Home","#98A47F"],["Work","#7E9CA4"],
+ ["Future","#8E96B8"],["Meaning","#9186B5"],["Social","#83A5A8"]
+];
+const RAMP=[
+ ["D1","Open","#A6B7C6","Cold morning"],
+ ["D2","Reflective","#9BB0A6","Overcast"],
+ ["D3","Personal","#C2AE8C","Late afternoon"],
+ ["D4","Exposed","#C48D5F","Lamplight"],
+ ["D5","Unspoken","#A6604B","Candle"]
+];
+const SAMPLE={
+ D1:["OPN-572","Attachment","What is the smallest thing I do that you like?","Small. Not the big gestures.",false],
+ D2:["HOM-711","Home","Who actually notices when something needs doing in this house?","Noticing is work. Say who does it.",false],
+ D3:["EFT-165","Attachment","What is your raw spot, the thing that hurts faster than it should?","The subject or tone that hurts disproportionately fast.",false],
+ D4:["MON-685","Money","Have you ever felt financially trapped in this relationship?","Trapped meaning unable to leave for money reasons.",false],
+ D5:["MON-705","Money","Is there a debt in your name that I have never seen?","Straight answer.",true]
+};
+const HALO={D1:"rgba(166,183,198,.07)",D2:"rgba(155,176,166,.07)",D3:"rgba(194,174,140,.09)",D4:"rgba(196,141,95,.11)",D5:"rgba(166,96,75,.13)"};
+
+let depth="D3", dom="Attachment", shown=false;
+
+const $=id=>document.getElementById(id);
+const stage=$("stage"),ladder=$("ladder"),chips=$("chips");
+
+RAMP.forEach(([k,name,hex])=>{
+  const b=document.createElement("button");
+  b.className="rung";b.type="button";b.style.setProperty("--rc",hex);
+  b.innerHTML=`<b>${k}</b>${name}`;
+  b.onclick=()=>{depth=k;const s=SAMPLE[k];dom=s[1];shown=false;draw();};
+  ladder.appendChild(b);
+});
+
+DOMS.forEach(([name,hex])=>{
+  const b=document.createElement("button");
+  b.className="chip";b.type="button";b.style.setProperty("--c",hex);
+  b.innerHTML=`<i></i>${name}`;
+  b.onclick=()=>{dom=name;draw();};
+  chips.appendChild(b);
+});
+
+$("rev").onclick=()=>{shown=!shown;draw();};
+
+function draw(){
+  const s=SAMPLE[depth];
+  const dhex=RAMP.find(r=>r[0]===depth)[2];
+  const chex=DOMS.find(d=>d[0]===dom)[1];
+  stage.style.setProperty("--halo",HALO[depth]);
+  stage.style.setProperty("--domc",chex);
+  stage.style.setProperty("--depthc",dhex);
+  $("dot").style.background=chex;
+  $("mDom").textContent=dom;
+  $("mDep").textContent=RAMP.find(r=>r[0]===depth)[1];
+  $("mId").textContent=s[0];
+  $("q").textContent=s[2];
+  $("ctx").textContent=s[3];
+  $("ctx").classList.toggle("on",shown);
+  $("rev").textContent=shown?"Hide context":"Show context";
+  $("rev").setAttribute("aria-expanded",shown);
+  $("sb").classList.toggle("on",s[4]);
+  [...ladder.children].forEach((b,i)=>b.setAttribute("aria-pressed",RAMP[i][0]===depth));
+  [...chips.children].forEach((b,i)=>b.setAttribute("aria-pressed",DOMS[i][0]===dom));
+}
+
+const rb=$("rampBox");
+RAMP.forEach(([k,name,hex,mood])=>{
+  const d=document.createElement("div");
+  d.style.background=hex;
+  d.innerHTML=`<b>${k} ${name}</b><span>${hex}</span><em>${mood}</em>`;
+  rb.appendChild(d);
+});
+
+const db=$("domBox");
+DOMS.forEach(([name,hex])=>{
+  const d=document.createElement("div");d.className="dm";
+  d.innerHTML=`<div class="sw" style="background:${hex}"></div><b>${name}</b><span>${hex}</span>`;
+  db.appendChild(d);
+});
+
+const TOKENS=[
+ ["--night","#11141B","App ground. Everything sits on this."],
+ ["--slate","#1A1E27","Card surface."],
+ ["--raised","#232833","Controls, ladder rungs, inputs."],
+ ["--hairline","#2E3440","Every border in the system."],
+ ["--lamplight","#E9E4DA","Question text. Warm, never pure white."],
+ ["--muted","#98A0AE","Context line, secondary copy."],
+ ["--faint","#6B7382","Labels, IDs, metadata."],
+ ["--brass","#C6A15B","Stakes only. Appears nowhere else."],
+ ["--d1","#A6B7C6","Depth 1, Open."],
+ ["--d2","#9BB0A6","Depth 2, Reflective."],
+ ["--d3","#C2AE8C","Depth 3, Personal."],
+ ["--d4","#C48D5F","Depth 4, Exposed."],
+ ["--d5","#A6604B","Depth 5, Unspoken."],
+ ["--day-ground","#F2EFE9","Day mode ground."],
+ ["--day-card","#FBFAF7","Day mode card."],
+ ["--day-ink","#20242C","Day mode question text."],
+ ["--act-fill","#E9E4DA","Primary button fill."],
+ ["--act-ink","#14171E","Text on a primary button."],
+ ["--act-hover","#FFFCF4","Primary hover."],
+ ["--act-press","#CFC9BE","Primary pressed."],
+ ["--act-off-fill","#262B36","Unavailable button fill."],
+ ["--act-off-ink","#59616F","Unavailable button text."],
+ ["--edge","#3A414F","Secondary border, field border."],
+ ["--edge-hi","#5A6472","Border on hover."],
+ ["--focus","#8FB3D9","Keyboard focus ring. Nothing else."],
+ ["--destruct","#CF5A52","Destructive outline. Nothing else."]
+];
+const tb=document.querySelector("#tokBox tbody");
+TOKENS.forEach(([t,h,u])=>{
+  const tr=document.createElement("tr");
+  tr.innerHTML=`<td>${t}</td><td>${h}</td><td><span class="pip" style="background:${h}"></span></td><td>${u}</td>`;
+  tb.appendChild(tr);
+});
+
+draw();
+</script>
+</body>
+</html>

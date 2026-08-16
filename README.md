@@ -91,7 +91,7 @@ Copy `.env.example` to `.env` and fill in your local database credentials. Leave
 ```bash
 npm run init-db     # creates the database and applies schema.sql
 npm run migrate     # runs migrations, seeds the 245 questions
-npm start           # http://localhost:3000
+npm start           # http://localhost:3200
 ```
 
 The first account registered becomes the admin.

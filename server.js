@@ -318,12 +318,145 @@ const BRAND_DEFAULTS = {
   brand_mark: '❤',
 };
 
+/**
+ * The palette.
+ *
+ * Each entry is one CSS custom property in public/styles.css, one row in
+ * `settings`, and one swatch in the admin. Keeping the list here rather than in
+ * three places is what stops the three from disagreeing: the admin form is
+ * GENERATED from this, so a token added here appears there with no further
+ * work, and app.js writes whatever it is sent onto :root without knowing the
+ * names at all.
+ *
+ * `use` is the couple-facing explanation of what the colour is FOR. It is shown
+ * beside the swatch, because a palette where colour carries meaning fails the
+ * moment someone changes a value without knowing what it governs - brass in
+ * particular is load-bearing.
+ *
+ * The CSS property name is derived: `--` + the name with underscores as
+ * hyphens. The stylesheet's own defaults are duplicated here on purpose, so a
+ * database that has never been touched renders identically to a fresh checkout.
+ */
+const PALETTE = [
+  ['night', '#11141B', 'Surfaces', 'App ground. Everything sits on this.'],
+  ['slate', '#1A1E27', 'Surfaces', 'Card surface.'],
+  ['raised', '#232833', 'Surfaces', 'Controls, ladder rungs, inputs.'],
+  ['hairline', '#2E3440', 'Surfaces', 'Every border in the system.'],
+
+  ['lamplight', '#E9E4DA', 'Text', 'Question text. Warm, never pure white.'],
+  ['muted', '#98A0AE', 'Text', 'Context line, secondary copy.'],
+  ['faint', '#6B7382', 'Text', 'Labels, IDs, metadata.'],
+
+  ['brass', '#C6A15B', 'Meaning', 'Stakes only. Appears nowhere else.'],
+
+  ['d1', '#A6B7C6', 'Depth', 'Depth 1, Open.'],
+  ['d2', '#9BB0A6', 'Depth', 'Depth 2, Reflective.'],
+  ['d3', '#C2AE8C', 'Depth', 'Depth 3, Personal.'],
+  ['d4', '#C48D5F', 'Depth', 'Depth 4, Exposed.'],
+  ['d5', '#A6604B', 'Depth', 'Depth 5, Unspoken.'],
+
+  ['act_fill', '#E9E4DA', 'Actions', 'Primary button fill. Warm white, never a hue.'],
+  ['act_ink', '#14171E', 'Actions', 'Text on a primary button.'],
+  ['act_hover', '#FFFCF4', 'Actions', 'Primary hover.'],
+  ['act_press', '#CFC9BE', 'Actions', 'Primary pressed.'],
+  ['act_off_fill', '#262B36', 'Actions', 'Unavailable button fill.'],
+  ['act_off_ink', '#59616F', 'Actions', 'Unavailable button text.'],
+  ['edge', '#3A414F', 'Actions', 'Secondary border, field border.'],
+  ['edge_hi', '#5A6472', 'Actions', 'Border on hover.'],
+
+  ['focus', '#8FB3D9', 'Reserved', 'Keyboard focus ring. Nothing else.'],
+  ['destruct', '#CF5A52', 'Reserved', 'Destructive outline. Nothing else.'],
+
+  ['day_ground', '#F2EFE9', 'Day mode', 'Day mode ground.'],
+  ['day_card', '#FBFAF7', 'Day mode', 'Day mode card.'],
+  ['day_ink', '#20242C', 'Day mode', 'Day mode question text.'],
+  ['day_muted', '#5E6673', 'Day mode', 'Day mode secondary copy.'],
+].map(([name, hex, group, use]) => ({
+  name,
+  hex,
+  group,
+  use,
+  key: `brand_${name}`,
+  css: `--${name.replace(/_/g, '-')}`,
+}));
+
+/** Settings keys holding an uploaded image, and what each one is allowed to be. */
+const BRAND_ASSETS = {
+  logo: {
+    key: 'brand_logo',
+    typeKey: 'brand_logo_type',
+    maxBytes: 512 * 1024,
+    types: ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'],
+  },
+  favicon: {
+    key: 'brand_favicon',
+    typeKey: 'brand_favicon_type',
+    maxBytes: 128 * 1024,
+    types: ['image/png', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/svg+xml'],
+  },
+};
+
+/**
+ * Everything the front ends need to paint themselves, in ONE query.
+ *
+ * This is called by /api/data, which is the hottest route in the app. The
+ * previous version ran one SELECT per key, which was fine at four keys and
+ * would have been twenty sequential round-trips once the palette landed.
+ *
+ * The uploaded images are deliberately NOT in here - they are hundreds of
+ * kilobytes of base64 and this payload rides along with every deck load. The
+ * caller gets a flag saying an image exists and a URL to fetch it from.
+ */
 async function getBranding() {
-  const out = {};
-  for (const key of Object.keys(BRAND_DEFAULTS)) {
-    const v = await getSetting(key);
-    out[key] = v === undefined || v === null || v === '' ? BRAND_DEFAULTS[key] : v;
+  const keys = [...Object.keys(BRAND_DEFAULTS), ...PALETTE.map((t) => t.key), 'brand_asset_stamp'];
+  const stored = {};
+  try {
+    const rows = await query(
+      `SELECT setting_key, setting_value FROM settings
+        WHERE setting_key IN (${keys.map(() => '?').join(',')})`,
+      keys
+    );
+    for (const r of rows) {
+      if (r.setting_value !== null && r.setting_value !== '') stored[r.setting_key] = r.setting_value;
+    }
+  } catch (err) {
+    // Branding is cosmetic. A settings table that cannot be read should leave
+    // the app looking like a fresh install, not take the deck down with it.
+    console.error('[branding] read failed:', err.message);
   }
+
+  const out = {};
+  for (const key of Object.keys(BRAND_DEFAULTS)) out[key] = stored[key] || BRAND_DEFAULTS[key];
+
+  out.palette = {};
+  for (const t of PALETTE) out.palette[t.css] = stored[t.key] || t.hex;
+
+  // Which images exist, asked as LENGTH() rather than by selecting them: this
+  // runs on every deck load and the values are hundreds of kilobytes each.
+  const present = { logo: false, favicon: false };
+  try {
+    const rows = await query(
+      `SELECT setting_key, LENGTH(setting_value) AS n FROM settings
+        WHERE setting_key IN (?, ?)`,
+      [BRAND_ASSETS.logo.key, BRAND_ASSETS.favicon.key]
+    );
+    for (const r of rows) {
+      if (r.setting_key === BRAND_ASSETS.logo.key) present.logo = r.n > 0;
+      if (r.setting_key === BRAND_ASSETS.favicon.key) present.favicon = r.n > 0;
+    }
+  } catch (err) {
+    console.error('[branding] asset check failed:', err.message);
+  }
+
+  // The stamp changes whenever an image is replaced, and rides in the URL so a
+  // new logo is not hidden behind a cached copy of the old one.
+  const stamp = stored.brand_asset_stamp || '0';
+  out.assets = {
+    logo: present.logo,
+    favicon: present.favicon,
+    logoUrl: `/api/brand/logo?v=${encodeURIComponent(stamp)}`,
+    faviconUrl: `/api/brand/favicon?v=${encodeURIComponent(stamp)}`,
+  };
   return out;
 }
 
@@ -511,6 +644,38 @@ app.get(
   '/api/branding',
   wrap(async (req, res) => {
     res.json({ branding: await getBranding(), version: APP_VERSION });
+  })
+);
+
+/**
+ * The uploaded logo and favicon.
+ *
+ * Public for the same reason the branding above is: both appear on the welcome
+ * screen, before a code has been typed. A favicon in particular is requested by
+ * the browser itself, which will never be carrying a session.
+ *
+ * Served from the database rather than the disk - see
+ * scripts/migrate-add-brand-assets.js for why that trade was made.
+ */
+app.get(
+  '/api/brand/:which(logo|favicon)',
+  wrap(async (req, res) => {
+    const spec = BRAND_ASSETS[req.params.which];
+    const row = await queryOne(
+      `SELECT
+         (SELECT setting_value FROM settings WHERE setting_key = ?) AS data,
+         (SELECT setting_value FROM settings WHERE setting_key = ?) AS type`,
+      [spec.key, spec.typeKey]
+    );
+    if (!row || !row.data) return fail(res, 404, 'Not set.');
+
+    const buf = Buffer.from(row.data, 'base64');
+    res.set('Content-Type', row.type || 'image/png');
+    // Overrides the blanket no-store on /api. These are immutable for a given
+    // ?v= stamp, and the stamp changes the moment one is replaced, so caching
+    // them hard is safe and saves refetching a logo on every page load.
+    res.set('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(buf);
   })
 );
 
@@ -2637,6 +2802,56 @@ owner.patch(
   })
 );
 
+/**
+ * All eleven topic colours in one save.
+ *
+ * There is already a colour field on the per-topic edit dialog, and it stays.
+ * This exists because the two are not the same job: "held at one luminance" is
+ * a property of the SET, and it cannot be judged - never mind corrected - one
+ * modal at a time. Editing them together is the only way to see that no topic
+ * is shouting louder than the rest.
+ *
+ * Touches `accent` and nothing else.
+ */
+owner.put(
+  '/domains/colours',
+  wrap(async (req, res) => {
+    const colours = req.body && req.body.colours;
+    if (!colours || typeof colours !== 'object') return fail(res, 400, 'Send the colours.');
+
+    const rows = await query('SELECT id, name, accent FROM domains');
+    const byId = new Map(rows.map((r) => [String(r.id), r]));
+    const changed = [];
+
+    // Validate the whole batch BEFORE writing any of it. A half-applied palette
+    // is worse than a rejected one: the set would be left mid-way between two
+    // schemes with nothing saying which topics had been done.
+    const pending = [];
+    for (const [id, raw] of Object.entries(colours)) {
+      const row = byId.get(String(id));
+      if (!row) return fail(res, 400, 'One of those topics no longer exists. Reload and try again.');
+      const v = String(raw || '').trim();
+      if (!/^#[0-9a-f]{6}$/i.test(v)) {
+        return fail(res, 400, `${row.name} needs a colour like #8C9AAE.`);
+      }
+      if (String(row.accent).toUpperCase() !== v.toUpperCase()) {
+        pending.push({ id: row.id, name: row.name, from: row.accent, to: v.toUpperCase() });
+      }
+    }
+
+    for (const p of pending) {
+      // eslint-disable-next-line no-await-in-loop
+      await query('UPDATE domains SET accent = ? WHERE id = ?', [p.to, p.id]);
+      changed.push(`${p.name} ${p.from}->${p.to}`);
+    }
+
+    if (changed.length) {
+      await audit(req, 'domains.colours', { detail: changed.join('; ') });
+    }
+    res.json({ ok: true, changed: changed.length });
+  })
+);
+
 /** Reorder groups. Takes the full ordered list of ids in one go. */
 owner.put(
   '/domains/order',
@@ -4157,7 +4372,26 @@ owner.get(
 owner.get(
   '/branding',
   wrap(async (req, res) => {
-    res.json({ branding: await getBranding(), defaults: BRAND_DEFAULTS });
+    res.json({
+      branding: await getBranding(),
+      defaults: BRAND_DEFAULTS,
+      // The admin form is generated from this, so adding a token to PALETTE is
+      // the whole job - no second edit in admin.js to keep in step.
+      palette: PALETTE.map((t) => ({
+        name: t.name,
+        css: t.css,
+        group: t.group,
+        use: t.use,
+        default: t.hex,
+      })),
+      assetLimits: {
+        logo: { maxKb: Math.round(BRAND_ASSETS.logo.maxBytes / 1024), types: BRAND_ASSETS.logo.types },
+        favicon: {
+          maxKb: Math.round(BRAND_ASSETS.favicon.maxBytes / 1024),
+          types: BRAND_ASSETS.favicon.types,
+        },
+      },
+    });
   })
 );
 
@@ -4183,7 +4417,95 @@ owner.put(
       // simply will not fit.
       await setSetting('brand_mark', [...String(b.brand_mark).trim()].slice(0, 2).join(''));
     }
+
+    // The palette. Sent as { palette: { night: '#11141B', ... } }, keyed by
+    // token name. Validated against PALETTE rather than trusted, so an unknown
+    // key cannot quietly create a settings row that nothing ever reads.
+    if (b.palette && typeof b.palette === 'object') {
+      for (const token of PALETTE) {
+        const raw = b.palette[token.name];
+        if (raw === undefined) continue;
+        const v = String(raw).trim();
+        // Empty means "back to the built-in value", which is the only way to
+        // undo a change without knowing what the original hex was.
+        if (!v) {
+          await setSetting(token.key, null);
+          continue;
+        }
+        if (!/^#[0-9a-f]{6}$/i.test(v)) {
+          return fail(res, 400, `${token.name} must be a colour like ${token.hex}.`);
+        }
+        await setSetting(token.key, v.toUpperCase());
+      }
+    }
+
     await audit(req, 'branding.update');
+    res.json({ ok: true, branding: await getBranding() });
+  })
+);
+
+// ---- Brand images ---------------------------------------------------------
+//
+// Stored base64 in `settings`, not on disk. The reasoning is in
+// scripts/migrate-add-brand-assets.js; the short version is that `uploads/` is
+// gitignored and does not survive a move to another host, and a logo is
+// configuration rather than user data.
+
+owner.post(
+  '/branding/:which(logo|favicon)',
+  upload.single('file'),
+  wrap(async (req, res) => {
+    const spec = BRAND_ASSETS[req.params.which];
+    const file = req.file;
+    if (!file || !file.buffer || !file.buffer.length) return fail(res, 400, 'No file was uploaded.');
+
+    if (!spec.types.includes(file.mimetype)) {
+      // Tidied for reading: nobody calls it an "svg+xml" or a
+      // "vnd.microsoft.icon", and the duplicates the ICO aliases produce would
+      // make the list look like a mistake.
+      const nice = [
+        ...new Set(
+          spec.types.map((t) =>
+            t
+              .replace('image/', '')
+              .replace('svg+xml', 'svg')
+              .replace('vnd.microsoft.icon', 'ico')
+              .replace('x-icon', 'ico')
+              .toUpperCase()
+          )
+        ),
+      ].join(', ');
+      return fail(res, 400, `That has to be one of: ${nice}.`);
+    }
+    if (file.buffer.length > spec.maxBytes) {
+      return fail(
+        res,
+        400,
+        `That file is ${Math.round(file.buffer.length / 1024)}KB. The limit is ${Math.round(
+          spec.maxBytes / 1024
+        )}KB.`
+      );
+    }
+
+    await setSetting(spec.key, file.buffer.toString('base64'));
+    await setSetting(spec.typeKey, file.mimetype);
+    await setSetting('brand_asset_stamp', Date.now());
+
+    await audit(req, `branding.${req.params.which}.upload`, {
+      detail: `${file.mimetype}, ${Math.round(file.buffer.length / 1024)}KB`,
+    });
+    res.json({ ok: true, branding: await getBranding() });
+  })
+);
+
+owner.delete(
+  '/branding/:which(logo|favicon)',
+  wrap(async (req, res) => {
+    const spec = BRAND_ASSETS[req.params.which];
+    await setSetting(spec.key, null);
+    await setSetting(spec.typeKey, null);
+    await setSetting('brand_asset_stamp', Date.now());
+    await audit(req, `branding.${req.params.which}.clear`);
     res.json({ ok: true, branding: await getBranding() });
   })
 );
@@ -4223,7 +4545,11 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong on our side.' });
 });
 
-const PORT = process.env.PORT || 3000;
+// 3200, not 3000. Port 3000 belongs to the AppFirm CRM on this machine, and two
+// apps defaulting to the same port means whichever booted first silently keeps
+// it while the other looks like it started fine and serves the wrong app.
+// Production ignores this entirely - Passenger assigns the port.
+const PORT = process.env.PORT || 3200;
 app.listen(PORT, () => {
   console.log(`Let's Connect v${APP_VERSION} listening on port ${PORT} (${IS_PROD ? 'production' : 'development'})`);
 });

@@ -10,20 +10,96 @@
    --------------------------------------------------------------------------- */
 
 :root {
-  --bg: #170a14;
-  /* Below the page, not above it. The one surface that is DARKER than --bg,
-     for the fixed footer - a floor reads as a floor when it recedes. */
-  --bg-sunk: #100710;
-  --bg-raised: #22101d;
-  --surface: #2b1526;
-  --surface-hi: #371c30;
-  --line: rgba(255, 255, 255, 0.10);
-  --line-strong: rgba(255, 255, 255, 0.18);
+  /* -------------------------------------------------------------------------
+     The palette. These sixteen are the named source of truth; everything below
+     them is an alias. Each one is also a row in `settings`, so the owner can
+     retune the whole app from Settings > Brand without a deploy - which is why
+     app.js writes them back onto :root at boot.
 
-  --text: #f6e9f0;
-  --text-dim: #b79fae;
-  --text-faint: #8a7382;
+     Colour carries MEANING here rather than decoration: a depth has a colour,
+     and brass means one specific thing. Spending either on ordinary chrome is
+     what makes a system like this stop working.
+     ------------------------------------------------------------------------- */
 
+  --night: #11141b;      /* App ground. Everything sits on this. */
+  --slate: #1a1e27;      /* Card surface. */
+  --raised: #232833;     /* Controls, ladder rungs, inputs. */
+  --hairline: #2e3440;   /* Every border in the system. */
+
+  --lamplight: #e9e4da;  /* Question text. Warm, never pure white. */
+  --muted: #98a0ae;      /* Context line, secondary copy. */
+  --faint: #6b7382;      /* Labels, IDs, metadata. */
+
+  --brass: #c6a15b;      /* Stakes only. Appears nowhere else. */
+
+  --d1: #a6b7c6;         /* Open */
+  --d2: #9bb0a6;         /* Reflective */
+  --d3: #c2ae8c;         /* Personal */
+  --d4: #c48d5f;         /* Exposed */
+  --d5: #a6604b;         /* Unspoken */
+
+  --day-ground: #f2efe9;
+  --day-card: #fbfaf7;
+  --day-ink: #20242c;
+  --day-muted: #5e6673;
+
+  /* -------------------------------------------------------------------------
+     Interaction layer.
+
+     "Primary is warm white, not a hue." On a dark ground the highest-contrast
+     object available is a near-white fill, so the action wins attention without
+     competing with the depth ramp - and it never accidentally implies a mood
+     the question does not have.
+
+     --focus and --destruct are reserved. Focus blue is the only cool accent in
+     the system and belongs to neither content nor action, which is why it reads
+     as the machine talking. Ember is destructive-only and outline-only.
+
+     KNOWN COLLISION, from the design system: ember #CF5A52 sits close to D5
+     Unspoken #A6604B, and the two must never appear on the same screen.
+     Destructive actions live in settings and account; D5 lives on cards. That
+     is enforced by review, not by the palette.
+     ------------------------------------------------------------------------- */
+
+  --edge: #3a414f;
+  --edge-hi: #5a6472;
+
+  --act-fill: #e9e4da;
+  --act-ink: #14171e;
+  --act-hover: #fffcf4;
+  --act-press: #cfc9be;
+  --act-off-fill: #262b36;
+  --act-off-ink: #59616f;
+
+  --focus: #8fb3d9;
+  --destruct: #cf5a52;
+
+  /* -------------------------------------------------------------------------
+     Aliases.
+
+     The stylesheet was written against --bg / --surface / --text and reads them
+     in some 400 places. Pointing the old names at the new tokens adopts the
+     palette everywhere at once, and leaves one place to look when a colour is
+     wrong. New rules should use the palette names directly.
+     ------------------------------------------------------------------------- */
+
+  --bg: var(--night);
+  /* Below the page, not above it. The one surface DARKER than the ground, for
+     the fixed footer - a floor reads as a floor when it recedes. Derived, not
+     from the palette: the spec has no token for it. */
+  --bg-sunk: #0b0e14;
+  --bg-raised: var(--raised);
+  --surface: var(--slate);
+  --surface-hi: var(--raised);
+  --line: var(--hairline);
+  --line-strong: var(--hairline);
+
+  --text: var(--lamplight);
+  --text-dim: var(--muted);
+  --text-faint: var(--faint);
+
+  /* The brand knob, and the one colour the palette does not specify. It is kept
+     because it is the brand's own, and it is editable in Settings > Brand. */
   --accent: #d8327c;
   --accent-soft: rgba(216, 50, 124, 0.16);
   --danger: #e2574c;
@@ -36,14 +112,69 @@
   --font: 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
 
+  /* Contrast ink, deliberately NOT part of the palette and never remapped by a
+     theme. Which of the two a swatch needs is a legibility fact about that
+     swatch, not a brand choice - D1 is pale in both themes and always wants
+     dark ink on it. */
+  --ink-on-light: #11141b;
+  --ink-on-dark: #e9e4da;
+
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ---------------------------------------------------------------------------
+   Day mode
+
+   Set data-theme="day" on <html>. Because every rule in this stylesheet reads
+   the aliases, and the aliases read the palette, remapping these eight tokens
+   re-themes the entire app - no per-rule light-mode overrides.
+
+   The three tokens Grant specified are the ground, the card and the ink. The
+   rest are derived from them: a light theme still needs a raised surface, a
+   border and two tiers of secondary text, and the palette has no light values
+   for those. Depth and brass are unchanged - they read on both grounds, which
+   is what makes them meaningful rather than decorative.
+
+   NOTE: nothing in the UI sets this attribute yet. There is no day/night
+   toggle, because one was not asked for. The tokens are live and settable, so
+   adding the switch later is a one-line change.
+   --------------------------------------------------------------------------- */
+
+:root[data-theme='day'] {
+  --night: var(--day-ground);
+  --slate: var(--day-card);
+  --raised: #ece7dd;
+  --hairline: #ddd6c9;
+  --lamplight: var(--day-ink);
+  --muted: var(--day-muted);
+  --faint: #7c8493;
+  --bg-sunk: #e7e2d8;
+  --shadow: 0 18px 50px rgba(32, 36, 44, 0.12);
 }
 
 *,
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+/* Focus blue is its own colour and belongs to neither content nor action -
+ * which is exactly why it reads as the machine talking rather than the deck.
+ * Reserved: it appears here and nowhere else. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
 html,
@@ -155,12 +286,27 @@ a { color: var(--accent); }
   font-size: 1.15rem;
 }
 
+/* An uploaded logo replaces the tile rather than sitting inside it. Somebody
+ * who has supplied their own mark does not want it framed in a coloured square,
+ * and a transparent PNG on a gradient looks like a mistake. */
+.brand-img {
+  background: none;
+  box-shadow: none;
+  object-fit: contain;
+}
+
 .brand-mark {
   width: 30px;
   height: 30px;
   flex: none;
   border-radius: 9px;
-  background: linear-gradient(160deg, #e83e7c, #782054);
+  /* Follows the accent rather than a baked-in pink, so changing the brand
+     colour in Settings actually changes the logo tile with it. */
+  background: linear-gradient(
+    160deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 42%, var(--night))
+  );
   display: grid;
   place-items: center;
   font-size: 15px;
@@ -207,16 +353,24 @@ a { color: var(--accent); }
   letter-spacing: -0.01em;
   cursor: pointer;
   transition: transform 0.12s, filter 0.15s, background 0.15s, border-color 0.15s, color 0.15s;
-  background: var(--accent);
-  color: #fff;
+  /* Warm white, not a hue - the design system's rule. On a dark ground a
+   * near-white fill is the highest-contrast object available, so the primary
+   * action wins attention without competing with the depth ramp, and it cannot
+   * imply a mood the question does not have. */
+  background: var(--act-fill);
+  color: var(--act-ink);
   min-height: 50px;
 }
 
-.btn:active { transform: scale(0.98); }
-.btn:hover { filter: brightness(1.08); }
+.btn:active { transform: scale(0.98); background: var(--act-press); }
+.btn:hover { background: var(--act-hover); }
 
+/* "Unavailable says why, never just dims." The copy is the caller's job; what
+ * this can do is stop pretending the button is merely faded and give it a
+ * genuinely inert surface. */
 .btn:disabled {
-  opacity: 0.45;
+  background: var(--act-off-fill);
+  color: var(--act-off-ink);
   cursor: not-allowed;
   transform: none;
   filter: none;
@@ -224,26 +378,31 @@ a { color: var(--accent); }
 
 .btn-block { width: 100%; }
 
+/* Secondary: the reasonable alternative. Outline on --edge, brightening to
+ * --edge-hi rather than filling, so it never reads as a second primary. */
 .btn-ghost {
   background: transparent;
-  border-color: var(--line-strong);
+  border-color: var(--edge);
   color: var(--text);
 }
 
 .btn-ghost:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--raised);
+  border-color: var(--edge-hi);
   filter: none;
 }
 
+/* Ember. Outline, never filled - a filled red button gets pressed by accident.
+ * Reserved for destructive actions and nothing else. */
 .btn-ghost.danger {
-  border-color: rgba(226, 87, 76, 0.55);
-  color: #ff9d94;
+  border-color: var(--destruct);
+  color: var(--destruct);
 }
 
 .btn-ghost.danger:hover {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #fff;
+  background: color-mix(in srgb, var(--destruct) 10%, transparent);
+  border-color: var(--destruct);
+  color: var(--destruct);
 }
 
 .btn-quiet {
@@ -336,7 +495,13 @@ a { color: var(--accent); }
   height: 68px;
   border-radius: 20px;
   margin: 0 auto 1.1rem;
-  background: linear-gradient(160deg, #e83e7c, #782054);
+  /* Follows the accent rather than a baked-in pink, so changing the brand
+     colour in Settings actually changes the logo tile with it. */
+  background: linear-gradient(
+    160deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 42%, var(--night))
+  );
   display: grid;
   place-items: center;
   font-size: 34px;
@@ -357,7 +522,7 @@ a { color: var(--accent); }
 }
 
 .panel {
-  background: var(--bg-raised);
+  background: var(--slate);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   padding: 1.4rem;
@@ -457,7 +622,7 @@ a { color: var(--accent); }
   position: relative;
   width: 100%;
   text-align: left;
-  background: var(--bg-raised);
+  background: var(--slate);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   padding: 1.15rem 1.15rem 1.05rem 1.5rem;
@@ -648,7 +813,7 @@ a { color: var(--accent); }
   gap: 0.85rem;
   width: 100%;
   text-align: left;
-  background: var(--bg-raised);
+  background: var(--slate);
   border: 1px solid var(--line);
   border-left: 4px solid var(--lv-accent, var(--accent));
   border-radius: 14px;
@@ -779,10 +944,23 @@ a { color: var(--accent); }
   border-color: var(--line-strong);
 }
 
+/* The depth ladder is colour-coded, and the colour is the rung's own rather
+ * than the topic's. Depth is the axis a couple is actually choosing on this
+ * screen, so it is the one that should be legible at a glance - and the ramp
+ * from cool grey to burnt red carries the meaning without any text.
+ *
+ * --depth-ink is set per rung because the ramp crosses from light swatches to
+ * dark ones: white on D1 is unreadable, night ink on D5 is worse. */
+[data-depth='1'] { --depth-c: var(--d1); --depth-ink: var(--ink-on-light); }
+[data-depth='2'] { --depth-c: var(--d2); --depth-ink: var(--ink-on-light); }
+[data-depth='3'] { --depth-c: var(--d3); --depth-ink: var(--ink-on-light); }
+[data-depth='4'] { --depth-c: var(--d4); --depth-ink: var(--ink-on-light); }
+[data-depth='5'] { --depth-c: var(--d5); --depth-ink: var(--ink-on-dark); }
+
 .depth-chip.is-on {
-  background: var(--lv-accent, var(--accent));
-  border-color: var(--lv-accent, var(--accent));
-  color: #fff;
+  background: var(--depth-c, var(--lv-accent, var(--accent)));
+  border-color: var(--depth-c, var(--lv-accent, var(--accent)));
+  color: var(--depth-ink, #fff);
 }
 
 .depth-chip:disabled {
@@ -831,7 +1009,7 @@ a { color: var(--accent); }
   max-width: 480px;
   flex: 1;
   min-height: 0;
-  background: var(--bg-raised);
+  background: var(--slate);
   border: 1px solid var(--line);
   border-radius: 28px;
   box-shadow: var(--shadow);
@@ -928,8 +1106,8 @@ a { color: var(--accent); }
   text-transform: uppercase;
   padding: 0.22rem 0.6rem;
   border-radius: 999px;
-  background: var(--lv-accent, var(--accent));
-  color: #fff;
+  background: var(--depth-c, var(--lv-accent, var(--accent)));
+  color: var(--depth-ink, #fff);
 }
 
 /* "Expand" reveals the explanation. Full width and unmissable, because it is
@@ -1177,7 +1355,7 @@ a { color: var(--accent); }
 .dialog {
   width: 100%;
   max-width: 460px;
-  background: var(--bg-raised);
+  background: var(--slate);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
@@ -1281,7 +1459,7 @@ a { color: var(--accent); }
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
-  background: var(--bg-raised);
+  background: var(--slate);
 }
 
 .row {
@@ -1392,7 +1570,7 @@ a { color: var(--accent); }
 }
 
 .stat {
-  background: var(--bg-raised);
+  background: var(--slate);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 0.95rem 1rem;
@@ -1474,9 +1652,12 @@ a { color: var(--accent); }
   color: var(--text-faint);
 }
 
+/* Brass, and the only place it is allowed. This pill is the Stakes flag - the
+ * questions whose honest answer forces a decision. If brass ever turns up on
+ * something else, the flag stops meaning anything. */
 .pill-warn {
-  background: rgba(242, 163, 60, 0.16);
-  color: #f2a33c;
+  background: color-mix(in srgb, var(--brass) 16%, transparent);
+  color: var(--brass);
 }
 
 .lv-dot {

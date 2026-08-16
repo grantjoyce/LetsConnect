@@ -68,9 +68,18 @@ const MIGRATIONS = [
   // QUESTION. Reads data/corpus.json, so it runs after the seed exists.
   'migrate-split-domains',
 
+  // Widens settings.setting_value so a logo and favicon can be stored in it.
+  // TEXT truncates an image silently rather than failing, so this must run
+  // before anything can be uploaded.
+  'migrate-add-brand-assets',
+
   // FIRST-RUN SEED ONLY. Does nothing at all on a database that already has
   // questions - content belongs to the admin area once it exists.
   'migrate-seed-corpus',
+
+  // The eleven topic colours, held at one luminance. Runs AFTER the seed and
+  // after the domain split, so every topic it recolours exists by now.
+  'migrate-domain-palette',
 ];
 
 const SCRIPTS_DIR = __dirname;

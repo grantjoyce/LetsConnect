@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.10.1';
+const APP_VERSION = '1.11.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -294,7 +294,7 @@ function viewGate() {
   return `
     <div class="screen screen--centred">
       <div class="hero">
-        <div class="hero-mark" aria-hidden="true">${esc(brand().mark)}</div>
+        ${brandMark('hero-mark')}
         <h1>${esc(brand().name)}</h1>
         <p>${esc(brand().tagline)}</p>
       </div>
@@ -409,7 +409,7 @@ function topbar(showAccount, isSettings) {
   return `
     <div class="topbar">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true">${esc(brand().mark)}</span>
+        ${brandMark('brand-mark')}
         <span>${esc(brand().name)}</span>
       </div>
       <div class="topbar-actions">
@@ -608,7 +608,9 @@ function viewDeck() {
       <div class="deck-body">
         <div class="qcard entering" id="qcard">
           <div class="qcard-top">
-            <span class="depth-badge">D${depth.n}${depth.name ? ` · ${esc(depth.name)}` : ''}</span>
+            <span class="depth-badge" data-depth="${depth.n}">D${depth.n}${
+              depth.name ? ` · ${esc(depth.name)}` : ''
+            }</span>
             ${card.volatile ? '<span class="pill pill-warn">this one has consequences</span>' : ''}
             ${
               // A sequence is not a mode you enter - it arrives. The card says
@@ -1403,12 +1405,52 @@ async function doInstall() {
 
 // ---- Password reset -------------------------------------------------------
 
-/** App name, tagline and accent, as set by the owner. */
+/**
+ * Name, accent, palette and favicon, as set by the owner.
+ *
+ * The palette arrives keyed by CSS property name ("--night"), so this loop does
+ * not know or care which tokens exist - adding one to PALETTE in server.js is
+ * the entire change. Values are written onto the root element, where they
+ * override the stylesheet's own :root defaults by specificity.
+ */
 function applyBranding() {
   const b = state.branding;
   if (!b) return;
+
+  if (b.palette) {
+    for (const [prop, value] of Object.entries(b.palette)) {
+      // Guarded: these go straight into the CSSOM, and a value from the
+      // database should not be able to smuggle in a declaration.
+      if (/^--[a-z0-9-]+$/i.test(prop) && /^#[0-9a-f]{6}$/i.test(value)) {
+        document.documentElement.style.setProperty(prop, value);
+      }
+    }
+  }
+
   if (b.brand_accent) document.documentElement.style.setProperty('--accent', b.brand_accent);
   if (b.app_name) document.title = b.app_name;
+
+  // The browser asked for the favicon long before this ran, so swapping it
+  // means replacing the link element rather than setting an attribute - some
+  // browsers ignore an href change on an already-resolved icon link.
+  if (b.assets && b.assets.favicon) {
+    document.querySelectorAll('link[rel~="icon"]').forEach((el) => el.remove());
+    const link = document.createElement('link');
+    link.rel = 'icon';
+    link.href = b.assets.faviconUrl;
+    document.head.appendChild(link);
+  }
+}
+
+/** The logo tile: an uploaded image if there is one, otherwise the character. */
+function brandMark(className) {
+  const b = state.branding || {};
+  if (b.assets && b.assets.logo) {
+    return `<img class="${className} brand-img" src="${esc(b.assets.logoUrl)}" alt="${esc(
+      brand().name
+    )}">`;
+  }
+  return `<div class="${className}" aria-hidden="true">${esc(brand().mark)}</div>`;
 }
 
 // ---------------------------------------------------------------------------
