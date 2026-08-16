@@ -72,12 +72,16 @@ const SEED_DEPTHS = [
   },
   {
     n: 5,
-    name: 'Rupture',
-    blurb: 'Damage that cannot be taken back. Only when you both mean it.',
+    // Renamed from "Rupture". Rupture named the DAMAGE; Unspoken names the
+    // thing itself - what has never been said out loud. The second is what the
+    // rung actually holds, and it invites an answer where the first warned
+    // against one.
+    name: 'Unspoken',
+    blurb: 'The things neither of you has ever said out loud.',
     description:
-      'The ones that change something. An honest answer here cannot be unheard, and that '
-      + 'is exactly why they exist - but only reach for them when you have both chosen to, '
-      + 'not because the app offered them.',
+      'The ones that have never been said. An honest answer here cannot be unheard, and '
+      + 'that is exactly why they exist - but reach for them because you have both chosen '
+      + 'to, not because the app offered them.',
   },
 ];
 

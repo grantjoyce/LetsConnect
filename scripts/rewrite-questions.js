@@ -189,6 +189,97 @@ const REWRITES = {
   // Leans on EFT-181, "What would it mean to you if I said I need you?"
   'EFT-182': ['How hard is it for you to tell me that you need me?', 'Saying it, rather than hearing it.'],
 
+
+  // ---- Self ---------------------------------------------------------------
+  //
+  // Five out of 141. Self holds up because its questions are about the person
+  // rather than about a shared subject that can be elided - there is no "it"
+  // to lean on when the topic is you.
+
+  // Leans on TUR-373, "What would you say to a friend in your exact situation?"
+  'TUR-374': ['What stops you giving yourself the advice you would give a friend?', 'Say why that advice does not apply to you.'],
+
+  // Leans on TUR-380, "What do you do to earn love that you should not have to?"
+  'TUR-381': ['What are you afraid would happen if you stopped trying to earn love?', 'Your fear about what happens if you stop earning it.'],
+
+  // Leans on TUR-393, "What feedback do you find hardest to receive?"
+  'TUR-394': ['How should I give you hard feedback so that you can actually use it?', 'The delivery that lets you use it rather than defend against it.'],
+
+  // Leans on TUR-391, "What is one commitment you can make this week?"
+  'TUR-392': ['When you make a commitment to me, how do you want me to hold you to it?', 'The form of accountability you would actually accept.'],
+
+  // D5 and three words. "Admit" what, to whom.
+  'TUR-385': ['What do you need to admit to me that you have never said out loud?', 'Something you already know you need to say.'],
+
+  // ---- Conflict -----------------------------------------------------------
+  //
+  // Four, plus a typo that has been in the corpus since it was written.
+
+  // "not a exit" - an article that has survived every pass over this file.
+  'EFT-196': ['What is one signal that means I need a minute, not an exit?', 'A way to pause without it reading as walking out.'],
+
+  // Leans on GOT-047, "Which of my failures do you fear will repeat?"
+  'GOT-048': ['If we ever reached our lowest point again, what would you want me to do differently?', 'What you would want from me the second time.'],
+
+  // Leans on REA-122, "Where do you feel one down in this relationship?"
+  'REA-123': ['Where do you feel you have the upper hand in this relationship?', 'The other side of it. Power is rarely evenly held.'],
+
+  // Leans on REA-139, "the pattern between us you believe will not change".
+  // "believe it could" - could WHAT.
+  'REA-140': ['What would you need to see from me to believe our worst pattern could change?', 'The evidence you would need, not the promise.'],
+
+  // Leans on MNN-291, "one sentence I could say in a fight that would land well".
+  'MNN-292': ['What is one sentence I could say in a fight that never lands well?', 'The one that makes it worse every time.'],
+
+
+  // ---- Origin -------------------------------------------------------------
+  //
+  // Six of 76. All follow-ons: "they", "them", "it", "mine" pointing at the
+  // question printed above.
+
+  'MNN-264': ['What do you wish your caregivers had done instead when you were upset?', 'The response you needed and did not get.'],
+  'PHA-325': ['Where do you catch yourself repeating what you swore you would not?', 'The pattern you promised yourself you would break.'],
+  'PHA-327': ['What have you forgiven your parents for, and what still remains?', 'Forgiveness is rarely total. Say which part is not done.'],
+  'PHA-329': ['What did you accept about marriage from your parents without ever examining it?', 'Taken on whole, before you were old enough to question it.'],
+  'PHA-334': ['Where do I treat you like someone from my own past?', 'The other half of it. Say where I get you wrong.'],
+  'PHA-350': ['What would you need from me to set a boundary with your family?', 'What has to be in place before you could hold it.'],
+
+  // ---- Future -------------------------------------------------------------
+
+  // Leans on FUT-762, "Where do you want to be living in ten years?"
+  'FUT-763': ['What do you want to have stopped doing ten years from now?', 'Something you are doing today that you do not want to still be doing.'],
+
+  // Leans on FUT-784, "What are you counting on happening that might not?"
+  'FUT-785': ['If the thing you are counting on does not happen, what is your plan?', 'The fallback, if there is one.'],
+
+  // Leans on TUR-397, "What do you want to be different about you in a year?"
+  'TUR-398': ['What support would you need from me to be different in a year?', 'Practical support, not encouragement.'],
+
+  // A Sex question filed under Future. "this area" is doing all the work.
+  'MAR-497': ['What do you want the next six months to look like for our sex life?', 'Six months is long enough to change something and short enough to picture.'],
+
+  // ---- Work ---------------------------------------------------------------
+
+  // Leans on WRK-812, "How much of your identity is your job?"
+  'WRK-813': ['Who would you be without your job?', 'Strip the work out. What is left.'],
+
+  // Leans on WRK-814, "What are you proving, and to whom?"
+  'WRK-815': ['What would it cost you to stop trying to prove yourself at work?', 'The price of putting it down.'],
+
+  // Leans on WRK-827, "What has your work cost this relationship?"
+  'WRK-828': ['What has your work cost you personally, separately from what it cost us?', 'Your own bill, not the shared one.'],
+
+  // Leans on WRK-833, "Whose career currently takes priority?"
+  'WRK-835': ['If my career took priority for a while instead of yours, what would you want?', 'Assume the order swapped. Say what you would need.'],
+
+  // Leans on WRK-845, "Where has ambition made you a worse partner?"
+  'WRK-846': ['Where has your ambition made you a better partner?', 'The other side of it, which is usually true as well.'],
+
+  // ---- Home ---------------------------------------------------------------
+
+  // Leans on HOM-745, "What have you stopped asking me to do?"
+  'HOM-746': ['When you need something doing at home, what do you do instead of asking me?', 'Doing it yourself, hinting, or letting it sit.'],
+
   // Same fault as MON-693, found in Conflict: REA-138 is "Where has it made you
   // harder?" - written directly under REA-137, and meaningless without it. The
   // corpus's DANGLING rule only catches a pronoun at the START of a question,

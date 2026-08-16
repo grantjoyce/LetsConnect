@@ -208,7 +208,7 @@ They are different axes and were separated.
 
 - **Depth** measures emotional exposure and nothing else.
 - **Domain** measures subject matter and nothing else.
-- **Volatility** is a binary flag on the small set of questions that can materially damage a relationship if asked in the wrong week, regardless of their depth or domain.
+- **Stakes** is a binary flag on the small set of questions whose honest answer forces a decision, regardless of their depth or domain.
 
 The product consequence: a couple can select depth and domain independently. They can go deep on everything except sex, or discuss sex without touching conflict. A single scale offers only a volume knob and forces every couple through the same door.
 
@@ -218,7 +218,9 @@ Depth was assigned per question by judgement against the definitions in the tabl
 
 Domain was assigned by a rule set: a default domain per lens, overridden by range rules and then by explicit per question overrides where the content clearly departs from its lens. The full rule set is reproducible. Domain does not follow lens, and several lenses span four or more domains.
 
-Volatility was assigned by hand to sixteen questions. The test applied: could a reasonable person, asked this by their partner during a bad month, treat it as the beginning of the end. Depth was not a factor.
+Stakes was assigned by hand to 27 questions. The test applied: once this is answered honestly, does something have to happen. Depth was not a factor.
+
+The flag was renamed and re audited at tranche two. Under the previous name, Volatility, 21 of 22 flagged questions sat at D5, which meant the flag was doing almost nothing the depth scale was not already doing. Separating exposure from consequence fixed that. Four D4 questions gained the flag and several D5 questions lost it.
 
 ### 10. Known defects
 
@@ -239,7 +241,7 @@ It is not a therapeutic instrument, not validated, and carries no clinical claim
 
 ## Tagging
 
-Five columns beyond the question. Depth and Domain are independent axes. Volatility is a flag. Chain is an optional running order. Context is a helper line for the answerer.
+Five columns beyond the question. Depth and Domain are independent axes. Stakes is a flag. Chain is an optional running order. Context is a helper line for the answerer.
 
 ### Depth. Emotional exposure only.
 
@@ -249,7 +251,7 @@ Five columns beyond the question. Depth and Domain are independent axes. Volatil
 | D2 | Reflective | Requires thought. Mild self disclosure. Comfortable in public. |
 | D3 | Personal | Real disclosure. Assumes existing trust. |
 | D4 | Exposed | Shame, fear or unmet need. Assumes a stable relationship. |
-| D5 | Rupture | Exit, betrayal, damage that cannot be withdrawn. |
+| D5 | Unspoken | Things never said to anyone, or never said to me. The most guarded material a person holds. |
 
 ### Domain. Subject matter only.
 
@@ -270,9 +272,13 @@ Eleven domains: Self, Attachment, Conflict, Origin, Sex, Money, Home, Work, Futu
 | Future | 12 |
 | Money | 2 |
 
-### Volatility.
+### Stakes.
 
-16 questions carry a volatility flag. These can end a relationship in the wrong week, independent of their depth or domain. They require a deliberate mutual unlock, not a tap.
+27 questions carry a Stakes flag. The test is not how exposing the question is. It is whether the honest answer could force a decision: something that, once said, has to be acted on. A hidden debt, a crossed line, a doubt about staying.
+
+Stakes is independent of Depth. Most flagged questions sit at D5 because guarded material and consequential material overlap, but four sit at D4, and plenty of D5 questions carry no flag at all. Asking someone about the worst year of their childhood is maximally exposing and changes nothing about the relationship. Asking whether there is a debt in your name changes something the moment it is answered.
+
+These require a deliberate mutual unlock, not a tap.
 
 ### Distribution
 
@@ -297,7 +303,7 @@ Eleven domains: Self, Attachment, Conflict, Origin, Sex, Money, Home, Work, Futu
 ## GOT. Gottman lens
 Love maps, fondness and admiration, turning towards bids, dreams inside conflict, rituals of connection.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | GOT-001 | D2 | Self |  | CHECKIN 2/3 | What has been on your mind this week that I have not asked you about? | Not a test. Just the thing you have been turning over without mentioning. |
 | GOT-002 | D2 | Self |  |  | Which part of your day do you most look forward to at the moment? | Any part counts. The commute, the first coffee, the hour after everyone is asleep. |
@@ -349,13 +355,12 @@ Love maps, fondness and admiration, turning towards bids, dreams inside conflict
 | GOT-048 | D4 | Conflict |  | DAMAGE 2/4 | What would you want me to do differently if we ever reached that point again? | Practical. What would actually help if we were back there. |
 | GOT-049 | D5 | Conflict |  |  | What is the one subject we both avoid, and what makes it dangerous? | The subject you both steer around. Say what makes it dangerous. |
 | GOT-050 | D4 | Conflict |  |  | If you could rewrite how one specific conflict went, what would you change about your own part? | Your own part only. Not mine. |
-
 ---
 
 ## PER. Perel lens
 Desire inside commitment, otherness, autonomy against security, eroticism, betrayal and repair.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | PER-051 | D1 | Attachment |  | PULL 1/4 | When do you find me most interesting? | Interesting, not attractive. When you want to know what I think. |
 | PER-052 | D1 | Self |  | AUTONOMY 1/5 | What do you do that has nothing to do with me and everything to do with you? | Something entirely yours. A pursuit, a friendship, a way of spending time. |
@@ -401,19 +406,18 @@ Desire inside commitment, otherness, autonomy against security, eroticism, betra
 | PER-092 | D5 | Conflict | yes | BETRAYAL 4/4 | What do you fear I would do if you told me the whole truth about your wanting? | Your fear about my reaction, not the content itself. |
 | PER-093 | D5 | Sex |  | EXIT 2/4 | Which of your desires have you decided are not permitted? | Wants you have ruled out as not permitted, by yourself or by us. |
 | PER-094 | D5 | Conflict | yes | EXIT 4/4 | What would it take for you to leave? | Honest. Not a threat. What conditions would make leaving the right choice. |
-| PER-095 | D5 | Conflict |  | EXIT 3/4 | What are you staying for? | The real reasons, including the unromantic ones. |
+| PER-095 | D5 | Conflict | yes | EXIT 3/4 | What are you staying for? | The real reasons, including the unromantic ones. |
 | PER-096 | D4 | Conflict |  | EXIT 1/4 | What would you want me to know if this were our last conversation? | If there were no more conversations after this one. |
 | PER-097 | D3 | Self |  | ALIVENESS 3/4 | What does aliveness mean to you now, compared with ten years ago? | Aliveness changes with age. Compare then and now. |
 | PER-098 | D2 | Self |  |  | When do you feel most free while still being with me? | Freedom inside commitment, not instead of it. |
 | PER-099 | D2 | Future |  |  | What would you like us to build that is entirely new? | Something neither of us has done before. |
 | PER-100 | D3 | Self |  | ALIVENESS 4/4 | What in you is still unclaimed? | A part of you that nobody, including you, has fully claimed. |
-
 ---
 
 ## REA. Terry Real lens
 Relational stance, adaptive child against wise adult, harmony, disharmony and repair.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | REA-101 | D1 | Conflict |  |  | What does winning an argument actually get you? | Think past the moment of victory. What are you actually left holding. |
 | REA-102 | D2 | Conflict |  | FIGHTSELF 1/4 | When we disagree, what are you usually protecting? | Protecting is different from proving. Name what feels at risk. |
@@ -465,13 +469,12 @@ Relational stance, adaptive child against wise adult, harmony, disharmony and re
 | REA-148 | D2 | Conflict |  | PROTOCOL 4/5 | How do you want to be approached when I am upset with you? | How you want me to open it when I am the one with a problem. |
 | REA-149 | D2 | Conflict |  | PROTOCOL 5/5 | What signal could we agree on to stop a fight before it runs? | A word, a gesture, or a phrase either of us can use to pause. |
 | REA-150 | D3 | Future |  |  | If our relationship survives everything, what will have made the difference? | Looking back from the far end. What will have mattered. |
-
 ---
 
 ## EFT. Attachment and Emotionally Focused lens
 Accessibility, responsiveness, engagement, raw spots, the cycles that pull couples apart.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | EFT-151 | D1 | Attachment |  | REACH 1/5 | When do you feel closest to me? | Closeness, not affection. The moments the gap disappears. |
 | EFT-152 | D1 | Attachment |  |  | What is the easiest way for me to reassure you? | The fastest, simplest thing that settles you. |
@@ -499,7 +502,7 @@ Accessibility, responsiveness, engagement, raw spots, the cycles that pull coupl
 | EFT-174 | D3 | Attachment |  |  | When you criticise me, what are you actually reaching for? | Criticism is often a clumsy request. Say what the request is. |
 | EFT-175 | D3 | Attachment |  |  | When you shut down, what do you wish I would do instead of leaving you alone? | What you actually want when you have gone silent. |
 | EFT-176 | D3 | Attachment |  | CYCLE 4/5 | What is the cycle we get caught in, described from your side? | Describe the pattern in sequence, from your side only. |
-| EFT-177 | D3 | Attachment |  | CYCLE 5/5 | When an argument between us is building, where is the last point it could still be stopped? | The moment before it stops being recoverable. Say what is happening then. |
+| EFT-177 | D3 | Attachment |  | CYCLE 5/5 | What is the moment in that cycle where it could still be stopped? | The last point where either of us could still change direction. |
 | EFT-178 | D4 | Attachment |  | RAWSPOT 4/4 | Which of my reactions confirms your worst fear about yourself? | When my reaction proves the thing you already fear about yourself. |
 | EFT-179 | D3 | Origin |  | EFTORIGIN 3/4 | What did you decide about love before you were ten? | Conclusions formed in childhood tend to persist. Name yours. |
 | EFT-180 | D3 | Origin |  | EFTORIGIN 4/4 | Who let you down first, and how does it echo here? | The first significant let down, and how it echoes here. |
@@ -523,13 +526,12 @@ Accessibility, responsiveness, engagement, raw spots, the cycles that pull coupl
 | EFT-198 | D2 | Conflict |  | RECONNECT 3/4 | What do you need after a fight, and how soon? | What you need afterwards, and how quickly. |
 | EFT-199 | D2 | Conflict |  | RECONNECT 4/4 | What does reconnection look like for you? | The moment you consider the two of us back to normal. |
 | EFT-200 | D3 | Conflict |  |  | If I could hold one thing for you this year, what should it be? | One burden. Say which one you would hand over. |
-
 ---
 
 ## SOL. Relational self awareness lens
 Daily practice, self knowledge inside the pair, noticing before reacting.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | SOL-201 | D1 | Self |  | DAILY 1/4 | What did you notice about yourself today? | Anything you observed about your own mood, reaction or pattern today. |
 | SOL-202 | D1 | Self |  | DAILY 2/4 | What mood did you bring home, and where did it come from? | Moods travel from work and traffic into the house. Trace yours. |
@@ -551,7 +553,7 @@ Daily practice, self knowledge inside the pair, noticing before reacting.
 | SOL-218 | D2 | Self |  |  | What do you need to grieve? | Grief is not only about death. A loss, a version of yourself, a possibility. |
 | SOL-219 | D2 | Self |  |  | What is your relationship with rest? | Whether you rest, how you rest, and how you feel about resting. |
 | SOL-220 | D2 | Self |  | APPROVAL 1/4 | Where do you seek approval, and from whom? | Everyone seeks approval somewhere. Name the source. |
-| SOL-221 | D2 | Self |  | APPROVAL 2/4 | What would you do differently if you no longer needed anyone’s approval? | Approval from anyone: family, friends, colleagues. What changes without it. |
+| SOL-221 | D2 | Self |  | APPROVAL 2/4 | What would change if you stopped needing that approval? | Imagine the need for that approval gone. What changes. |
 | SOL-222 | D2 | Self |  |  | What is your dominant emotion this month? | One word or one phrase for the month. |
 | SOL-223 | D2 | Self |  | SHRINK 1/4 | What are you tolerating in yourself? | Things in yourself you have decided to accept rather than address. |
 | SOL-224 | D2 | Origin |  |  | What did you inherit that you want to put down? | Inherited traits, beliefs or reactions you want to stop carrying. |
@@ -581,13 +583,12 @@ Daily practice, self knowledge inside the pair, noticing before reacting.
 | SOL-248 | D2 | Self |  |  | Where has your ambition served you, and where has it cost you? | Both sides. What ambition gave you and what it took. |
 | SOL-249 | D3 | Future |  | SOLFUTURE 4/4 | What do you want to have resolved by this time next year? | One thing settled by this time next year. |
 | SOL-250 | D3 | Self |  |  | What is the most honest sentence you could say about yourself right now? | The single most honest sentence, even if it is uncomfortable. |
-
 ---
 
 ## MNN. Attachment style and conflict cycle lens
 Naming needs, protest behaviour, staying connected inside conflict.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | MNN-251 | D1 | Attachment |  | ASKING 1/5 | What is a need of yours that is easy for me to meet? | Something simple I could do more often. |
 | MNN-252 | D1 | Attachment |  |  | What small gesture from me actually calms you? | The gesture that actually reduces your anxiety. |
@@ -603,7 +604,7 @@ Naming needs, protest behaviour, staying connected inside conflict.
 | MNN-262 | D2 | Attachment |  | CLOSENESS 3/5 | Which do you fear more, being smothered or being left? | Both are real fears. Say which one is stronger in you. |
 | MNN-263 | D2 | Origin |  | MNNORIGIN 1/3 | What did your caregivers do when you were upset? | The response you actually received when distressed as a child. |
 | MNN-264 | D2 | Origin |  | MNNORIGIN 2/3 | What do you wish they had done instead? | The response you needed and did not get. |
-| MNN-265 | D2 | Origin |  | MNNORIGIN 3/3 | Which habit from the house you grew up in do you notice yourself repeating with me? | A way of reacting you learned young and still use here. |
+| MNN-265 | D2 | Origin |  | MNNORIGIN 3/3 | Where do you see that pattern repeating with me? | Where the childhood pattern shows up between us. |
 | MNN-266 | D4 | Attachment |  | ASKING 4/5 | What need of yours feels too much to say out loud? | A need that feels excessive or shameful to voice. |
 | MNN-267 | D3 | Attachment |  |  | What do you do to make yourself easier to love? | Adjustments you make to be less demanding. |
 | MNN-268 | D3 | Attachment |  | ASKING 2/5 | What would you ask for if you believed you would get it? | Assume the answer is yes. What would you ask for. |
@@ -628,7 +629,7 @@ Naming needs, protest behaviour, staying connected inside conflict.
 | MNN-287 | D4 | Conflict |  | REJECTION 3/4 | Where have you punished me for a need I did not meet? | Retaliation for an unmet need, however subtle. |
 | MNN-288 | D5 | Conflict |  |  | What have you stopped asking for entirely? | Requests you have abandoned entirely. |
 | MNN-289 | D5 | Conflict |  |  | What is the loneliness you have accepted as normal? | Loneliness you have reclassified as normal. |
-| MNN-290 | D5 | Conflict |  | REJECTION 4/4 | If nothing about our conflict pattern changed, what would you do? | Assume the pattern is permanent. What is your answer. |
+| MNN-290 | D5 | Conflict | yes | REJECTION 4/4 | If nothing about our conflict pattern changed, what would you do? | Assume the pattern is permanent. What is your answer. |
 | MNN-291 | D2 | Conflict |  |  | What is one sentence I could say in a fight that would land well? | One sentence I could say mid conflict that would land. |
 | MNN-292 | D2 | Conflict |  |  | What is one sentence that never lands? | One sentence that always makes it worse. |
 | MNN-293 | D2 | Conflict |  | SPACE 4/4 | How would you like to be reached when you have gone quiet? | How you want to be approached after you have gone quiet. |
@@ -639,13 +640,12 @@ Naming needs, protest behaviour, staying connected inside conflict.
 | MNN-298 | D2 | Attachment |  |  | What is your preferred way to be checked on during a hard day? | Message, call, visit or nothing. Say which and when. |
 | MNN-299 | D3 | Attachment |  |  | What have you learned about your own needs since we met? | What this relationship has taught you about your own needs. |
 | MNN-300 | D3 | Attachment |  |  | What are you willing to ask for out loud from now on? | A commitment about what you will voice from now on. |
-
 ---
 
 ## PHA. Family of origin lens
 Origin wounds, inherited scripts, what got learned before there was choice.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | PHA-301 | D1 | Origin |  |  | What is a good memory from your childhood that shaped you? | One good memory, and what it shaped in you. |
 | PHA-302 | D2 | Origin |  | ROLE 1/4 | What was your role in your family? | Peacemaker, achiever, invisible one, carer, difficult one. Name yours. |
@@ -686,10 +686,10 @@ Origin wounds, inherited scripts, what got learned before there was choice.
 | PHA-337 | D3 | Origin |  |  | What did love look like when it was actually present? | The times love was actually visible. Describe them. |
 | PHA-338 | D4 | Origin |  |  | Who taught you to hide? | The person who taught you to conceal parts of yourself. |
 | PHA-339 | D3 | Origin |  |  | What are you still hiding out of habit rather than need? | Concealment that is now habit rather than necessity. |
-| PHA-340 | D5 | Origin | yes | INHERIT 3/4 | What happened to you that you have never fully described to me? | Something from your past you have never described fully to me. |
+| PHA-340 | D5 | Origin |  | INHERIT 3/4 | What happened to you that you have never fully described to me? | Something from your past you have never described fully to me. |
 | PHA-341 | D5 | Origin |  | INHERIT 4/4 | What would you want me to understand about the worst year of your childhood? | The hardest year of your childhood. What should I understand. |
 | PHA-342 | D5 | Origin |  |  | What are you afraid you inherited? | The trait or pattern you fear you have inherited. |
-| PHA-343 | D4 | Origin |  | INHERIT 1/4 | What would it actually take from you to stop carrying what your family handed you? | Practical. The work involved, not the wish for it. |
+| PHA-343 | D4 | Origin |  | INHERIT 1/4 | What would healing that actually require of you? | Practical. What would actually be involved in dealing with it. |
 | PHA-344 | D4 | Origin |  | INHERIT 2/4 | Where do you need me to be different from the people who raised you? | Where you need me to behave unlike the people who raised you. |
 | PHA-345 | D2 | Origin |  |  | What tradition are you glad to have left behind? | A family practice you were glad to drop. |
 | PHA-346 | D2 | Future |  |  | What do you want our home to feel like that yours did not? | The atmosphere you want at home, contrasted with the one you grew up in. |
@@ -697,13 +697,12 @@ Origin wounds, inherited scripts, what got learned before there was choice.
 | PHA-348 | D2 | Origin |  | BOUNDARY 1/3 | Which of your family relationships needs attention right now? | The family relationship currently needing work. |
 | PHA-349 | D3 | Origin |  | BOUNDARY 2/3 | What boundary with your family have you avoided setting? | The limit you know you should set and have not. |
 | PHA-350 | D3 | Origin |  | BOUNDARY 3/3 | What would you need from me to set it? | Practical support. What would help you set it. |
-
 ---
 
 ## TUR. Self responsibility lens
 Ownership, self worth, honesty, the part that is yours to carry.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | TUR-351 | D1 | Self |  |  | What is one thing you are doing well as a partner? | Name one thing you do well as a partner. Resist deflecting. |
 | TUR-352 | D2 | Conflict |  | OWNERSHIP 1/4 | What is your contribution to the problem we keep having? | Your share of the recurring problem, not mine. |
@@ -755,13 +754,12 @@ Ownership, self worth, honesty, the part that is yours to carry.
 | TUR-398 | D2 | Future |  |  | What support do you need to get there? | Practical support required to get there. |
 | TUR-399 | D3 | Self |  | COURAGE 3/4 | What is the truest thing you could say to me right now? | The most honest sentence available to you right now. |
 | TUR-400 | D3 | Self |  | COURAGE 4/4 | What would you regret not saying? | What you would regret leaving unsaid. |
-
 ---
 
 ## NAG. Desire science lens
 Context, responsive desire, brakes and accelerators, pleasure over performance.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | NAG-401 | D1 | Sex |  | CONTEXT 1/6 | What kind of day makes you more open to closeness? | The shape of a day that leaves you open rather than closed. |
 | NAG-402 | D1 | Sex |  | CONTEXT 2/6 | What kind of day shuts it down completely? | The shape of a day that ends any possibility. |
@@ -799,7 +797,7 @@ Context, responsive desire, brakes and accelerators, pleasure over performance.
 | NAG-434 | D3 | Sex |  |  | How do you want to be touched when nothing is meant to follow? | Practical description. How you want to be touched when nothing follows. |
 | NAG-435 | D3 | Sex |  |  | What is the difference for you between being wanted and being used? | Wanted and used can feel similar in the moment. Name the difference for you. |
 | NAG-436 | D4 | Sex |  | CONSENT 3/4 | What do you want that you have never asked for? | A want never voiced. It does not have to be dramatic. |
-| NAG-437 | D5 | Sex |  | CONSENT 4/4 | What have you agreed to that you did not want? | Times you consented without wanting to. |
+| NAG-437 | D5 | Sex | yes | CONSENT 4/4 | What have you agreed to that you did not want? | Times you consented without wanting to. |
 | NAG-438 | D2 | Sex |  |  | What would you like to try once, without commitment to repeating it? | An experiment with no obligation to repeat it. |
 | NAG-439 | D4 | Sex |  | DRIFT 1/4 | What has changed in what you want since we started? | How your wants have shifted since the beginning. |
 | NAG-440 | D4 | Sex |  | DRIFT 3/4 | What do you miss about our physical relationship? | Something from our physical relationship that has gone. |
@@ -813,13 +811,12 @@ Context, responsive desire, brakes and accelerators, pleasure over performance.
 | NAG-448 | D2 | Sex |  |  | What do you need from the hours before, not just the moment? | The hours beforehand matter. Say what you need in them. |
 | NAG-449 | D3 | Sex |  |  | What does a good experience mean to you now? | Your current definition of a good experience. |
 | NAG-450 | D3 | Sex |  |  | How would you know we were doing well in this area? | The signal that would tell you we are in a good place here. |
-
 ---
 
 ## MAR. Sexual communication lens
 Naming, initiating, giving feedback, mismatch, repair.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | MAR-451 | D1 | Sex |  | LANGUAGE 1/4 | How comfortable are you talking about this at all? | How easy or difficult this topic is for you in general. |
 | MAR-452 | D1 | Origin |  | LANGUAGE 2/4 | What made it hard to talk about sex in your family or school? | Where the discomfort with the subject was learned. |
@@ -871,13 +868,12 @@ Naming, initiating, giving feedback, mismatch, repair.
 | MAR-498 | D3 | Sex |  | SEXPLAN 6/8 | What is one thing we could change immediately? | One immediate change. |
 | MAR-499 | D3 | Sex |  | SEXPLAN 7/8 | What is one thing that will take longer? | One change that needs longer. |
 | MAR-500 | D3 | Sex |  | SEXPLAN 8/8 | What do you need from me to keep this conversation open? | What you need from me to keep this discussable. |
-
 ---
 
 ## LEH. Fantasy and novelty lens
 Disclosure, curiosity, the gap between what people want and what they say.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | LEH-501 | D2 | Sex |  | DISCLOSE 1/5 | How do you feel about the idea of sharing a fantasy at all? | How you feel about the idea itself, before any content. |
 | LEH-502 | D2 | Sex |  | DISCLOSE 2/5 | What makes disclosure feel risky to you? | What makes disclosure feel risky. |
@@ -916,7 +912,7 @@ Disclosure, curiosity, the gap between what people want and what they say.
 | LEH-535 | D5 | Sex |  |  | What would change between us if everything were disclosed? | The effect of total disclosure between us. |
 | LEH-536 | D4 | Sex |  | PRIVACY 1/4 | What should stay private, in your view, and why? | What you believe should remain private, and why. |
 | LEH-537 | D5 | Sex |  | PRIVACY 4/4 | Where is the line between privacy and secrecy for you? | Privacy is kept. Secrecy is hidden. Say where your line falls. |
-| LEH-538 | D4 | Sex |  | LIMITS 5/5 | What agreement do we need about where our limits sit? | The understanding you want in place, said plainly. |
+| LEH-538 | D4 | Sex |  | LIMITS 5/5 | What agreement do we need about that line? | The agreement we need about that line. |
 | LEH-539 | D3 | Sex |  |  | What do you want to feel that you are not currently feeling? | A feeling you want and are not currently getting. |
 | LEH-540 | D3 | Sex |  |  | What is missing rather than wrong? | Missing is different from wrong. Name what is absent. |
 | LEH-541 | D2 | Sex |  |  | What would you like to plan together? | Something to plan together. |
@@ -929,13 +925,12 @@ Disclosure, curiosity, the gap between what people want and what they say.
 | LEH-548 | D3 | Sex |  |  | What would you like me to initiate more often? | What you want me to start more often. |
 | LEH-549 | D3 | Sex |  |  | What would you like to initiate yourself? | What you want to start yourself. |
 | LEH-550 | D4 | Sex |  |  | What is the one thing you would most like to change, and what is the first step? | One change and its first practical step. |
-
 ---
 
 ## OPN. Openers block
 Low exposure entry points spread across every domain. Written for a first session, or for a couple who are tired.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | OPN-551 | D1 | Self |  |  | What is the first thing you do when you get home? | Routine, not ritual. The automatic first move. |
 | OPN-552 | D1 | Self |  |  | What did you eat today that you actually enjoyed? | Small and literal. Not a food philosophy. |
@@ -1037,19 +1032,18 @@ Low exposure entry points spread across every domain. Written for a first sessio
 | OPN-648 | D1 | Meaning |  |  | What is a value you were raised with that you still hold? | One you kept deliberately. |
 | OPN-649 | D1 | Social |  |  | Which friendship of yours is in the best shape right now? | And what keeps it that way. |
 | OPN-650 | D1 | Social |  |  | How much company do you want in an average week? | Honest amount, not the sociable answer. |
-
 ---
 
 ## MON. Money block
 Inherited money scripts, spending style, power, provision, disclosure. No source authority on the reference list studies money, so this block is written to the subject rather than to a lens.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | MON-651 | D2 | Money |  | MONSCRIPT 1/5 | What did you learn about money by watching, rather than being told? | Attitudes absorbed from behaviour, not instruction. |
-| MON-652 | D2 | Money |  | MONSCRIPT 2/5 | What was the atmosphere around money in the house you grew up in? | Describe the atmosphere, not the amounts. |
+| MON-652 | D2 | Money |  | MONSCRIPT 2/5 | Was money a source of tension in your house growing up? | Describe the atmosphere, not the amounts. |
 | MON-653 | D2 | Money |  | MONSCRIPT 3/5 | Who controlled the money where you grew up, and how did that show? | Control is not always the earner. |
 | MON-654 | D3 | Money |  | MONSCRIPT 4/5 | What did having or not having money mean about your worth as a child? | The link between money and value, formed young. |
-| MON-655 | D3 | Money |  | MONSCRIPT 5/5 | Which attitude to money did you inherit and never question? | Something you absorbed young and still act on. |
+| MON-655 | D3 | Money |  | MONSCRIPT 5/5 | Which of those inherited attitudes are you still running? | Say which ones survived into now. |
 | MON-656 | D2 | Money |  | MONSTYLE 1/5 | Are you a spender or a saver, honestly? | Your actual behaviour, not your intention. |
 | MON-657 | D2 | Money |  | MONSTYLE 2/5 | What does financial security look like to you, in numbers or in feeling? | Either answer is valid. Say which one you use. |
 | MON-658 | D2 | Money |  | MONSTYLE 3/5 | How much do you need in reserve before you stop worrying? | A figure or a feeling. |
@@ -1063,7 +1057,7 @@ Inherited money scripts, spending style, power, provision, disclosure. No source
 | MON-666 | D2 | Money |  |  | What do you want us to be saving toward right now? | One priority, not a list. |
 | MON-667 | D2 | Money |  |  | How much debt is acceptable to you, and for what? | Different debts carry different weight. |
 | MON-668 | D2 | Money |  |  | What is your honest view of how we handle money as a pair? | Working, not working, or unexamined. |
-| MON-669 | D2 | Money |  |  | How close is your sense of what we spend each month to the real figure? | Your honest estimate against the actual number. |
+| MON-669 | D2 | Money |  |  | Do you know what we actually spend each month? | Whether you know, not whether you should. |
 | MON-670 | D2 | Money |  |  | What financial decision are we currently avoiding? | Something on the list that never gets to the top. |
 | MON-671 | D2 | Money |  | MONGIVE 1/4 | How much should we give away, and to whom? | Charity, family, church, causes. |
 | MON-672 | D2 | Money |  | MONGIVE 2/4 | What do you feel obliged to fund that you have never questioned? | Obligation, not choice. |
@@ -1074,44 +1068,43 @@ Inherited money scripts, spending style, power, provision, disclosure. No source
 | MON-677 | D2 | Money |  |  | What financial risk are you comfortable with that I might not be? | Investment, business, property, career. |
 | MON-678 | D2 | Money |  |  | How would you want us to handle a sudden loss of income? | Practically. First moves. |
 | MON-679 | D2 | Money |  |  | What does enough look like to you? | A number, a lifestyle, or a feeling. |
-| MON-680 | D2 | Money |  |  | Whose financial situation do you find yourself measuring ours against? | Friends, family, colleagues, or nobody. Honest answer. |
-| MON-681 | D3 | Money |  | MONPOWER 1/6 | How much should earning more entitle someone to more say? | Your genuine view, not the correct one. |
-| MON-682 | D3 | Money |  | MONPOWER 2/6 | When did you last feel you had to justify something you had bought? | A specific instance, and what made it feel necessary. |
+| MON-680 | D2 | Money |  |  | Do you compare our finances to other people's? | Honest answer. |
+| MON-681 | D3 | Money |  | MONPOWER 1/6 | Does earning more entitle someone to more say? | Your genuine view, not the correct one. |
+| MON-682 | D3 | Money |  | MONPOWER 2/6 | Have you ever felt you had to justify a purchase to me? | A specific instance. |
 | MON-683 | D3 | Money |  | MONPOWER 3/6 | Where does money create an imbalance of power between us? | Name it plainly. |
-| MON-684 | D3 | Money |  | MONPOWER 4/6 | What does your access to our money look like day to day? | Access, not ownership. |
-| MON-685 | D4 | Money |  | MONPOWER 5/6 | When have you felt that money made leaving impossible, even briefly? | Trapped meaning unable to leave for money reasons. |
+| MON-684 | D3 | Money |  | MONPOWER 4/6 | Do you feel you have equal access to what we have? | Access, not ownership. |
+| MON-685 | D4 | Money |  | MONPOWER 5/6 | Have you ever felt financially trapped in this relationship? | Trapped meaning unable to leave for money reasons. |
 | MON-686 | D4 | Money |  | MONPOWER 6/6 | What would you need financially to feel genuinely independent? | A figure or a set of conditions. |
 | MON-687 | D3 | Money |  |  | What do you think I get wrong about money? | Direct answer welcome. |
 | MON-688 | D3 | Money |  |  | Where has money been used as an argument for something else? | Money is often the proxy, not the subject. |
 | MON-689 | D3 | Money |  |  | What has money cost us in time or attention? | The trade you did not notice making. |
 | MON-690 | D3 | Money |  |  | What are you working for, once the bills are paid? | The purpose behind the earning. |
-| MON-691 | D3 | Money |  |  | What should our money be buying us that it currently is not? | The match between what you spend and what you get. |
+| MON-691 | D3 | Money |  |  | Are we living the life our money should be buying? | Match between spend and satisfaction. |
 | MON-692 | D3 | Money |  |  | What would you cut first if we had to cut? | Be specific. |
 | MON-693 | D3 | Money |  |  | What would you protect last? | The thing that goes only when everything else has. |
 | MON-694 | D3 | Money |  |  | How does your income affect how you value yourself? | The link between earning and worth, now. |
 | MON-695 | D3 | Money |  |  | What do you feel guilty about spending on yourself? | And where that guilt started. |
 | MON-696 | D3 | Money |  |  | What financial goal of mine do you privately think is unrealistic? | Say it kindly, but say it. |
-| MON-697 | D3 | Money |  |  | How much do you trust my judgement with money? | Honest, with reasons. |
+| MON-697 | D3 | Money |  |  | Do you trust my judgement with money? | Honest, with reasons. |
 | MON-698 | D3 | Money |  |  | What would change between us if we had significantly more? | And what would not. |
 | MON-699 | D3 | Money |  |  | What would change if we had significantly less? | Test the relationship, not the budget. |
 | MON-700 | D3 | Money |  |  | What conversation about money do we keep having without resolving? | Name the loop. |
-| MON-701 | D4 | Money |  | MONTRUTH 1/6 | How complete is my picture of your finances? | Accounts, debts, loans, commitments, gifts. |
-| MON-702 | D4 | Money |  | MONTRUTH 2/6 | Have you understated or overstated something financial to me? | Including by omission. |
+| MON-701 | D4 | Money | yes | MONTRUTH 1/6 | Is there anything financial I do not currently know about? | Account, debt, loan, commitment, gift. |
+| MON-702 | D4 | Money | yes | MONTRUTH 2/6 | Have you understated or overstated something financial to me? | Including by omission. |
 | MON-703 | D4 | Money |  | MONTRUTH 3/6 | What have you spent that you would not want itemised? | You do not have to itemise it now. |
 | MON-704 | D4 | Money | yes | MONTRUTH 4/6 | Have you lent or given money to someone without telling me? | Family, friend, or anyone else. |
-| MON-705 | D5 | Money | yes | MONTRUTH 5/6 | How much of what you owe have I actually seen? | Everything in your name, including the small and the old. |
+| MON-705 | D5 | Money | yes | MONTRUTH 5/6 | Is there a debt in your name that I have never seen? | Straight answer. |
 | MON-706 | D5 | Money | yes | MONTRUTH 6/6 | What would full financial transparency between us actually require? | Practically, and whether you want it. |
 | MON-707 | D4 | Money |  |  | If one of us died tomorrow, would the other know where everything is? | Wills, accounts, policies, passwords. |
 | MON-708 | D4 | Money |  |  | What financial provision have we failed to make for each other? | The gap you already know about. |
-| MON-709 | D5 | Money | yes |  | What would happen to us if the money disappeared entirely? | Uncomfortable and worth asking once. |
+| MON-709 | D5 | Money | yes |  | Would you stay with me if the money disappeared entirely? | Uncomfortable and worth asking once. |
 | MON-710 | D4 | Money |  |  | What is the single most honest thing you could say about money and us? | One sentence. |
-
 ---
 
 ## HOM. Home and household block
 Division of labour, the invisible list, standards, space, the running of a shared life. Written to the subject.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | HOM-711 | D2 | Home |  | HOMLOAD 1/6 | Who actually notices when something needs doing in this house? | Noticing is work. Say who does it. |
 | HOM-712 | D2 | Home |  | HOMLOAD 2/6 | Who keeps the mental list of what is running out? | The invisible inventory. |
@@ -1138,13 +1131,13 @@ Division of labour, the invisible list, standards, space, the running of a share
 | HOM-733 | D2 | Home |  |  | What would make evenings work better? | Same question, harder to answer. |
 | HOM-734 | D2 | Home |  |  | How much time do we need in the same room without talking? | Companionable silence. Say how much you want. |
 | HOM-735 | D2 | Home |  |  | How much time alone do you need at home each week? | A number of hours, roughly. |
-| HOM-736 | D2 | Home |  |  | How much time alone in the house do you actually get? | Time in your own space, with nobody else there. |
+| HOM-736 | D2 | Home |  |  | Do you get that time currently? | Straight yes or no, then explain. |
 | HOM-737 | D3 | Home |  | HOMSPACE 1/4 | Where in the house is genuinely yours? | A room, a chair, a drawer. |
 | HOM-738 | D3 | Home |  | HOMSPACE 2/4 | What do you do when you need to disappear for an hour? | And whether it works. |
-| HOM-739 | D3 | Home |  | HOMSPACE 3/4 | When do you find yourself putting off coming home? | Sitting in the car counts. |
+| HOM-739 | D3 | Home |  | HOMSPACE 3/4 | Do you ever avoid coming home, even slightly? | Sitting in the car counts. |
 | HOM-740 | D4 | Home |  | HOMSPACE 4/4 | What would have to change for home to feel like rest rather than a second job? | Be concrete. |
 | HOM-741 | D2 | Home |  |  | What do we argue about most in the house? | The recurring domestic one. |
-| HOM-742 | D3 | Home |  |  | When we argue about a chore, what is it usually really about? | Usually it is something else. |
+| HOM-742 | D3 | Home |  |  | Is that argument actually about the task, or about something else? | Usually it is something else. |
 | HOM-743 | D3 | Home |  |  | Where do you feel taken for granted domestically? | Name the specific area. |
 | HOM-744 | D3 | Home |  |  | Where do you think I feel taken for granted? | Your guess about me. |
 | HOM-745 | D3 | Home |  |  | What have you stopped asking me to do? | Requests you gave up on. |
@@ -1154,8 +1147,8 @@ Division of labour, the invisible list, standards, space, the running of a share
 | HOM-749 | D2 | Home |  |  | What do you want reviewed regularly rather than argued about occasionally? | A standing conversation instead of a flashpoint. |
 | HOM-750 | D2 | Home |  |  | How do you want to be asked for help? | Wording and timing. |
 | HOM-751 | D2 | Home |  |  | What is the difference between helping and sharing, to you? | It matters more than it sounds. |
-| HOM-752 | D3 | Home |  |  | How equal do you think our split of the work at home actually is? | Your honest assessment. |
-| HOM-753 | D3 | Home |  |  | Where the work at home is unequal between us, how much does it bother you? | Unequal is not automatically unfair. Say which it is. |
+| HOM-752 | D3 | Home |  |  | Do you think our split is actually equal? | Your honest assessment. |
+| HOM-753 | D3 | Home |  |  | If it is not, does that bother you? | Unequal is not automatically unfair. Say which it is. |
 | HOM-754 | D2 | Home |  |  | What did the division of work look like in your parents' house? | And whether you have replicated it. |
 | HOM-755 | D3 | Home |  |  | Which of your parents' domestic habits have you inherited? | Good or bad. |
 | HOM-756 | D2 | Home |  |  | What do you want our home to feel like on a Sunday? | The atmosphere, not the activity. |
@@ -1163,19 +1156,18 @@ Division of labour, the invisible list, standards, space, the running of a share
 | HOM-758 | D3 | Home |  |  | What are you tolerating at home that you should have raised? | Something you have absorbed. |
 | HOM-759 | D3 | Home |  |  | What would you like me to notice without being told? | Be specific, so I can actually do it. |
 | HOM-760 | D3 | Home |  |  | What is the most honest thing you could say about how we run this house? | One sentence. |
-
 ---
 
 ## FUT. Future and ageing block
 Plans, timelines, ageing, care, mortality, what is actually being built. Written to the subject.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | FUT-761 | D2 | Future |  | FUTSHAPE 1/5 | What do you want the next five years to contain? | Contents, not achievements. |
 | FUT-762 | D2 | Future |  | FUTSHAPE 2/5 | Where do you want to be living in ten years? | Country, city, type of place. |
 | FUT-763 | D2 | Future |  | FUTSHAPE 3/5 | What do you want to have stopped doing by then? | Work, obligations, habits. |
 | FUT-764 | D3 | Future |  | FUTSHAPE 4/5 | What are you afraid the next ten years will look like? | The version you do not want. |
-| FUT-765 | D3 | Future |  | FUTSHAPE 5/5 | What would have to happen this year to avoid the future you least want? | One decisive thing. |
+| FUT-765 | D3 | Future |  | FUTSHAPE 5/5 | What would have to happen this year for that to be avoided? | One decisive thing. |
 | FUT-766 | D2 | Future |  |  | What are we building, in one sentence? | If you cannot say it, that is the answer. |
 | FUT-767 | D2 | Future |  |  | Do we actually want the same things, or have we assumed it? | Test the assumption. |
 | FUT-768 | D2 | Future |  |  | What plan of ours has quietly expired? | Something we still say but no longer mean. |
@@ -1216,18 +1208,17 @@ Plans, timelines, ageing, care, mortality, what is actually being built. Written
 | FUT-803 | D4 | Future |  | FUTHARD 2/5 | What would you do if we had to start over financially? | Rebuild, downsize, or something else. |
 | FUT-804 | D4 | Future |  | FUTHARD 3/5 | What would you want from me if you were seriously ill? | Instructions, not reassurance. |
 | FUT-805 | D4 | Future |  | FUTHARD 4/5 | What do you want to happen after you die? | Arrangements and wishes. |
-| FUT-806 | D5 | Future |  | FUTHARD 5/5 | What would you want for me if you died first? | Ask it once, properly. |
-| FUT-807 | D4 | Future |  |  | Which practical arrangements should we have made by now and have not? | Wills, policies, powers of attorney. |
-| FUT-808 | D5 | Future | yes |  | When you picture yourself in twenty years, who is there with you? | The picture that actually arrives, not the one you would prefer. |
-| FUT-809 | D5 | Future | yes |  | What would have to change for you to picture your future with me differently? | The condition, either way. |
+| FUT-806 | D5 | Future |  | FUTHARD 5/5 | Do you want me to remarry if you go first? | Ask it once, properly. |
+| FUT-807 | D4 | Future |  |  | Have we made the practical arrangements a couple our age should have? | Wills, policies, powers of attorney. |
+| FUT-808 | D5 | Future | yes |  | Do you see us together in twenty years? | Straight answer, then the reasoning. |
+| FUT-809 | D5 | Future | yes |  | What would make you change that answer? | The condition, either way. |
 | FUT-810 | D4 | Future |  |  | What is the most honest thing you can say about where we are heading? | One sentence. |
-
 ---
 
 ## WRK. Work and ambition block
 Identity, hours, ambition, what the job costs and whether the trade holds. Written to the subject.
 
-| ID | Depth | Domain | Vol | Chain | Question | Context |
+| ID | Depth | Domain | Stakes | Chain | Question | Context |
 |---|---|---|---|---|---|---|
 | WRK-811 | D2 | Work |  | WRKMEAN 1/5 | What does your work give you besides money? | Identity, structure, status, purpose, company. |
 | WRK-812 | D2 | Work |  | WRKMEAN 2/5 | How much of your identity is your job? | A proportion, roughly. |
@@ -1235,7 +1226,7 @@ Identity, hours, ambition, what the job costs and whether the trade holds. Writt
 | WRK-814 | D3 | Work |  | WRKMEAN 4/5 | What are you proving, and to whom? | There is usually someone. |
 | WRK-815 | D3 | Work |  | WRKMEAN 5/5 | What would it cost you to stop proving it? | Name the cost honestly. |
 | WRK-816 | D2 | Work |  |  | How many hours a week do you actually want to work? | Your number, not the expected one. |
-| WRK-817 | D2 | Work |  |  | What is the gap between the work you imagined doing and the work you actually do? | And what has caused the gap. |
+| WRK-817 | D2 | Work |  |  | What is the gap between that and reality? | And what causes the gap. |
 | WRK-818 | D2 | Work |  |  | What part of your job would you drop tomorrow? | One thing. |
 | WRK-819 | D2 | Work |  |  | What would you need to change jobs? | Money, confidence, timing, permission. |
 | WRK-820 | D2 | Work |  |  | Do you want promotion, or do you want something else? | They are often confused. |
@@ -1247,15 +1238,15 @@ Identity, hours, ambition, what the job costs and whether the trade holds. Writt
 | WRK-826 | D2 | Work |  |  | What support do you want on a bad work week? | Practical, emotional, or none. |
 | WRK-827 | D3 | Work |  | WRKCOST 1/6 | What has your work cost this relationship? | Time, attention, mood, presence. |
 | WRK-828 | D3 | Work |  | WRKCOST 2/6 | What has it cost you personally? | Health, friendships, interests. |
-| WRK-829 | D3 | Work |  | WRKCOST 3/6 | How well is the trade your work demands still paying off? | Honest arithmetic. |
+| WRK-829 | D3 | Work |  | WRKCOST 3/6 | Is the trade still worth it? | Honest arithmetic. |
 | WRK-830 | D3 | Work |  | WRKCOST 4/6 | When did you last consider changing something and decide not to? | And the reason you decided not to. |
-| WRK-831 | D4 | Work |  | WRKCOST 5/6 | Where has your career cost you something because of us? | Choices made, or not made, because of us. |
+| WRK-831 | D4 | Work |  | WRKCOST 5/6 | Do you resent me for anything connected to your career? | Choices made, or not made, because of us. |
 | WRK-832 | D4 | Work |  | WRKCOST 6/6 | What career did you give up to be in this relationship? | Including the one you never attempted. |
 | WRK-833 | D2 | Work |  |  | Whose career currently takes priority? | And whether that was agreed or assumed. |
-| WRK-834 | D3 | Work |  |  | Which arrangement we made about work no longer fits? | Circumstances change. Say which one should. |
+| WRK-834 | D3 | Work |  |  | Is that arrangement still right? | Circumstances change. Say whether this one should. |
 | WRK-835 | D3 | Work |  |  | What would you want if the priority switched? | Practically, what would need to happen. |
-| WRK-836 | D3 | Work |  |  | How well do you think I understand what you actually do all day? | Honest answer. |
-| WRK-837 | D3 | Work |  |  | How do you know whether I am proud of your work? | What tells you, one way or the other. |
+| WRK-836 | D3 | Work |  |  | Do you feel I understand what you actually do all day? | Honest answer. |
+| WRK-837 | D3 | Work |  |  | Do you feel I am proud of your work? | And how you know. |
 | WRK-838 | D3 | Work |  |  | Where do you feel underestimated at work? | And whether it matters to you. |
 | WRK-839 | D3 | Work |  |  | What are you avoiding professionally? | A conversation, a decision, a risk. |
 | WRK-840 | D3 | Work |  |  | What would you attempt if failure were survivable? | Assume you would recover. |
@@ -1267,17 +1258,16 @@ Identity, hours, ambition, what the job costs and whether the trade holds. Writt
 | WRK-846 | D3 | Work |  |  | Where has it made you a better one? | The other side of it. |
 | WRK-847 | D2 | Work |  |  | What boundary around work would you like us to hold together? | Something enforceable. |
 | WRK-848 | D3 | Work |  |  | What have you missed at home that you cannot get back? | And whether it was worth it. |
-| WRK-849 | D4 | Work |  |  | If you had to choose between the career and this relationship, what happens? | Uncomfortable and clarifying. |
+| WRK-849 | D4 | Work | yes |  | If you had to choose between the career and this relationship, what happens? | Uncomfortable and clarifying. |
 | WRK-850 | D3 | Work |  |  | What is the most honest thing you can say about work and us? | One sentence. |
-
 ---
 ## Build notes
 
-**Where tranche two went.** 300 questions added. 100 low exposure openers spread across every domain, then four new subject blocks: Money 60, Home 50, Future 50, Work 40. Everyday was dissolved and its 32 cards reassigned. Corpus is now 850 across 11 domains, 81 chains covering 359 questions, 22 volatility flags.
+**Where tranche two went.** 300 questions added. 100 low exposure openers spread across every domain, then four new subject blocks: Money 60, Home 50, Future 50, Work 40. Everyday was dissolved and its 32 cards reassigned. Corpus is now 850 across 11 domains, 81 chains covering 359 questions, 27 Stakes flags.
 
 **D1 went from 26 to 126.** A couple taking four cards a session now has around thirty safe sessions before the shallow end runs out, against five before. This was the worst number in the corpus and it is now the second best.
 
-**Money went from 2 to 70 and is playable at every depth.** It runs from what you learned by watching your parents through to whether there is a debt in your name I have never seen. Four of the six new volatility flags sit here, which is correct: financial concealment ends marriages and the questions that surface it need a deliberate unlock.
+**Money went from 2 to 70 and is playable at every depth.** It runs from what you learned by watching your parents through to whether there is a debt in your name I have never seen. Six of the Stakes flags sit here, which is correct: financial concealment ends marriages and the questions that surface it need a deliberate unlock.
 
 **Home is the sleeper.** 60 questions on division of labour, the invisible list, standards and space. Nothing in the source literature covers it well and it is among the most common recurring grievances in modern couples. The HOMLOAD chain, on who notices what needs doing, is likely to be the highest yield sequence in the whole corpus.
 
@@ -1288,7 +1278,7 @@ Identity, hours, ambition, what the job costs and whether the trade holds. Writt
 - Living family and in laws. Origin covers the childhood family. It does not cover the mother in law who visits every Sunday.
 - Health, body and illness. Currently scattered through Future and Sex rather than existing as a domain.
 - Home D4 and D5, Work D4 and D5. Both blocks were written shallow. The deep end of both exists in real life: resentment about money and career sacrifice, the marriage that has become a household management contract.
-- Conflict D3 at 13, against 18 at both D4 and D5. The middle of the conflict ladder is missing, so a couple steps from moderate straight to rupture.
+- Conflict D3 at 13, against 18 at both D4 and D5. The middle of the conflict ladder is missing, so a couple steps from moderate disagreement straight to the unsaid.
 
 **Sizing.** A live cell needs roughly 40 to 60 cards to survive ten sessions without repetition. On the current 11 domain grid that implies 1,400 to 1,800 for a complete version one. At 850 the corpus is a little over half built.
 
