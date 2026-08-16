@@ -1,6 +1,6 @@
 {
   "name": "lets-connect",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "private": true,
   "description": "Let's Connect - a PWA that gives couples curated questions to discuss, one card at a time.",
   "main": "server.js",
@@ -25,6 +25,7 @@
     "migrate-seed-corpus": "node scripts/migrate-seed-corpus.js",
     "build-corpus": "node scripts/build-corpus.js",
     "seed-corpus": "node scripts/seed-corpus.js",
+    "rewrite-questions": "node scripts/rewrite-questions.js",
     "check-schema": "node scripts/check-schema.js",
     "make-icons": "node scripts/make-icons.js"
   },

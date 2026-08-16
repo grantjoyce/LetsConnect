@@ -987,6 +987,14 @@ a { color: var(--accent); }
   color: var(--lv-accent, var(--accent));
 }
 
+/* The question. The only thing on the card that matters.
+ *
+ * Deliberately NOT larger. Doubling it was tried and reverted: the questions
+ * are being rewritten to be specific rather than gestural, which makes them
+ * longer, and the space has to go to the words rather than to their size. The
+ * corpus's longest is already 95 characters and that is the direction of
+ * travel, not the ceiling.
+ */
 .qtext {
   font-size: clamp(1.4rem, 5.6vw, 2rem);
   font-weight: 700;
