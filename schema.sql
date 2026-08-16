@@ -40,14 +40,43 @@ CREATE TABLE IF NOT EXISTS users (
 -- so both partners always see the same sequence, but different per couple.
 -- ---------------------------------------------------------------------------
 
+-- A couple IS a licence. One code, bought from the shop, used by two people
+-- sitting together with one screen between them.
+--
+-- These columns live here rather than in a separate access_codes table because
+-- every piece of progress already hangs off couples.id. A second identity would
+-- mean a join on every read and two things to keep in step; there is no state
+-- where a code exists without a couple.
+--
+-- invite_code and couple_members belong to the retired pairing model. Both are
+-- kept: nothing writes to them, and a live database may hold rows describing
+-- who was paired with whom.
 CREATE TABLE IF NOT EXISTS couples (
   id                 INT AUTO_INCREMENT PRIMARY KEY,
-  invite_code        VARCHAR(12) NOT NULL,
+  access_code        VARCHAR(24) NULL,
+  invite_code        VARCHAR(12) NULL,
   couple_name        VARCHAR(120) NULL,
+  partner_a          VARCHAR(60) NULL,
+  partner_b          VARCHAR(60) NULL,
+  buyer_email        VARCHAR(191) NULL,
+  order_ref          VARCHAR(60) NULL,
+  -- suspended, not deleted: a refund has to stop the code working without
+  -- erasing that it existed.
+  code_status        ENUM('active','suspended') NOT NULL DEFAULT 'active',
+  issued_at          DATETIME NULL,
+  activated_at       DATETIME NULL,
+  last_used_at       DATETIME NULL,
+  -- One deliberate choice made in front of both of them. It was per-person
+  -- under the two-account model, because one partner could otherwise open that
+  -- door on the other's behalf; sitting together there is no second session to
+  -- ask, and no such risk.
+  volatile_unlocked    TINYINT(1) NOT NULL DEFAULT 0,
+  volatile_unlocked_at DATETIME NULL,
   shuffle_seed       VARCHAR(32) NOT NULL,
   status             ENUM('active','dissolved') NOT NULL DEFAULT 'active',
   created_by_user_id INT NULL,
   created_at         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_couples_access_code (access_code),
   UNIQUE KEY uq_couples_invite_code (invite_code),
   KEY idx_couples_creator (created_by_user_id),
   CONSTRAINT fk_couples_creator FOREIGN KEY (created_by_user_id)

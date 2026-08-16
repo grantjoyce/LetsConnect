@@ -58,6 +58,11 @@ const MIGRATIONS = [
   // review queue. Extends `lenses`, so it MUST run after migrate-add-lenses.
   'migrate-add-authoring',
 
+  // One code per couple, bought from the shop. No accounts and no pairing: the
+  // exercise is done sitting together, so two logins were solving a problem the
+  // product does not have. Extends `couples`.
+  'migrate-add-access-codes',
+
   // FIRST-RUN SEED ONLY. Does nothing at all on a database that already has
   // questions - content belongs to the admin area once it exists.
   'migrate-seed-corpus',

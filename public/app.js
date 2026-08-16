@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.6.1';
+const APP_VERSION = '1.7.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -25,9 +25,11 @@ const APP_VERSION = '1.6.1';
 
 const state = {
   ready: false,
-  view: 'auth', // auth | onboard | levels | deck | account | admin
-  authMode: 'login', // login | register | forgot
+  view: 'levels', // levels | deck | chains | account
+  // The owner, only when they happen to be signed in at /admin in the same
+  // browser. A couple has no account at all - see state.couple.
   me: null,
+  // The whole identity. A redeemed code, with the two names on it.
   couple: null,
 
   // Depth and domain are INDEPENDENT axes. A domain is a subject and carries no
@@ -47,7 +49,7 @@ const state = {
 
   chains: null,
   chain: null, // { chain, cards, position } while running a sequence
-  volatile: null, // { unlocked, mine, waitingOnPartner, available }
+  volatile: null, // { unlocked, available }
 
   serverVersion: null,
   deck: null, // { domain, depth, stats, cards, index, releasedEarly }
@@ -56,9 +58,6 @@ const state = {
   error: null,
   notice: null,
   busy: false,
-
-  // Password reset, driven by ?reset=<token> in the URL.
-  reset: null, // { token, checking, valid, displayName, done, error }
 
   // App name, tagline and accent, set by the owner in the admin area.
   branding: null,
@@ -134,14 +133,14 @@ const api = {
     }
 
     if (res.status === 401 && state.ready) {
-      // The session went away underneath us. Drop straight to the login screen
-      // rather than leaving a dead UI on screen.
-      state.me = null;
+      // The session went away underneath us - expired, or the code was
+      // suspended. Drop straight back to the code screen rather than leaving a
+      // dead UI on screen.
       state.couple = null;
       state.deck = null;
-      state.view = 'auth';
+      state.view = 'levels';
       render();
-      throw new Error((data && data.error) || 'Please log in again.');
+      throw new Error((data && data.error) || 'Enter your code to start.');
     }
 
     if (!res.ok) throw new Error((data && data.error) || 'Something went wrong.');
@@ -242,11 +241,11 @@ function uiConfirm(title, message, confirmLabel, danger) {
 
 function showHowItWorks() {
   const steps = [
-    ['Pair up', 'One of you creates the couple and gets a six-character code. The other enters it. That is the only setup there is.'],
-    ['Pick a depth', 'Seven decks, from Icebreakers up to Deep Waters. Choose by how much energy and honesty you both have tonight, not by which one sounds most impressive.'],
+    ['Sit down together', 'This is one phone between two people, not two apps talking to each other. Put it somewhere you can both see and give it an hour.'],
+    ['Choose the ground', 'Tick the topics you are up for and how deep you want to go. Depth is about exposure, not difficulty - D1 costs nothing to answer, D5 changes something.'],
     ['Talk about the card', 'One question fills the screen. There is no timer and nothing to type - the app never records a single answer, only whether you dealt with the card.'],
-    ['Completed or Skip', '<strong>Completed</strong> retires the question for good. <strong>Skip</strong> means &ldquo;not tonight&rdquo; - it drops out of the deck and can come back around in a couple of weeks.'],
-    ['Shared progress', 'Progress belongs to the two of you, not to one phone. Whoever taps, you both stop seeing that card.'],
+    ['Completed or Skip', '<strong>Completed</strong> retires the question for good. <strong>Skip</strong> means &ldquo;not tonight&rdquo; - it drops out of the deck and comes back around in a couple of weeks.'],
+    ['Come back to it', 'Your code keeps your place. Close the app, sit down again next month, and it carries on from where the two of you left off.'],
   ];
   return dialog({
     title: 'How it works',
@@ -267,120 +266,19 @@ function showHowItWorks() {
 // Views
 // ---------------------------------------------------------------------------
 
-function viewForgot() {
+/**
+ * The welcome screen. One field.
+ *
+ * This replaces a register screen, a sign-in screen, a forgotten-password
+ * screen, a reset screen and a pairing screen. All five existed to build one
+ * shared account across two phones - and the exercise is done SITTING
+ * TOGETHER, one screen between two people. Every one of them was a wall
+ * between buying the app and using it.
+ *
+ * The code arrives by email from the shop. Either of them can type it.
+ */
+function viewGate() {
   const f = state.form;
-  return `
-    <div class="screen screen--centred">
-      <div class="hero">
-        <div class="hero-mark" aria-hidden="true">&#10084;</div>
-        <h1>Forgotten password</h1>
-        <p>We will email you a link to choose a new one.</p>
-      </div>
-
-      <div class="panel">
-        ${state.error ? `<div class="form-error">${esc(state.error)}</div>` : ''}
-        ${state.notice ? `<div class="notice">${esc(state.notice)}</div>` : ''}
-
-        <form id="forgot-form" novalidate>
-          <div class="field">
-            <label for="f-email">Email</label>
-            <input class="input" id="f-email" name="email" type="email"
-                   autocomplete="email" inputmode="email" placeholder="you@example.com"
-                   value="${esc(f.email || '')}" required>
-          </div>
-          <button class="btn btn-block" type="submit" ${state.busy ? 'disabled' : ''}>
-            ${state.busy ? 'Sending…' : 'Send the link'}
-          </button>
-        </form>
-
-        <div class="switch-row">
-          <button class="btn-quiet" data-action="go-login">Back to sign in</button>
-        </div>
-      </div>
-    </div>`;
-}
-
-/** The ?reset=<token> screen. Shown to logged-out and logged-in visitors alike. */
-function viewReset() {
-  const r = state.reset;
-
-  if (r.done) {
-    return `
-      <div class="screen screen--centred">
-        <div class="hero">
-          <div class="hero-mark" aria-hidden="true">&#10003;</div>
-          <h1>Password changed</h1>
-          <p>You can sign in with your new password now.</p>
-        </div>
-        <div class="panel">
-          <button class="btn btn-block" data-action="finish-reset">Sign in</button>
-        </div>
-      </div>`;
-  }
-
-  if (r.checking) {
-    return `
-      <div class="screen screen--centred">
-        <div class="boot"><div class="boot-mark"></div>
-        <p class="boot-text">Checking your link…</p></div>
-      </div>`;
-  }
-
-  if (!r.valid) {
-    return `
-      <div class="screen screen--centred">
-        <div class="hero">
-          <div class="hero-mark" aria-hidden="true">&#9888;</div>
-          <h1>Link no longer works</h1>
-          <p>${esc(r.error || 'That reset link has expired or has already been used.')}</p>
-        </div>
-        <div class="panel">
-          <button class="btn btn-block" data-action="go-forgot">Send a new link</button>
-          <div class="switch-row">
-            <button class="btn-quiet" data-action="finish-reset">Back to sign in</button>
-          </div>
-        </div>
-      </div>`;
-  }
-
-  return `
-    <div class="screen screen--centred">
-      <div class="hero">
-        <div class="hero-mark" aria-hidden="true">&#10084;</div>
-        <h1>Choose a new password</h1>
-        <p>Hello ${esc(r.displayName)}. Pick something you have not used here before.</p>
-      </div>
-
-      <div class="panel">
-        ${state.error ? `<div class="form-error">${esc(state.error)}</div>` : ''}
-        <form id="reset-form" novalidate>
-          <div class="field">
-            <label for="f-password">New password</label>
-            <input class="input" id="f-password" name="password" type="password"
-                   autocomplete="new-password" placeholder="At least 8 characters" required>
-          </div>
-          <div class="field">
-            <label for="f-confirm">Confirm it</label>
-            <input class="input" id="f-confirm" name="confirm" type="password"
-                   autocomplete="new-password" placeholder="Type it again" required>
-          </div>
-          <button class="btn btn-block" type="submit" ${state.busy ? 'disabled' : ''}>
-            ${state.busy ? 'Saving…' : 'Change my password'}
-          </button>
-        </form>
-        <p class="hint" style="margin-top:0.9rem">
-          This link works once and expires an hour after it was sent. Changing your password
-          signs you out everywhere else.
-        </p>
-      </div>
-    </div>`;
-}
-
-function viewAuth() {
-  if (state.authMode === 'forgot') return viewForgot();
-  const isLogin = state.authMode === 'login';
-  const f = state.form;
-
   return `
     <div class="screen screen--centred">
       <div class="hero">
@@ -390,121 +288,111 @@ function viewAuth() {
       </div>
 
       <div class="panel">
-        <h2>${isLogin ? 'Welcome back' : 'Create your account'}</h2>
-        <p class="panel-sub">
-          ${isLogin
-            ? 'Sign in to pick up where the two of you left off.'
-            : 'You each get your own login, then you pair with a code.'}
+        <h2 class="panel-title">Enter your code</h2>
+        <p class="hint" style="margin-bottom:1.1rem">
+          The code from your order email. Sit somewhere you will not be interrupted —
+          this works best with one phone between the two of you.
         </p>
 
-        ${state.error ? `<div class="form-error">${esc(state.error)}</div>` : ''}
-
-        <form id="auth-form" novalidate>
-          ${
-            isLogin
-              ? ''
-              : `<div class="field">
-                   <label for="f-name">Your first name</label>
-                   <input class="input" id="f-name" name="displayName" type="text"
-                          autocomplete="given-name" placeholder="Sam"
-                          value="${esc(f.displayName || '')}" required>
-                 </div>`
-          }
+        <form id="gate-form" autocomplete="off">
+          ${state.error ? `<div class="form-error" role="alert">${esc(state.error)}</div>` : ''}
           <div class="field">
-            <label for="f-email">Email</label>
-            <input class="input" id="f-email" name="email" type="email"
-                   autocomplete="email" inputmode="email" placeholder="you@example.com"
-                   value="${esc(f.email || '')}" required>
+            <label for="g-code">Your code</label>
+            <input class="input input-code" id="g-code" name="code" type="text"
+                   inputmode="latin" autocapitalize="characters" autocomplete="off"
+                   spellcheck="false" placeholder="XXXX-XXXX-XXXX"
+                   value="${esc(f.code || '')}" required>
           </div>
-          <div class="field">
-            <label for="f-password">Password</label>
-            <input class="input" id="f-password" name="password" type="password"
-                   autocomplete="${isLogin ? 'current-password' : 'new-password'}"
-                   placeholder="${isLogin ? 'Your password' : 'At least 8 characters'}" required>
-            ${isLogin ? '' : '<p class="hint">At least 8 characters.</p>'}
-          </div>
-
           <button class="btn btn-block" type="submit" ${state.busy ? 'disabled' : ''}>
-            ${state.busy ? 'Just a moment…' : isLogin ? 'Sign in' : 'Create account'}
+            ${state.busy ? 'Checking…' : 'Start'}
           </button>
         </form>
+      </div>
 
-        <div class="switch-row">
-          ${isLogin ? "Don't have an account?" : 'Already have one?'}
-          <button class="btn-quiet" data-action="switch-auth">
-            ${isLogin ? 'Create one' : 'Sign in'}
-          </button>
-        </div>
+      <div class="footer-note">
+        <button class="btn-quiet" data-action="how">How it works</button>
+      </div>
+    </div>`;
+}
 
+/**
+ * The cog screen.
+ *
+ * There is no account here any more, so what is left is the three things two
+ * people sitting together might actually want mid-session: what the volatile
+ * questions are and whether to open them, a way to clear progress, and a way
+ * to hand the phone back with the code closed.
+ */
+function viewAccount() {
+  const c = state.couple;
+  const v = state.volatile || {};
+
+  return `
+    <div class="screen">
+      ${topbar(false, true)}
+
+      <div class="hero">
+        <h1>${esc(c.name)}</h1>
+        <p>Settings for this session</p>
+      </div>
+
+      <div class="panel">
+        <h2 class="panel-title">The hardest questions</h2>
+        <p class="hint" style="margin-bottom:0.9rem">
+          ${plural(v.available || 0, 'question is', 'questions are')} held back until you
+          both say so. They are the ones that can genuinely damage things — not
+          uncomfortable, <strong>costly</strong>. Decide out loud, together, before
+          you turn them on.
+        </p>
+        <button class="btn ${v.unlocked ? 'btn-ghost' : ''} btn-block" data-action="volatile">
+          ${v.unlocked ? 'Put them away again' : 'We both agree — include them'}
+        </button>
         ${
-          isLogin
-            ? `<div class="switch-row" style="margin-top:0.35rem">
-                 <button class="btn-quiet" data-action="go-forgot">Forgotten your password?</button>
-               </div>`
+          v.unlocked
+            ? '<p class="hint" style="margin-top:0.6rem">They are in the deck now.</p>'
             : ''
         }
       </div>
 
+      <div class="panel">
+        <h2 class="panel-title">Start again</h2>
+        <p class="hint" style="margin-bottom:0.9rem">
+          Clears what you have worked through so the cards come back. Nothing you
+          said is stored anywhere — only which cards you dealt with.
+        </p>
+        <button class="btn btn-ghost btn-block" data-action="reset-all">
+          Clear our progress
+        </button>
+      </div>
+
+      <div class="panel">
+        <h2 class="panel-title">Finish</h2>
+        <p class="hint" style="margin-bottom:0.9rem">
+          Closes the code on this phone. It keeps working — enter it again whenever
+          you sit down together.
+        </p>
+        <button class="btn btn-ghost btn-block" data-action="leave">Close the app</button>
+      </div>
+
+      ${
+        state.me && state.me.isOwner
+          ? `<div class="footer-note"><a class="btn-quiet" href="/admin/">Owner area</a></div>`
+          : ''
+      }
+
       <div class="footer-note">
-        <button class="btn-quiet" data-action="how">How it works</button>
+        <span class="version-badge${
+          state.serverVersion && state.serverVersion !== APP_VERSION ? ' mismatch' : ''
+        }">v${esc(APP_VERSION)}${
+    state.serverVersion && state.serverVersion !== APP_VERSION
+      ? ` ⚠ server v${esc(state.serverVersion)}`
+      : ''
+  }</span>
       </div>
     </div>`;
 }
 
-function viewOnboard() {
-  const f = state.form;
-  return `
-    <div class="screen">
-      ${topbar(false)}
-
-      <div class="hero">
-        <h1>Pair with your partner</h1>
-        <p>One of you creates the couple, the other joins with the code.</p>
-      </div>
-
-      ${state.error ? `<div class="form-error">${esc(state.error)}</div>` : ''}
-
-      <div class="panel">
-        <h2>Start a new couple</h2>
-        <p class="panel-sub">You will get a code to send to your partner. You can start using the decks straight away, before they join.</p>
-        <form id="create-form" novalidate>
-          <div class="field">
-            <label for="f-couple">What should we call you two? (optional)</label>
-            <input class="input" id="f-couple" name="name" type="text"
-                   placeholder="Sam &amp; Alex" value="${esc(f.coupleName || '')}">
-          </div>
-          <button class="btn btn-block" type="submit" ${state.busy ? 'disabled' : ''}>
-            ${state.busy ? 'Just a moment…' : 'Create our couple'}
-          </button>
-        </form>
-      </div>
-
-      <div class="divider">or</div>
-
-      <div class="panel">
-        <h2>Join with a code</h2>
-        <p class="panel-sub">Enter the six characters your partner sent you.</p>
-        <form id="join-form" novalidate>
-          <div class="field">
-            <label for="f-code">Invite code</label>
-            <input class="input input--code" id="f-code" name="inviteCode" type="text"
-                   inputmode="text" autocapitalize="characters" autocomplete="off"
-                   spellcheck="false" maxlength="6" placeholder="ABC123"
-                   value="${esc(f.inviteCode || '')}">
-          </div>
-          <button class="btn btn-block btn-ghost" type="submit" ${state.busy ? 'disabled' : ''}>
-            ${state.busy ? 'Just a moment…' : 'Join'}
-          </button>
-        </form>
-      </div>
-
-      <div class="footer-note">
-        <button class="btn-quiet" data-action="how">How it works</button>
-      </div>
-    </div>`;
-}
-
-function topbar(showAccount) {
+function topbar(showAccount, isSettings) {
   return `
     <div class="topbar">
       <div class="brand">
@@ -515,8 +403,10 @@ function topbar(showAccount) {
         <button class="icon-btn" data-action="how" aria-label="How it works" title="How it works">?</button>
         ${
           showAccount
-            ? `<button class="icon-btn" data-action="go-account" aria-label="Account" title="Account">&#9881;</button>`
-            : `<button class="icon-btn" data-action="logout" aria-label="Sign out" title="Sign out">&#9099;</button>`
+            ? `<button class="icon-btn" data-action="go-account" aria-label="Settings" title="Settings">&#9881;</button>`
+            : isSettings
+            ? `<button class="icon-btn" data-action="back-to-topics" aria-label="Back" title="Back">&#8592;</button>`
+            : ''
         }
       </div>
     </div>`;
@@ -605,9 +495,6 @@ function domainCard(d) {
  */
 function viewSelection() {
   const c = state.couple;
-  const partner = c.members.find((m) => m.id !== state.me.id);
-  const solo = !partner;
-
   const doms = selectedDomains();
   const deps = selectedDepths();
   const ready = selectionReady();
@@ -618,31 +505,10 @@ function viewSelection() {
       ${topbar(true)}
 
       <div class="hero" style="text-align:left;margin-bottom:1.2rem">
-        <h1 style="font-size:1.7rem">${esc(c.name || 'Tonight')}</h1>
-        ${
-          // Only the invite code appears here, and only while you are unpaired,
-          // because it is the one thing you still need to act on. The running
-          // "N of 850 discussed" total that used to sit here was noise: a
-          // lifetime tally against a corpus this size never moves visibly, and
-          // it is not what anyone opens the app to find out.
-          solo
-            ? `<p style="margin:0.35rem 0 0;max-width:none">
-                 Your invite code is <strong style="color:var(--text);letter-spacing:0.15em">${esc(
-                   c.inviteCode
-                 )}</strong> — send it to your partner so you share progress.
-               </p>`
-            : ''
-        }
+        <h1 style="font-size:1.7rem">Welcome ${esc(c.name)}</h1>
+        <p style="margin:0.35rem 0 0;max-width:none">What are you up for tonight?</p>
       </div>
 
-      ${
-        solo
-          ? `<div class="notice">
-               <strong>You are on your own so far.</strong> Everything works, and when your
-               partner joins with the code they will see exactly the progress you have made.
-             </div>`
-          : ''
-      }
 
       <h2 class="section-title">How deep tonight?</h2>
       <div class="depth-filter depth-filter--page" role="group" aria-label="Depth">
@@ -903,129 +769,6 @@ function deckFinished() {
     </div>`;
 }
 
-function viewAccount() {
-  const c = state.couple;
-  const partner = c ? c.members.find((m) => m.id !== state.me.id) : null;
-  const canInstall = !!window.__deferredInstall;
-
-  return `
-    <div class="screen">
-      <div class="topbar">
-        <div class="brand">
-          <button class="icon-btn" data-action="go-levels" aria-label="Back">&larr;</button>
-          <span>Account</span>
-        </div>
-      </div>
-
-      <h2 class="section-title">You</h2>
-      <div class="rows">
-        <button class="row" data-action="edit-name">
-          <span class="row-label">Name</span>
-          <span class="row-value">${esc(state.me.displayName)}</span>
-        </button>
-        <div class="row is-static">
-          <span class="row-label">Email</span>
-          <span class="row-value">${esc(state.me.email)}</span>
-        </div>
-        <button class="row" data-action="change-password">
-          <span class="row-label">Change password</span>
-          <span class="row-value">&rsaquo;</span>
-        </button>
-      </div>
-
-      ${
-        c
-          ? `<h2 class="section-title" style="margin-top:1.5rem">Your couple</h2>
-             <div class="rows">
-               <button class="row" data-action="edit-couple-name">
-                 <span class="row-label">Couple name</span>
-                 <span class="row-value">${esc(c.name || 'Not set')}</span>
-               </button>
-               <button class="row" data-action="show-code">
-                 <span class="row-label">Invite code</span>
-                 <span class="row-value" style="letter-spacing:0.12em">${esc(c.inviteCode)}</span>
-               </button>
-               <div class="row is-static">
-                 <span class="row-label">Partner</span>
-                 <span class="row-value">${partner ? esc(partner.displayName) : 'Not joined yet'}</span>
-               </div>
-               <button class="row danger" data-action="leave-couple">
-                 <span class="row-label">Leave this couple</span>
-                 <span class="row-value">&rsaquo;</span>
-               </button>
-             </div>`
-          : ''
-      }
-
-      ${
-        state.volatile
-          ? `<h2 class="section-title" style="margin-top:1.5rem">The hardest questions</h2>
-             <div class="rows">
-               <button class="row" data-action="toggle-volatile">
-                 <span class="row-label">
-                   ${state.volatile.mine ? 'Unlocked by you' : 'Locked'}
-                   <span class="row-sub">${
-                     state.volatile.unlocked
-                       ? `${state.volatile.available} questions about betrayal, leaving and real damage are in play.`
-                       : state.volatile.waitingOnPartner
-                         ? 'Waiting for your partner to switch it on too. Nothing changes until they do.'
-                         : `${state.volatile.available} questions are held back. Both of you have to switch this on.`
-                   }</span>
-                 </span>
-                 <span class="row-value">${state.volatile.mine ? 'On' : 'Off'}</span>
-               </button>
-             </div>`
-          : ''
-      }
-
-      <h2 class="section-title" style="margin-top:1.5rem">Your data</h2>
-      <div class="rows">
-        <button class="row" data-action="export-data">
-          <span class="row-label">Download my data
-            <span class="row-sub">Everything this app holds about you, as a file</span>
-          </span>
-          <span class="row-value">&rsaquo;</span>
-        </button>
-        <button class="row danger" data-action="delete-account">
-          <span class="row-label">Delete my account
-            <span class="row-sub">Permanent. Cannot be undone.</span>
-          </span>
-          <span class="row-value">&rsaquo;</span>
-        </button>
-      </div>
-
-      <h2 class="section-title" style="margin-top:1.5rem">App</h2>
-      <div class="rows">
-        ${
-          canInstall
-            ? `<button class="row" data-action="install">
-                 <span class="row-label">Add to home screen</span>
-                 <span class="row-value">&rsaquo;</span>
-               </button>`
-            : ''
-        }
-        <button class="row" data-action="how">
-          <span class="row-label">How it works</span>
-          <span class="row-value">&rsaquo;</span>
-        </button>
-        <button class="row" data-action="logout">
-          <span class="row-label">Sign out</span>
-          <span class="row-value">&rsaquo;</span>
-        </button>
-      </div>
-
-      <div class="footer-note">
-        <span class="version-badge${
-          state.serverVersion && state.serverVersion !== APP_VERSION ? ' mismatch' : ''
-        }">v${esc(APP_VERSION)}${
-    state.serverVersion && state.serverVersion !== APP_VERSION
-      ? ` ⚠ server v${esc(state.serverVersion)}`
-      : ''
-  }</span>
-      </div>
-    </div>`;
-}
-
 // ---------------------------------------------------------------------------
 // render / wire
 // ---------------------------------------------------------------------------
@@ -1034,14 +777,10 @@ function render() {
   let html;
   if (!state.ready) {
     html = '<div class="boot"><div class="boot-mark"></div><p class="boot-text">Loading…</p></div>';
-  } else if (state.reset) {
-    // Comes before the login check on purpose: a reset link is nearly always
-    // opened by somebody who cannot get in.
-    html = viewReset();
-  } else if (!state.me) {
-    html = viewAuth();
   } else if (!state.couple) {
-    html = viewOnboard();
+    // One gate, one field. There is nothing to be signed in AS - the code is
+    // the whole identity, so there is no half-authenticated state to render.
+    html = viewGate();
   } else if (state.view === 'deck' && state.deck) {
     html = viewDeck();
   } else if (state.view === 'account') {
@@ -1066,20 +805,20 @@ function wire() {
     handleAction(el.dataset.action, el);
   };
 
-  const authForm = document.getElementById('auth-form');
-  if (authForm) authForm.onsubmit = onAuthSubmit;
-
-  const createForm = document.getElementById('create-form');
-  if (createForm) createForm.onsubmit = onCreateCouple;
-
-  const joinForm = document.getElementById('join-form');
-  if (joinForm) joinForm.onsubmit = onJoinCouple;
-
-  const forgotForm = document.getElementById('forgot-form');
-  if (forgotForm) forgotForm.onsubmit = onForgotSubmit;
-
-  const resetForm = document.getElementById('reset-form');
-  if (resetForm) resetForm.onsubmit = onResetSubmit;
+  const gateForm = document.getElementById('gate-form');
+  if (gateForm) {
+    gateForm.onsubmit = onRedeem;
+    // Mirrored into state.form so a re-render (a failed attempt) does not throw
+    // away what they typed - retyping a twelve-character code after a typo is
+    // exactly the moment somebody gives up.
+    const codeInput = document.getElementById('g-code');
+    if (codeInput) {
+      codeInput.oninput = () => {
+        state.form.code = codeInput.value;
+      };
+      if (!state.busy) codeInput.focus();
+    }
+  }
 
 }
 
@@ -1093,49 +832,21 @@ async function handleAction(action, el) {
       showHowItWorks();
       break;
 
-    case 'switch-auth':
-      state.authMode = state.authMode === 'login' ? 'register' : 'login';
-      state.error = null;
-      state.notice = null;
-      render();
-      break;
-
-    case 'go-forgot':
-      state.reset = null;
-      clearResetFromUrl();
-      state.authMode = 'forgot';
-      state.error = null;
-      state.notice = null;
-      render();
-      break;
-
-    case 'go-login':
-      state.authMode = 'login';
-      state.error = null;
-      state.notice = null;
-      render();
-      break;
-
-    case 'finish-reset':
-      state.reset = null;
-      clearResetFromUrl();
-      state.authMode = 'login';
-      state.error = null;
-      state.notice = null;
-      render();
-      break;
-
     case 'report-question':
       await reportQuestion();
       break;
 
-    case 'export-data':
-      window.location.href = '/api/me/export';
-      toast('Your data is downloading.');
+    case 'back-to-topics':
+      state.view = 'levels';
+      render();
       break;
 
-    case 'delete-account':
-      await deleteAccount();
+    case 'leave':
+      await leaveSession();
+      break;
+
+    case 'reset-all':
+      await resetDeck('all');
       break;
 
     case 'go-account':
@@ -1146,10 +857,6 @@ async function handleAction(action, el) {
     case 'go-levels':
       state.view = 'levels';
       render();
-      break;
-
-    case 'logout':
-      await doLogout();
       break;
 
     case 'toggle-domain': {
@@ -1294,161 +1001,7 @@ async function handleAction(action, el) {
 
 // ---- Auth -----------------------------------------------------------------
 
-async function onAuthSubmit(e) {
-  e.preventDefault();
-  if (state.busy) return;
-
-  const form = e.target;
-  const email = form.email.value.trim();
-  const password = form.password.value;
-  const displayName = form.displayName ? form.displayName.value.trim() : '';
-
-  // Mirror into state so the re-render on failure does not wipe what was typed.
-  state.form = { email, displayName };
-  state.error = null;
-  state.busy = true;
-  render();
-
-  try {
-    if (state.authMode === 'login') {
-      await api.post('/api/auth/login', { email, password });
-    } else {
-      await api.post('/api/auth/register', { email, password, displayName });
-    }
-    state.form = {};
-    state.busy = false;
-    await loadData();
-  } catch (err) {
-    state.busy = false;
-    state.error = err.message;
-    render();
-  }
-}
-
-async function doLogout() {
-  const yes = await uiConfirm('Sign out?', 'You can sign back in any time.', 'Sign out');
-  if (!yes) return;
-  try {
-    await api.post('/api/auth/logout');
-  } catch (err) {
-    /* signing out locally regardless */
-  }
-  state.me = null;
-  state.couple = null;
-  state.domains = [];
-  state.deck = null;
-  state.view = 'auth';
-  state.authMode = 'login';
-  render();
-}
-
 // ---- Pairing --------------------------------------------------------------
-
-async function onCreateCouple(e) {
-  e.preventDefault();
-  if (state.busy) return;
-
-  const name = e.target.name.value.trim();
-  state.form = { ...state.form, coupleName: name };
-  state.error = null;
-  state.busy = true;
-  render();
-
-  try {
-    const res = await api.post('/api/couple', { name });
-    state.busy = false;
-    state.form = {};
-    await loadData();
-    await dialog({
-      title: 'Your invite code',
-      bodyHtml: `
-        <p>Send this to your partner. When they enter it, the two of you share one set of progress.</p>
-        <div class="code-display">
-          <span class="code-label">Invite code</span>
-          <span class="code">${esc(res.inviteCode)}</span>
-        </div>
-        <p>It stays in Account if you need it again.</p>`,
-      actions: [
-        { label: 'Copy code', value: 'copy', className: 'btn-ghost' },
-        { label: 'Done', value: 'ok', className: 'btn' },
-      ],
-    }).then((choice) => {
-      if (choice === 'copy') copyText(res.inviteCode);
-    });
-  } catch (err) {
-    state.busy = false;
-    state.error = err.message;
-    render();
-  }
-}
-
-async function onJoinCouple(e) {
-  e.preventDefault();
-  if (state.busy) return;
-
-  const inviteCode = e.target.inviteCode.value.trim().toUpperCase();
-  state.form = { ...state.form, inviteCode };
-  state.error = null;
-
-  if (!inviteCode) {
-    state.error = 'Enter the code your partner sent you.';
-    render();
-    return;
-  }
-
-  state.busy = true;
-  render();
-
-  try {
-    await api.post('/api/couple/join', { inviteCode });
-    state.busy = false;
-    state.form = {};
-    await loadData();
-    toast('You are paired up.');
-  } catch (err) {
-    state.busy = false;
-    state.error = err.message;
-    render();
-  }
-}
-
-async function leaveCouple() {
-  const partner = state.couple.members.find((m) => m.id !== state.me.id);
-  const yes = await uiConfirm(
-    'Leave this couple?',
-    `You will stop sharing progress${
-      partner ? ` with <strong>${esc(partner.displayName)}</strong>` : ''
-    }, and you will need an invite code to join a couple again. The progress itself is kept, not deleted.`,
-    'Leave',
-    true
-  );
-  if (!yes) return;
-
-  try {
-    await api.post('/api/couple/leave');
-    await loadData();
-    toast('You have left the couple.');
-  } catch (err) {
-    uiAlert('Could not leave', err.message);
-  }
-}
-
-async function showCode() {
-  const choice = await dialog({
-    title: 'Invite code',
-    bodyHtml: `
-      <p>Give this to your partner so they can join.</p>
-      <div class="code-display">
-        <span class="code-label">Invite code</span>
-        <span class="code">${esc(state.couple.inviteCode)}</span>
-      </div>`,
-    actions: [
-      { label: 'Copy', value: 'copy', className: 'btn-ghost' },
-      { label: 'Close', value: 'ok', className: 'btn' },
-    ],
-  });
-  if (choice === 'copy') copyText(state.couple.inviteCode);
-}
 
 function copyText(text) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1614,30 +1167,37 @@ async function openChain(id) {
   return undefined;
 }
 
+/**
+ * Open, or close, the hardest questions.
+ *
+ * This used to be per-person and mutual: two accounts on two phones meant one
+ * partner could otherwise open that door on the other's behalf. Sitting
+ * together there is no second session to ask - so the gate is the wording, and
+ * it says plainly that this is a decision to make out loud before anyone taps.
+ *
+ * Closing them again asks nothing. Withdrawing consent should never be
+ * negotiable, which is the one part of the old design worth keeping.
+ */
 async function toggleVolatile() {
   const v = state.volatile;
-  const turningOn = !v.mine;
+  const turningOn = !v.unlocked;
 
   if (turningOn) {
     const yes = await uiConfirm(
-      'Unlock the hardest questions?',
-      `There are <strong>${v.available}</strong> questions held back because they can do real ` +
-        'damage if they arrive in a bad week — betrayal, leaving, what you would need to walk ' +
-        'away.<br><br>They stay locked until <strong>you both</strong> switch this on separately. ' +
-        'Either of you can switch it off again at any time, on your own.',
-      'Unlock my side'
+      'Include the hardest questions?',
+      `<strong>${v.available}</strong> questions are held back because they can do real damage ` +
+        'if they arrive in a bad week — betrayal, leaving, what it would take to walk away.' +
+        '<br><br>Say it out loud to each other before you tap. Either of you can put them away ' +
+        'again at any point, and that needs no discussion at all.',
+      'We both agree'
     );
     if (!yes) return;
   }
 
   try {
-    const res = await api.post('/api/couple/volatile', { unlocked: turningOn });
+    await api.post('/api/couple/volatile', { unlocked: turningOn });
     await loadData();
-    if (turningOn) {
-      toast(res.unlocked ? 'Unlocked for both of you.' : 'Saved — waiting on your partner.');
-    } else {
-      toast('Locked again.');
-    }
+    toast(turningOn ? 'They are in the deck now.' : 'Put away again.');
   } catch (err) {
     uiAlert('Could not save', err.message);
   }
@@ -1906,123 +1466,6 @@ function promptDialog({ title, message, label, value, placeholder, type, confirm
   });
 }
 
-async function editName() {
-  const name = await promptDialog({
-    title: 'Your name',
-    label: 'First name',
-    value: state.me.displayName,
-  });
-  if (name === null || name === state.me.displayName) return;
-  if (!name) return uiAlert('Name needed', 'Enter a name.');
-
-  try {
-    await api.patch('/api/me', { displayName: name });
-    state.me.displayName = name;
-    render();
-    toast('Name updated.');
-  } catch (err) {
-    uiAlert('Could not save', err.message);
-  }
-  return undefined;
-}
-
-async function editCoupleName() {
-  const name = await promptDialog({
-    title: 'Couple name',
-    message: 'Just what the two of you are called in the app. Leave it blank to clear it.',
-    label: 'Name',
-    value: state.couple.name || '',
-    placeholder: 'Sam & Alex',
-  });
-  if (name === null) return;
-
-  try {
-    const res = await api.patch('/api/couple', { name });
-    state.couple.name = res.name;
-    render();
-    toast('Saved.');
-  } catch (err) {
-    uiAlert('Could not save', err.message);
-  }
-}
-
-async function changePassword() {
-  const current = await promptDialog({
-    title: 'Change password',
-    message: 'First, confirm the password you use now.',
-    label: 'Current password',
-    type: 'password',
-    confirmLabel: 'Next',
-  });
-  if (!current) return;
-
-  const next = await promptDialog({
-    title: 'New password',
-    message: 'At least 8 characters.',
-    label: 'New password',
-    type: 'password',
-    confirmLabel: 'Change it',
-  });
-  if (!next) return;
-
-  try {
-    await api.post('/api/me/password', { currentPassword: current, newPassword: next });
-    toast('Password changed.');
-  } catch (err) {
-    uiAlert('Could not change it', err.message);
-  }
-}
-
-/**
- * Delete this account for good.
- *
- * Two gates, because this is the only genuinely irreversible thing in the app:
- * a typed confirmation, then the account password. The password matters most -
- * somebody who has walked off leaving their phone unlocked should not be one
- * tap from destroying the account.
- */
-async function deleteAccount() {
-  const partner = state.couple && state.couple.members.find((m) => m.id !== state.me.id);
-
-  const yes = await uiConfirm(
-    'Delete your account?',
-    'This removes your account, your name and your sign-in for good. It cannot be undone.' +
-      (partner
-        ? `<br><br>The questions you and <strong>${esc(
-            partner.displayName
-          )}</strong> have discussed belong to both of you, so that history stays with them — ` +
-          'deleting it would erase their record too, and that is not yours to remove.'
-        : '') +
-      '<br><br>You can download your data first from the screen behind this one.',
-    'Continue',
-    true
-  );
-  if (!yes) return;
-
-  const password = await promptDialog({
-    title: 'Confirm with your password',
-    message: 'Last step. Type the password you use to sign in.',
-    label: 'Password',
-    type: 'password',
-    confirmLabel: 'Delete my account',
-  });
-  if (!password) return;
-
-  try {
-    await api.post('/api/me/delete', { password });
-    state.me = null;
-    state.couple = null;
-    state.domains = [];
-    state.deck = null;
-    state.view = 'auth';
-    state.authMode = 'login';
-    render();
-    await uiAlert('Account deleted', 'Your account is gone. Thank you for using it.');
-  } catch (err) {
-    uiAlert('Could not delete it', err.message);
-  }
-}
-
 async function doInstall() {
   const prompt = window.__deferredInstall;
   if (!prompt) {
@@ -2041,74 +1484,46 @@ async function doInstall() {
 
 // ---- Password reset -------------------------------------------------------
 
+/** App name, tagline and accent, as set by the owner. */
+function applyBranding() {
+  const b = state.branding;
+  if (!b) return;
+  if (b.brand_accent) document.documentElement.style.setProperty('--accent', b.brand_accent);
+  if (b.app_name) document.title = b.app_name;
+}
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+
 /**
- * Strips ?reset=<token> from the address bar.
+ * Redeem a code.
  *
- * Uses replaceState so the token does not sit in history, where it would be
- * re-triggered by a Back tap and, more to the point, left in the browser's
- * record of visited URLs long after it stopped being needed.
+ * Everything after this is the app; everything before it is one field. The
+ * server does the normalising, so a code typed with the dashes, without them,
+ * or in lower case all reach it the same way.
  */
-function clearResetFromUrl() {
-  if (!window.location.search.includes('reset=')) return;
-  const url = new URL(window.location.href);
-  url.searchParams.delete('reset');
-  window.history.replaceState({}, '', url.pathname + (url.search || '') + url.hash);
-}
-
-async function onForgotSubmit(e) {
+async function onRedeem(e) {
   e.preventDefault();
   if (state.busy) return;
 
-  const email = e.target.email.value.trim();
-  state.form = { email };
-  state.error = null;
-  state.notice = null;
-  state.busy = true;
-  render();
+  const code = e.target.code.value.trim();
+  if (!code) return;
 
-  try {
-    const res = await api.post('/api/auth/forgot', { email });
-    state.busy = false;
-    // The server deliberately answers the same way whether or not the address
-    // exists, so this message must not imply the account was found.
-    state.notice = res.message || 'If that email has an account, a reset link is on its way.';
-    render();
-  } catch (err) {
-    state.busy = false;
-    state.error = err.message;
-    render();
-  }
-}
-
-async function onResetSubmit(e) {
-  e.preventDefault();
-  if (state.busy) return;
-
-  const password = e.target.password.value;
-  const confirm = e.target.confirm.value;
-
-  if (password.length < 8) {
-    state.error = 'Your password needs at least 8 characters.';
-    return render();
-  }
-  if (password !== confirm) {
-    state.error = 'Those two passwords do not match.';
-    return render();
-  }
-
+  state.form.code = code;
   state.error = null;
   state.busy = true;
   render();
 
   try {
-    await api.post('/api/auth/reset', { token: state.reset.token, password });
+    const res = await api.post('/api/access/redeem', { code });
     state.busy = false;
-    state.reset = { ...state.reset, done: true };
-    clearResetFromUrl();
-    // The reset ended every session for this account, including this browser's.
-    state.me = null;
-    state.couple = null;
-    render();
+    state.form = {};
+    state.error = null;
+    await loadData();
+    // Said once, on the way in, rather than parked on the screen where it
+    // would just be furniture by the third visit.
+    toast(`Welcome ${res.couple.name}.`);
   } catch (err) {
     state.busy = false;
     state.error = err.message;
@@ -2117,41 +1532,26 @@ async function onResetSubmit(e) {
   return undefined;
 }
 
-// ---------------------------------------------------------------------------
-// Boot
-// ---------------------------------------------------------------------------
-
-/**
- * Picks up a reset link before anything else.
- *
- * Validated against the server up front so an expired token shows "this link
- * no longer works" rather than a password form that fails only after the user
- * has typed one in twice.
- */
-async function checkResetLink() {
-  const token = new URLSearchParams(window.location.search).get('reset');
-  if (!token) return false;
-
-  state.reset = { token, checking: true, valid: false };
-  state.ready = true;
-  render();
-
+/** Close the code on this phone. It keeps working - nothing is revoked. */
+async function leaveSession() {
+  const yes = await uiConfirm(
+    'Close the app?',
+    'Your progress is kept. You will need the code again next time you sit down.',
+    'Close it'
+  );
+  if (!yes) return;
   try {
-    const res = await api.get(`/api/auth/reset/${encodeURIComponent(token)}`);
-    state.reset = { token, checking: false, valid: true, displayName: res.displayName };
+    await api.post('/api/access/leave');
   } catch (err) {
-    state.reset = { token, checking: false, valid: false, error: err.message };
+    /* closing locally regardless */
   }
+  state.couple = null;
+  state.deck = null;
+  state.chain = null;
+  state.selection = { domains: null, depths: null };
+  state.view = 'levels';
+  state.form = {};
   render();
-  return true;
-}
-
-/** App name, tagline and accent, as set by the owner. */
-function applyBranding() {
-  const b = state.branding;
-  if (!b) return;
-  if (b.brand_accent) document.documentElement.style.setProperty('--accent', b.brand_accent);
-  if (b.app_name) document.title = b.app_name;
 }
 
 async function loadData() {
@@ -2171,8 +1571,9 @@ async function loadData() {
     if (state.view === 'deck') state.view = 'levels';
     if (state.view !== 'account') state.view = 'levels';
   } catch (err) {
-    // A 401 here just means nobody is logged in - the normal first visit.
-    state.me = null;
+    // /api/data is public now and answers with couple: null before a code has
+    // been redeemed, so reaching here means the request itself failed rather
+    // than "not signed in". Leave the gate on screen.
     state.couple = null;
   }
   state.ready = true;
@@ -2217,8 +1618,4 @@ api
   })
   .catch(() => {});
 
-// A reset link short-circuits the normal boot: there is no point loading a
-// logged-out user's data behind a screen they cannot use yet.
-checkResetLink().then((handlingReset) => {
-  if (!handlingReset) loadData();
-});
+loadData();

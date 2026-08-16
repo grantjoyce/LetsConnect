@@ -337,16 +337,6 @@ async function appUrl(req) {
 /** Wraps an async route so a rejection becomes a 500 instead of a hung request. */
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-// Invite codes avoid 0/O/1/I/5/S so they survive being read aloud or texted.
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRTUVWXY2346789';
-
-function makeInviteCode(len = 6) {
-  const bytes = crypto.randomBytes(len);
-  let out = '';
-  for (let i = 0; i < len; i += 1) out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
-  return out;
-}
-
 function normaliseEmail(v) {
   return String(v || '').trim().toLowerCase();
 }
@@ -435,28 +425,77 @@ function requireAuth(req, res, next) {
 }
 
 /**
- * Deny-by-default gate for everything that touches a couple's content.
- * Attaches req.couple. A couple with a single member is valid - you can start
- * before your partner has joined.
+ * The couple session.
+ *
+ * Held on the session by id, put there by redeeming a code. There is no user
+ * account behind it and no partner to look up: two people are sitting together
+ * with one screen, and the code is the whole identity.
+ *
+ * Re-read on every request rather than trusted from the cookie, so suspending a
+ * code takes effect on the next tap instead of whenever the session happens to
+ * expire. That matters because "suspended" is what a refund looks like.
  */
-async function requireCouple(req, res, next) {
+async function loadCouple(req, res, next) {
+  if (!req.session || !req.session.coupleId) return next();
   try {
     const row = await queryOne(
-      `SELECT c.id, c.invite_code, c.couple_name, c.shuffle_seed, c.status, m.member_role
-         FROM couple_members m
-         JOIN couples c ON c.id = m.couple_id
-        WHERE m.user_id = ? AND c.status = 'active'`,
-      [req.user.id]
+      `SELECT id, access_code, couple_name, partner_a, partner_b, shuffle_seed,
+              status, code_status, volatile_unlocked
+         FROM couples WHERE id = ?`,
+      [req.session.coupleId]
     );
-    if (!row) return fail(res, 403, 'You are not part of a couple yet.');
-    req.couple = row;
-    return next();
+    if (row && row.status === 'active' && row.code_status === 'active') req.couple = row;
   } catch (err) {
     return next(err);
   }
+  return next();
 }
 
+/** Deny-by-default gate for everything that touches a couple's content. */
+function requireCouple(req, res, next) {
+  if (!req.couple) return fail(res, 401, 'Enter your code to start.');
+  return next();
+}
+
+/**
+ * A code as typed, normalised.
+ *
+ * People retype these off a phone screen or a printed card, so O/0 and I/1 are
+ * folded together and spaces and dashes are thrown away. Being strict about
+ * that would generate support email for no benefit whatsoever - the code is a
+ * licence, not a password, and the shop already knows who bought it.
+ */
+function normaliseCode(v) {
+  return String(v || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .replace(/O/g, '0')
+    .replace(/I/g, '1');
+}
+
+/**
+ * A fresh code.
+ *
+ * Crockford-ish alphabet with the ambiguous characters already removed, so a
+ * generated code cannot contain the letters normaliseCode folds away. Grouped
+ * for reading aloud, which is how one of these actually gets from a laptop to
+ * the other person's phone.
+ */
+const CODE_ALPHABET = '0123456789ABCDEFGHJKLMNPQRSTUVWXYZ'.replace(/[OI]/g, '');
+
+function makeAccessCode() {
+  const raw = Array.from(crypto.randomBytes(12))
+    .map((b) => CODE_ALPHABET[b % CODE_ALPHABET.length])
+    .join('');
+  return `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}`;
+}
+
+// Two independent identities on the same session, deliberately. `loadUser` is
+// the owner signing in at /admin with an email and a password; `loadCouple` is
+// a code typed on the welcome screen. Neither implies the other - the owner
+// gets no deck, and a couple gets nothing under /api/owner.
 app.use('/api', loadUser);
+app.use('/api', loadCouple);
 
 // ---------------------------------------------------------------------------
 // Public routes
@@ -700,44 +739,124 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 // ---------------------------------------------------------------------------
-// Everything below requires a login
+// The code gate
+//
+// One field on the welcome screen. A code is bought from the shop, arrives by
+// email, and is typed in by whichever of the two is holding the phone.
+//
+// There is no account, no password and no pairing, because the exercise is
+// done SITTING TOGETHER. Two logins and a synchronisation story were solving a
+// problem this product does not have, and each one was a wall between buying it
+// and using it.
 // ---------------------------------------------------------------------------
 
-/** One bootstrap call: who I am, my couple, and every domain with my progress. */
-app.get(
-  '/api/data',
-  requireAuth,
+/**
+ * Redeem a code and start a session.
+ *
+ * Rate-limited on the same counter as a failed password, because a code IS the
+ * credential here and an unthrottled endpoint that accepts short strings is an
+ * invitation to walk the keyspace.
+ *
+ * The failure message never distinguishes "no such code" from "suspended" -
+ * that difference is only useful to somebody guessing.
+ */
+app.post(
+  '/api/access/redeem',
   wrap(async (req, res) => {
-    const couple = await queryOne(
-      `SELECT c.id, c.invite_code, c.couple_name, c.created_at, m.member_role,
-              m.volatile_unlocked
-         FROM couple_members m
-         JOIN couples c ON c.id = m.couple_id
-        WHERE m.user_id = ? AND c.status = 'active'`,
-      [req.user.id]
+    const code = normaliseCode(req.body.code);
+    if (!code) return fail(res, 400, 'Enter your code.');
+
+    const key = attemptKey(req, `code:${code}`);
+    const locked = isLockedOut(key);
+    if (locked) {
+      return fail(res, 429, `Too many attempts. Try again in ${locked} minute(s).`);
+    }
+
+    // Compared against the stored code normalised the same way, so a code
+    // issued before the folding rules existed still matches what is typed.
+    const rows = await query(
+      "SELECT id, access_code, couple_name, partner_a, partner_b, status, code_status, activated_at FROM couples WHERE access_code IS NOT NULL AND status = 'active'"
+    );
+    const couple = rows.find((r) => normaliseCode(r.access_code) === code);
+
+    if (!couple || couple.code_status !== 'active') {
+      noteFailure(key);
+      return fail(res, 401, 'That code was not recognised. Check it and try again.');
+    }
+
+    await query(
+      `UPDATE couples
+          SET activated_at = COALESCE(activated_at, NOW()), last_used_at = NOW()
+        WHERE id = ?`,
+      [couple.id]
     );
 
-    let members = [];
+    // Regenerate so a session fixation attempt cannot pre-seed the cookie that
+    // ends up carrying a paid-for code.
+    const start = () => {
+      req.session.coupleId = couple.id;
+      res.json({
+        ok: true,
+        couple: {
+          id: couple.id,
+          name: coupleGreeting(couple),
+          partnerA: couple.partner_a,
+          partnerB: couple.partner_b,
+          firstTime: !couple.activated_at,
+        },
+      });
+    };
+    if (req.session && req.session.regenerate) req.session.regenerate(() => start());
+    else start();
+    return undefined;
+  })
+);
+
+/** End the session. The code itself is untouched and can be used again. */
+app.post('/api/access/leave', (req, res) => {
+  if (req.session) req.session.destroy(() => {});
+  res.json({ ok: true });
+});
+
+/**
+ * "Mark and Nikki".
+ *
+ * Built from the two names rather than stored as one string, so the app can
+ * still address one of them individually. Falls back through what is actually
+ * known rather than printing a blank or the word "and" on its own.
+ */
+function coupleGreeting(c) {
+  const a = (c.partner_a || '').trim();
+  const b = (c.partner_b || '').trim();
+  if (a && b) return `${a} and ${b}`;
+  if (a || b) return a || b;
+  return (c.couple_name || '').trim() || 'you two';
+}
+
+// ---------------------------------------------------------------------------
+// The app itself
+// ---------------------------------------------------------------------------
+
+/**
+ * One bootstrap call: who is signed in, and every topic with their progress.
+ *
+ * Deliberately NOT behind requireCouple. The welcome screen has to render
+ * before a code has been typed, and it needs the branding from the same call -
+ * so an unredeemed visitor gets a valid response with couple: null rather than
+ * a 401 to interpret.
+ */
+app.get(
+  '/api/data',
+  wrap(async (req, res) => {
+    const couple = req.couple || null;
+
     let domains = [];
     let volatile = null;
 
     if (couple) {
-      members = await query(
-        `SELECT u.id, u.display_name, m.member_role, m.joined_at, m.volatile_unlocked
-           FROM couple_members m
-           JOIN users u ON u.id = m.user_id
-          WHERE m.couple_id = ?
-          ORDER BY m.joined_at`,
-        [couple.id]
-      );
       domains = await domainsWithProgress(couple.id);
-
-      const waitingOn = members.filter((m) => !m.volatile_unlocked).length;
       volatile = {
-        // Both members, separately. A one-person couple can never unlock.
-        unlocked: await volatileUnlocked(couple.id),
-        mine: !!couple.volatile_unlocked,
-        waitingOnPartner: !!couple.volatile_unlocked && waitingOn > 0,
+        unlocked: !!couple.volatile_unlocked,
         available: (
           await queryOne(
             "SELECT COUNT(*) AS n FROM questions WHERE is_volatile = 1 AND is_active = 1 AND admin_hidden = 0 AND needs_review = 0"
@@ -748,27 +867,24 @@ app.get(
 
     res.json({
       version: APP_VERSION,
-      me: {
-        id: req.user.id,
-        email: req.user.email,
-        displayName: req.user.display_name,
-        isAdmin: !!req.user.is_admin,
-        isOwner: !!req.user.is_owner,
-      },
       branding: await getBranding(),
+      // The owner, when they happen to be signed in at /admin in the same
+      // browser. The couple app shows nothing for this; it is what puts the
+      // "open the admin" link on the account screen instead of a dead end.
+      me: req.user
+        ? {
+            id: req.user.id,
+            email: req.user.email,
+            displayName: req.user.display_name,
+            isOwner: !!req.user.is_owner,
+          }
+        : null,
       couple: couple
         ? {
             id: couple.id,
-            inviteCode: couple.invite_code,
-            name: couple.couple_name,
-            role: couple.member_role,
-            createdAt: couple.created_at,
-            members: members.map((m) => ({
-              id: m.id,
-              displayName: m.display_name,
-              role: m.member_role,
-              volatileUnlocked: !!m.volatile_unlocked,
-            })),
+            name: coupleGreeting(couple),
+            partnerA: couple.partner_a,
+            partnerB: couple.partner_b,
           }
         : null,
       domains,
@@ -782,44 +898,36 @@ app.get(
 );
 
 /**
- * Unlock, or re-lock, volatile questions for MYSELF only.
+ * Unlock, or re-lock, the volatile questions.
  *
- * Deliberately cannot be done on a partner's behalf. Re-locking takes effect
- * immediately for the couple, because withdrawing consent should never require
- * the other person's agreement.
+ * This was per-person and mutual, because two accounts on two phones meant one
+ * partner could otherwise open that door on the other's behalf. Sitting
+ * together there is no second session to ask and no such risk: the choice is
+ * made once, out loud, with both of them looking at the same screen. The UI
+ * says so before it sends this.
+ *
+ * Re-locking is immediate and needs no agreement, which is the one part of the
+ * old design worth keeping - withdrawing consent should never be negotiable.
  */
 app.post(
   '/api/couple/volatile',
-  requireAuth,
   requireCouple,
   wrap(async (req, res) => {
     const on = !!req.body.unlocked;
     await query(
-      `UPDATE couple_members
+      `UPDATE couples
           SET volatile_unlocked = ?, volatile_unlocked_at = ${on ? 'NOW()' : 'NULL'}
-        WHERE couple_id = ? AND user_id = ?`,
-      [on ? 1 : 0, req.couple.id, req.user.id]
+        WHERE id = ?`,
+      [on ? 1 : 0, req.couple.id]
     );
-    res.json({ ok: true, mine: on, unlocked: await volatileUnlocked(req.couple.id) });
+    res.json({ ok: true, unlocked: on });
   })
 );
 
-/**
- * Whether this couple may be served volatile questions.
- *
- * BOTH members must have unlocked, separately. A single-member couple can
- * never unlock: there is nobody to agree with, and the whole point of the gate
- * is that it is mutual. Returns false rather than throwing on a missing row.
- */
+/** Whether this couple may be served volatile questions. */
 async function volatileUnlocked(coupleId) {
-  const row = await queryOne(
-    `SELECT COUNT(*) AS members, SUM(volatile_unlocked) AS unlocked
-       FROM couple_members WHERE couple_id = ?`,
-    [coupleId]
-  );
-  const members = Number(row && row.members) || 0;
-  const unlocked = Number(row && row.unlocked) || 0;
-  return members >= 2 && unlocked >= members;
+  const row = await queryOne('SELECT volatile_unlocked FROM couples WHERE id = ?', [coupleId]);
+  return !!(row && row.volatile_unlocked);
 }
 
 /**
@@ -933,116 +1041,6 @@ async function domainsWithProgress(coupleId) {
   return [...byDomain.values()];
 }
 
-// ---- Couple management ----------------------------------------------------
-
-app.post(
-  '/api/couple',
-  requireAuth,
-  wrap(async (req, res) => {
-    const already = await queryOne(
-      `SELECT c.id FROM couple_members m JOIN couples c ON c.id = m.couple_id
-        WHERE m.user_id = ? AND c.status = 'active'`,
-      [req.user.id]
-    );
-    if (already) return fail(res, 409, 'You are already part of a couple.');
-
-    const name = String(req.body.name || '').trim().slice(0, 120) || null;
-
-    // Retry on the (very unlikely) collision rather than trusting one draw.
-    let code = null;
-    for (let i = 0; i < 12 && !code; i += 1) {
-      const candidate = makeInviteCode();
-      const clash = await queryOne('SELECT id FROM couples WHERE invite_code = ?', [candidate]);
-      if (!clash) code = candidate;
-    }
-    if (!code) return fail(res, 500, 'Could not generate an invite code. Try again.');
-
-    const seed = crypto.randomBytes(8).toString('hex');
-    const result = await query(
-      'INSERT INTO couples (invite_code, couple_name, shuffle_seed, created_by_user_id) VALUES (?, ?, ?, ?)',
-      [code, name, seed, req.user.id]
-    );
-    await query(
-      "INSERT INTO couple_members (couple_id, user_id, member_role) VALUES (?, ?, 'creator')",
-      [result.insertId, req.user.id]
-    );
-
-    res.status(201).json({ ok: true, inviteCode: code });
-  })
-);
-
-app.post(
-  '/api/couple/join',
-  requireAuth,
-  wrap(async (req, res) => {
-    const code = String(req.body.inviteCode || '').trim().toUpperCase();
-    if (!code) return fail(res, 400, 'Enter the invite code your partner gave you.');
-
-    const already = await queryOne(
-      `SELECT c.id FROM couple_members m JOIN couples c ON c.id = m.couple_id
-        WHERE m.user_id = ? AND c.status = 'active'`,
-      [req.user.id]
-    );
-    if (already) return fail(res, 409, 'You are already part of a couple.');
-
-    const couple = await queryOne(
-      "SELECT id FROM couples WHERE invite_code = ? AND status = 'active'",
-      [code]
-    );
-    if (!couple) return fail(res, 404, 'That code does not match any couple.');
-
-    const count = await queryOne(
-      'SELECT COUNT(*) AS n FROM couple_members WHERE couple_id = ?',
-      [couple.id]
-    );
-    if (Number(count.n) >= 2) return fail(res, 409, 'That couple already has two people in it.');
-
-    await query(
-      "INSERT INTO couple_members (couple_id, user_id, member_role) VALUES (?, ?, 'partner')",
-      [couple.id, req.user.id]
-    );
-
-    res.json({ ok: true });
-  })
-);
-
-app.patch(
-  '/api/couple',
-  requireAuth,
-  requireCouple,
-  wrap(async (req, res) => {
-    const name = String(req.body.name || '').trim().slice(0, 120) || null;
-    await query('UPDATE couples SET couple_name = ? WHERE id = ?', [name, req.couple.id]);
-    res.json({ ok: true, name });
-  })
-);
-
-/**
- * Leave the couple. Without this a mis-typed invite code is a permanent
- * dead-end, since a user can only belong to one couple.
- *
- * Progress stays with the couple, not the person - so if the last member
- * leaves, the couple is marked dissolved rather than deleted and its history
- * is preserved.
- */
-app.post(
-  '/api/couple/leave',
-  requireAuth,
-  requireCouple,
-  wrap(async (req, res) => {
-    await query('DELETE FROM couple_members WHERE couple_id = ? AND user_id = ?', [
-      req.couple.id,
-      req.user.id,
-    ]);
-    const left = await queryOne('SELECT COUNT(*) AS n FROM couple_members WHERE couple_id = ?', [
-      req.couple.id,
-    ]);
-    if (Number(left.n) === 0) {
-      await query("UPDATE couples SET status = 'dissolved' WHERE id = ?", [req.couple.id]);
-    }
-    res.json({ ok: true });
-  })
-);
 
 // ---- The deck -------------------------------------------------------------
 
@@ -1107,7 +1105,6 @@ function parseSelection(req, domainRows, depthRows) {
  */
 app.get(
   '/api/deck',
-  requireAuth,
   requireCouple,
   wrap(async (req, res) => {
     const domainRows = await query(
@@ -1213,7 +1210,7 @@ app.get(
  */
 app.get(
   '/api/lenses',
-  requireAuth,
+  requireCouple,
   wrap(async (req, res) => {
     const rows = await query(
       'SELECT code, name, description FROM lenses WHERE is_active = 1 ORDER BY sort_order'
@@ -1232,7 +1229,6 @@ app.get(
  */
 app.get(
   '/api/chains',
-  requireAuth,
   requireCouple,
   wrap(async (req, res) => {
     const allowVolatile = await volatileUnlocked(req.couple.id);
@@ -1283,7 +1279,6 @@ app.get(
 /** The ordered cards of one chain, with where the couple has got to. */
 app.get(
   '/api/chains/:id',
-  requireAuth,
   requireCouple,
   wrap(async (req, res) => {
     const id = Number(req.params.id);
@@ -1342,7 +1337,6 @@ app.get(
 /** Start, advance, or stop a chain session. */
 app.post(
   '/api/chains/:id/progress',
-  requireAuth,
   requireCouple,
   wrap(async (req, res) => {
     const id = Number(req.params.id);
@@ -1373,7 +1367,6 @@ app.post(
  */
 app.post(
   '/api/answer',
-  requireAuth,
   requireCouple,
   wrap(async (req, res) => {
     const questionId = Number(req.body.questionId);
@@ -1407,7 +1400,7 @@ app.post(
          skip_count = skip_count + VALUES(skip_count),
          decided_by_user_id = VALUES(decided_by_user_id),
          decided_at = NOW()`,
-      [req.couple.id, questionId, action, action === 'skipped' ? 1 : 0, req.user.id]
+      [req.couple.id, questionId, action, action === 'skipped' ? 1 : 0, null]
     );
 
     const domains = await domainsWithProgress(req.couple.id);
@@ -1424,7 +1417,6 @@ app.post(
  */
 app.post(
   '/api/deck/reset',
-  requireAuth,
   requireCouple,
   wrap(async (req, res) => {
     const domainRows = await query('SELECT id, slug FROM domains WHERE is_active = 1');
@@ -1464,7 +1456,6 @@ app.post(
  */
 app.post(
   '/api/report',
-  requireAuth,
   requireCouple,
   wrap(async (req, res) => {
     const questionId = Number(req.body.questionId);
@@ -1484,7 +1475,7 @@ app.post(
        ON DUPLICATE KEY UPDATE reason = VALUES(reason), note = VALUES(note),
                                user_id = VALUES(user_id), status = 'open',
                                created_at = NOW()`,
-      [questionId, req.couple.id, req.user.id, reason, note]
+      [questionId, req.couple.id, null, reason, note]
     );
 
     res.json({ ok: true });
@@ -1501,133 +1492,6 @@ app.post(
  * question ids would be technically complete and useless to the person reading
  * it, which is not what portability means.
  */
-app.get(
-  '/api/me/export',
-  requireAuth,
-  wrap(async (req, res) => {
-    const user = await queryOne(
-      'SELECT id, email, display_name, created_at, last_login_at FROM users WHERE id = ?',
-      [req.user.id]
-    );
-
-    const couple = await queryOne(
-      `SELECT c.id, c.couple_name, c.invite_code, c.created_at, m.member_role, m.joined_at
-         FROM couple_members m JOIN couples c ON c.id = m.couple_id
-        WHERE m.user_id = ?`,
-      [req.user.id]
-    );
-
-    let progress = [];
-    let partners = [];
-    if (couple) {
-      progress = await query(
-        `SELECT q.text, l.name AS level, s.status, s.decided_at,
-                s.decided_by_user_id = ? AS decidedByMe
-           FROM couple_question_status s
-           JOIN questions q ON q.id = s.question_id
-           JOIN domains l ON l.id = q.domain_id
-          WHERE s.couple_id = ?
-          ORDER BY s.decided_at`,
-        [req.user.id, couple.id]
-      );
-      partners = await query(
-        `SELECT u.display_name FROM couple_members m JOIN users u ON u.id = m.user_id
-          WHERE m.couple_id = ? AND m.user_id <> ?`,
-        [couple.id, req.user.id]
-      );
-    }
-
-    const reports = await query(
-      `SELECT q.text AS question, r.reason, r.note, r.created_at
-         FROM question_reports r JOIN questions q ON q.id = r.question_id
-        WHERE r.user_id = ?`,
-      [req.user.id]
-    );
-
-    res.set('Content-Disposition', 'attachment; filename="lets-connect-my-data.json"');
-    res.json({
-      exportedAt: new Date().toISOString(),
-      note:
-        'This app never records your answers - only whether a question was marked ' +
-        'discussed or skipped. Progress below is shared with your partner.',
-      account: user,
-      couple: couple
-        ? {
-            name: couple.couple_name,
-            inviteCode: couple.invite_code,
-            yourRole: couple.member_role,
-            joinedAt: couple.joined_at,
-            partner: partners.map((p) => p.display_name),
-          }
-        : null,
-      progress,
-      reportsYouSent: reports,
-    });
-  })
-);
-
-/**
- * Delete this account outright - the right-to-erasure half.
- *
- * Requires the current password. Deletion is irreversible and an unauthenticated
- * session hijack should not be able to destroy somebody's account, so this asks
- * for the one thing an attacker holding a stolen cookie does not have.
- *
- * Shared progress belongs to the COUPLE, not the person, so it is deliberately
- * left behind: erasing it would silently delete the other partner's history
- * too, which is somebody else's data. Once the last member leaves, the couple
- * is marked dissolved and nothing identifies anyone.
- */
-app.post(
-  '/api/me/delete',
-  requireAuth,
-  wrap(async (req, res) => {
-    const password = String(req.body.password || '');
-    const row = await queryOne('SELECT password_hash FROM users WHERE id = ?', [req.user.id]);
-    const ok = row && (await bcrypt.compare(password, row.password_hash));
-    if (!ok) return fail(res, 401, 'That password is not right.');
-
-    const owners = await queryOne(
-      'SELECT COUNT(*) AS n FROM users WHERE is_owner = 1 AND is_active = 1 AND id <> ?',
-      [req.user.id]
-    );
-    if (req.user.is_owner && Number(owners.n) === 0) {
-      return fail(
-        res,
-        400,
-        'You own this app and are the only owner. Make somebody else an owner before deleting your account.'
-      );
-    }
-
-    const membership = await queryOne(
-      'SELECT couple_id FROM couple_members WHERE user_id = ?',
-      [req.user.id]
-    );
-
-    await audit(req, 'account.delete', {
-      targetType: 'user',
-      targetId: req.user.id,
-      targetLabel: req.user.email,
-      detail: 'self-service deletion',
-    });
-
-    // Sessions carry no foreign key, so they need removing by hand.
-    await query('DELETE FROM sessions WHERE user_id = ?', [req.user.id]);
-    await query('DELETE FROM users WHERE id = ?', [req.user.id]);
-
-    if (membership) {
-      const left = await queryOne('SELECT COUNT(*) AS n FROM couple_members WHERE couple_id = ?', [
-        membership.couple_id,
-      ]);
-      if (Number(left.n) === 0) {
-        await query("UPDATE couples SET status = 'dissolved' WHERE id = ?", [membership.couple_id]);
-      }
-    }
-
-    if (req.session) req.session.destroy(() => {});
-    res.json({ ok: true });
-  })
-);
 
 app.patch(
   '/api/me',
@@ -1879,6 +1743,101 @@ async function generateCandidates({ key, model, lens, domain, depths, ladder, co
   return Array.isArray(parsed.questions) ? parsed.questions : [];
 }
 
+// ---------------------------------------------------------------------------
+// Issuing a code
+//
+// Shared by the admin screen and the shop, because "make a code for these two
+// people" is one operation and having it exist twice is how the two versions
+// drift until one of them forgets to set issued_at.
+// ---------------------------------------------------------------------------
+
+async function issueCode({ partnerA, partnerB, buyerEmail, orderRef, coupleName }) {
+  const a = String(partnerA || '').trim().slice(0, 60) || null;
+  const b = String(partnerB || '').trim().slice(0, 60) || null;
+
+  // Retried rather than assumed unique. The odds of a collision on 12 random
+  // characters are absurd, but "absurd" is not "impossible" and the failure
+  // would be handing somebody else's couple to a paying customer.
+  let code = null;
+  for (let i = 0; i < 8; i += 1) {
+    const candidate = makeAccessCode();
+    // eslint-disable-next-line no-await-in-loop
+    const clash = await queryOne('SELECT id FROM couples WHERE access_code = ?', [candidate]);
+    if (!clash) {
+      code = candidate;
+      break;
+    }
+  }
+  if (!code) throw new Error('Could not generate a unique code. Try again.');
+
+  const result = await query(
+    `INSERT INTO couples
+       (access_code, couple_name, partner_a, partner_b, buyer_email, order_ref,
+        code_status, issued_at, shuffle_seed, status)
+     VALUES (?, ?, ?, ?, ?, ?, 'active', NOW(), ?, 'active')`,
+    [
+      code,
+      String(coupleName || '').trim().slice(0, 120) || null,
+      a,
+      b,
+      String(buyerEmail || '').trim().slice(0, 191) || null,
+      String(orderRef || '').trim().slice(0, 60) || null,
+      crypto.randomBytes(16).toString('hex'),
+    ]
+  );
+
+  return { id: result.insertId, code, partnerA: a, partnerB: b };
+}
+
+/**
+ * The shop's endpoint.
+ *
+ * launchyourlife.co.za takes the money and then calls this to mint the code it
+ * emails out. Authenticated with a shared secret held in `settings`, not with
+ * an owner session - the shop is a server talking to a server and has no
+ * business holding somebody's admin cookie.
+ *
+ * Returns 501 rather than 401 while no key is configured, because "this is not
+ * switched on yet" and "your key is wrong" are different problems and telling
+ * them apart is the difference between a five-minute fix and an afternoon.
+ */
+app.post(
+  '/api/shop/codes',
+  wrap(async (req, res) => {
+    const configured = await getSetting('shop_api_key');
+    if (!configured) {
+      return fail(res, 501, 'Code issuing is not switched on. Set a shop key in the admin area.');
+    }
+
+    const offered = String(req.get('x-shop-key') || '');
+    // Length-padded constant-time compare, so a wrong key cannot be narrowed
+    // down by timing one character at a time.
+    const ok =
+      offered.length === configured.length &&
+      crypto.timingSafeEqual(Buffer.from(offered), Buffer.from(configured));
+    if (!ok) return fail(res, 401, 'Bad shop key.');
+
+    const issued = await issueCode({
+      partnerA: req.body.partnerA,
+      partnerB: req.body.partnerB,
+      buyerEmail: req.body.buyerEmail,
+      orderRef: req.body.orderRef,
+      coupleName: req.body.coupleName,
+    });
+
+    await audit(req, 'code.issue.shop', {
+      targetType: 'couple',
+      targetId: issued.id,
+      targetLabel: `${issued.partnerA || '?'} and ${issued.partnerB || '?'}`,
+      detail: `order ${req.body.orderRef || 'none'}`,
+    });
+
+    // The code is returned once, here. The shop is responsible for emailing it;
+    // this app never sees the customer again until they type it in.
+    res.status(201).json({ ok: true, code: issued.code, id: issued.id });
+  })
+);
+
 const owner = express.Router();
 app.use('/api/owner', requireAuth, requireOwner, owner);
 
@@ -2119,40 +2078,168 @@ owner.post(
   })
 );
 
+// ---- Codes ----------------------------------------------------------------
+//
+// A code IS a couple, so this is the old couples list with the licence on it
+// rather than a second screen listing the same rows. The two questions the
+// owner actually asks here are "did Mark and Nikki get their code" and "has it
+// been used", and both are answered by one table.
+
 owner.get(
   '/couples',
   wrap(async (req, res) => {
+    const q = String(req.query.q || '').trim();
+    const like = `%${q}%`;
+
     const rows = await query(
-      `SELECT c.id, c.couple_name, c.invite_code, c.status, c.created_at,
-              COUNT(DISTINCT m.user_id) AS members,
-              GROUP_CONCAT(DISTINCT u.display_name ORDER BY m.joined_at SEPARATOR ' & ') AS memberNames,
+      `SELECT c.id, c.access_code, c.couple_name, c.partner_a, c.partner_b,
+              c.buyer_email, c.order_ref, c.code_status, c.status,
+              c.issued_at, c.activated_at, c.last_used_at, c.created_at,
+              c.volatile_unlocked,
               (SELECT COUNT(*) FROM couple_question_status s
                 WHERE s.couple_id = c.id AND s.status = 'completed') AS completed,
               (SELECT COUNT(*) FROM couple_question_status s
-                WHERE s.couple_id = c.id AND s.status = 'skipped') AS skipped,
-              (SELECT MAX(s.decided_at) FROM couple_question_status s
-                WHERE s.couple_id = c.id) AS lastActivity
+                WHERE s.couple_id = c.id AND s.status = 'skipped') AS skipped
          FROM couples c
-         LEFT JOIN couple_members m ON m.couple_id = c.id
-         LEFT JOIN users u ON u.id = m.user_id
-        GROUP BY c.id, c.couple_name, c.invite_code, c.status, c.created_at
+        ${q ? `WHERE c.partner_a LIKE ? OR c.partner_b LIKE ? OR c.buyer_email LIKE ?
+                  OR c.access_code LIKE ? OR c.order_ref LIKE ?` : ''}
         ORDER BY c.created_at DESC
-        LIMIT 200`
+        LIMIT 300`,
+      q ? [like, like, like, like, like] : []
     );
+
     res.json({
       couples: rows.map((r) => ({
         id: r.id,
+        code: r.access_code,
         name: r.couple_name,
-        inviteCode: r.invite_code,
+        partnerA: r.partner_a,
+        partnerB: r.partner_b,
+        buyerEmail: r.buyer_email,
+        orderRef: r.order_ref,
+        codeStatus: r.code_status,
         status: r.status,
-        members: Number(r.members) || 0,
-        memberNames: r.memberNames || '',
+        issuedAt: r.issued_at,
+        activatedAt: r.activated_at,
+        lastUsedAt: r.last_used_at,
+        createdAt: r.created_at,
+        volatileUnlocked: !!r.volatile_unlocked,
         completed: Number(r.completed) || 0,
         skipped: Number(r.skipped) || 0,
-        lastActivity: r.lastActivity,
-        createdAt: r.created_at,
       })),
     });
+  })
+);
+
+/** Issue a code by hand - a replacement, a gift, or a sale taken off-platform. */
+owner.post(
+  '/couples',
+  wrap(async (req, res) => {
+    const a = String(req.body.partnerA || '').trim();
+    const b = String(req.body.partnerB || '').trim();
+    if (!a || !b) {
+      return fail(res, 400, 'Both names, please — the welcome screen greets them by name.');
+    }
+
+    const issued = await issueCode({
+      partnerA: a,
+      partnerB: b,
+      buyerEmail: req.body.buyerEmail,
+      orderRef: req.body.orderRef,
+      coupleName: req.body.coupleName,
+    });
+
+    await audit(req, 'code.issue', {
+      targetType: 'couple',
+      targetId: issued.id,
+      targetLabel: `${a} and ${b}`,
+      detail: issued.code,
+    });
+    res.status(201).json({ ok: true, ...issued });
+  })
+);
+
+owner.patch(
+  '/couples/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const c = await queryOne(
+      'SELECT id, partner_a, partner_b, code_status FROM couples WHERE id = ?',
+      [id]
+    );
+    if (!c) return fail(res, 404, 'No such code.');
+
+    const sets = [];
+    const args = [];
+    for (const [field, column, max] of [
+      ['partnerA', 'partner_a', 60],
+      ['partnerB', 'partner_b', 60],
+      ['buyerEmail', 'buyer_email', 191],
+      ['orderRef', 'order_ref', 60],
+    ]) {
+      if (req.body[field] !== undefined) {
+        sets.push(`${column} = ?`);
+        args.push(String(req.body[field]).trim().slice(0, max) || null);
+      }
+    }
+    if (req.body.codeStatus !== undefined) {
+      const s = req.body.codeStatus === 'suspended' ? 'suspended' : 'active';
+      sets.push('code_status = ?');
+      args.push(s);
+    }
+    if (!sets.length) return res.json({ ok: true });
+
+    args.push(id);
+    await query(`UPDATE couples SET ${sets.join(', ')} WHERE id = ?`, args);
+
+    await audit(req, 'code.update', {
+      targetType: 'couple',
+      targetId: id,
+      targetLabel: `${c.partner_a || '?'} and ${c.partner_b || '?'}`,
+      detail: req.body.codeStatus ? `status ${req.body.codeStatus}` : 'details',
+    });
+    res.json({ ok: true });
+  })
+);
+
+/**
+ * Delete a code outright.
+ *
+ * Takes the couple's whole history with it, which is the point when somebody
+ * asks to be erased - but it is also why suspending exists and why this asks
+ * for confirmation once it knows there is something to lose.
+ */
+owner.delete(
+  '/couples/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const c = await queryOne(
+      'SELECT id, access_code, partner_a, partner_b FROM couples WHERE id = ?',
+      [id]
+    );
+    if (!c) return fail(res, 404, 'No such code.');
+
+    const [{ n }] = await query(
+      'SELECT COUNT(*) AS n FROM couple_question_status WHERE couple_id = ?',
+      [id]
+    );
+    if (Number(n) > 0 && !req.body.confirmed) {
+      return fail(
+        res,
+        409,
+        `This code has ${n} answered question${Number(n) === 1 ? '' : 's'} behind it. Deleting `
+          + 'it erases their history as well. Suspending it stops the code working and keeps the record.'
+      );
+    }
+
+    await query('DELETE FROM couples WHERE id = ?', [id]);
+    await audit(req, 'code.delete', {
+      targetType: 'couple',
+      targetId: id,
+      targetLabel: `${c.partner_a || '?'} and ${c.partner_b || '?'}`,
+      detail: `${n} answer record(s) removed`,
+    });
+    res.json({ ok: true, removed: Number(n) || 0 });
   })
 );
 
@@ -2361,6 +2448,11 @@ owner.patch(
 
 const TUNABLE_SETTINGS = ['skip_cooloff_days', 'deck_size', 'app_url'];
 
+// Not in TUNABLE_SETTINGS: it is a credential, so it is reported as configured
+// or not and never sent back to the browser - same rule as the SMTP password
+// and the Anthropic key.
+const SHOP_KEY_SETTING = 'shop_api_key';
+
 owner.get(
   '/settings',
   wrap(async (req, res) => {
@@ -2371,6 +2463,7 @@ owner.get(
     res.json({
       settings: values,
       defaults: DEFAULTS,
+      shop: { configured: !!(await getSetting(SHOP_KEY_SETTING)) },
       email: {
         host: mail.host,
         port: mail.port,
@@ -2414,6 +2507,21 @@ owner.put(
         return fail(res, 400, 'The app URL must start with http:// or https://');
       }
       await setSetting('app_url', url || null);
+    }
+
+    // The shop's key. Generated here rather than typed, because a key somebody
+    // invents is a key somebody can guess, and this one mints paid licences.
+    if (body.shopKeyAction === 'generate') {
+      const key = crypto.randomBytes(32).toString('base64url');
+      await setSetting(SHOP_KEY_SETTING, key);
+      await audit(req, 'shop.key.generate');
+      // Returned exactly once, on the response that created it. After this the
+      // API will only ever say whether one exists.
+      return res.json({ ok: true, shopKey: key });
+    }
+    if (body.shopKeyAction === 'clear') {
+      await setSetting(SHOP_KEY_SETTING, null);
+      await audit(req, 'shop.key.clear');
     }
 
     if (body.email) {

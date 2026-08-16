@@ -1468,3 +1468,38 @@ code {
 }
 
 .notice strong { color: var(--text); }
+
+/* The code field -----------------------------------------------------------
+ *
+ * The one input on the welcome screen, so it is allowed to be the loudest thing
+ * on it. Monospaced and letter-spaced because this is copied character by
+ * character off an email, and a proportional font makes XXXX-XXXX-XXXX hard to
+ * check against the original. */
+
+.input-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.35rem;
+  letter-spacing: 0.18em;
+  text-align: center;
+  text-transform: uppercase;
+  padding-top: 0.9rem;
+  padding-bottom: 0.9rem;
+}
+
+.input-code::placeholder {
+  letter-spacing: 0.18em;
+  text-transform: none;
+  opacity: 0.35;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

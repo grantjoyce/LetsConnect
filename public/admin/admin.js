@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.6.1';
+const APP_VERSION = '1.7.0';
 
 const state = {
   ready: false,
@@ -24,6 +24,7 @@ const state = {
   form: {},
   data: {}, // per-tab payloads, cleared to force a reload
   userQuery: '',
+  codeQuery: '',
   questionLevel: '',
   questionQuery: '',
   reportStatus: 'open',
@@ -57,7 +58,7 @@ const TABS = [
 
   // Who
   ['people', 'People'],
-  ['couples', 'Couples'],
+  ['couples', 'Codes'],
 
   // Machinery
   ['audit', 'Audit'],
@@ -1362,32 +1363,81 @@ function tabCouples() {
   if (!d) return loading();
 
   return `
+    <div class="notice">
+      A code <strong>is</strong> a couple. One is minted per sale and emailed by the shop;
+      both people use the same one, because this is done sitting together with one screen
+      between them. Suspending a code stops it working and keeps the record — deleting it
+      takes their history with it.
+    </div>
+
+    <div class="admin-grid two" style="margin-bottom:1.2rem">
+      <button class="btn btn-ghost" data-action="code-new">Issue a code by hand</button>
+      <div class="field" style="margin:0">
+        <label for="code-search">Search</label>
+        <input class="input" id="code-search" type="search"
+               placeholder="Name, email, order or code" value="${esc(state.codeQuery)}">
+      </div>
+    </div>
+
     <div class="table-wrap">
       <table class="data">
-        <thead><tr><th>Couple</th><th>Code</th><th class="num">Discussed</th><th class="num">Skipped</th><th>Last active</th></tr></thead>
+        <thead>
+          <tr><th>Couple</th><th>Code</th><th>Bought</th><th class="num">Discussed</th>
+              <th>Used</th><th class="actions">Actions</th></tr>
+        </thead>
         <tbody>
           ${
             d.couples.length
               ? d.couples
                   .map(
                     (c) => `<tr>
-              <td>${esc(c.name || c.memberNames || 'Unnamed')}
-                ${c.status === 'dissolved' ? '<span class="pill pill-off">dissolved</span>' : ''}
-                ${c.members < 2 ? '<span class="pill pill-warn">not paired</span>' : ''}
-                <span class="row-sub">${esc(c.memberNames || 'No members')}</span></td>
-              <td>${esc(c.inviteCode)}</td>
+              <td style="${c.codeStatus === 'suspended' ? 'opacity:0.55' : ''}">
+                <strong>${esc(
+                  c.partnerA && c.partnerB
+                    ? `${c.partnerA} and ${c.partnerB}`
+                    : c.partnerA || c.partnerB || c.name || 'Unnamed'
+                )}</strong>
+                ${c.codeStatus === 'suspended' ? '<span class="pill pill-off">suspended</span>' : ''}
+                ${c.volatileUnlocked ? '<span class="pill">volatile on</span>' : ''}
+                <span class="row-sub">${esc(c.buyerEmail || 'No email on file')}</span>
+              </td>
+              <td>
+                ${
+                  c.code
+                    ? `<code style="letter-spacing:0.06em">${esc(c.code)}</code>`
+                    : '<span class="row-sub">none — pre-dates codes</span>'
+                }
+              </td>
+              <td>
+                ${esc(fmtDate(c.issuedAt || c.createdAt))}
+                ${c.orderRef ? `<span class="row-sub">${esc(c.orderRef)}</span>` : ''}
+              </td>
               <td class="num">${c.completed}</td>
-              <td class="num">${c.skipped}</td>
-              <td>${esc(fmtDate(c.lastActivity))}</td>
+              <td>
+                ${
+                  c.activatedAt
+                    ? esc(fmtDate(c.lastUsedAt || c.activatedAt))
+                    : '<span class="row-sub">never opened</span>'
+                }
+              </td>
+              <td class="actions">
+                ${c.code ? `<button class="mini" data-action="code-copy" data-id="${c.id}">Copy</button>` : ''}
+                <button class="mini" data-action="code-edit" data-id="${c.id}">Edit</button>
+                <button class="mini" data-action="code-suspend" data-id="${c.id}">
+                  ${c.codeStatus === 'suspended' ? 'Reinstate' : 'Suspend'}
+                </button>
+                <button class="mini danger" data-action="code-delete" data-id="${c.id}">Delete</button>
+              </td>
             </tr>`
                   )
                   .join('')
-              : '<tr><td colspan="5">No couples yet.</td></tr>'
+              : '<tr><td colspan="6">No codes yet.</td></tr>'
           }
         </tbody>
       </table>
     </div>`;
 }
+
 
 function tabAudit() {
   const d = state.data.audit;
@@ -1479,6 +1529,25 @@ function tabSettings() {
                  value="${esc(v.app_url || '')}">
           <p class="hint">Used to build password reset links. Blank uses the incoming request.</p>
         </div>
+      </div>
+
+      <h2 class="section-title" style="margin-top:1.6rem">The shop</h2>
+      <div class="panel">
+        <p class="hint" style="margin-bottom:0.9rem">
+          launchyourlife.co.za calls this app to mint a code when somebody buys one, and
+          emails it out itself. It authenticates with a key generated here — a server
+          talking to a server, holding no admin session of its own.
+          ${
+            s.shop && s.shop.configured
+              ? '<br><br><strong>A key is set.</strong> It is never shown again; replacing it '
+                + 'creates a new one and stops the old one working.'
+              : '<br><br><strong>No key yet</strong>, so code issuing from the shop is switched '
+                + 'off and answers 501.'
+          }
+        </p>
+        <button class="btn btn-ghost" type="button" data-action="shop-key">
+          ${s.shop && s.shop.configured ? 'Replace the shop key' : 'Create a shop key'}
+        </button>
       </div>
 
       <h2 class="section-title" style="margin-top:1.6rem">Email (SMTP)</h2>
@@ -1712,6 +1781,25 @@ function wire() {
     };
   }
 
+  const codeSearch = document.getElementById('code-search');
+  if (codeSearch) {
+    codeSearch.oninput = () => {
+      state.codeQuery = codeSearch.value;
+      clearTimeout(window.__codeTimer);
+      window.__codeTimer = setTimeout(async () => {
+        state.data.couples = await api.get(
+          `/api/owner/couples?q=${encodeURIComponent(state.codeQuery)}`
+        );
+        render();
+        const again = document.getElementById('code-search');
+        if (again) {
+          again.focus();
+          again.setSelectionRange(again.value.length, again.value.length);
+        }
+      }, 250);
+    };
+  }
+
   const dropzone = document.getElementById('dropzone');
   const fileInput = document.getElementById('import-file');
   if (dropzone && fileInput) {
@@ -1814,6 +1902,14 @@ async function handleAction(action, el) {
     case 'user-reset': await userResetLink(id); break;
     case 'user-owner': await userToggle(id, 'owner'); break;
     case 'user-active': await userToggle(id, 'active'); break;
+
+    case 'code-new': await codeNew(); break;
+    case 'code-edit': await codeEdit(id); break;
+    case 'code-suspend': await codeSuspend(id); break;
+    case 'code-delete': await codeDelete(id); break;
+    case 'code-copy': await codeCopy(id); break;
+
+    case 'shop-key': await shopKey(); break;
 
     case 'test-email': await testEmail(); break;
     default: break;
@@ -1919,7 +2015,9 @@ async function loadTab() {
     } else if (t === 'people' && !state.data.people) {
       state.data.people = await api.get('/api/owner/users');
     } else if (t === 'couples' && !state.data.couples) {
-      state.data.couples = await api.get('/api/owner/couples');
+      state.data.couples = await api.get(
+        `/api/owner/couples?q=${encodeURIComponent(state.codeQuery)}`
+      );
     } else if (t === 'audit' && !state.data.audit) {
       state.data.audit = await api.get('/api/owner/audit');
     } else if (t === 'settings') {
@@ -2328,6 +2426,189 @@ async function draftDiscard(id) {
     toast('Turned down.');
   } catch (err) {
     toast(err.message, true);
+  }
+}
+
+// ---- Codes ----------------------------------------------------------------
+
+const CODE_FIELDS = (c) => [
+  { name: 'partnerA', label: 'First name', value: c ? c.partnerA : '', placeholder: 'Mark' },
+  { name: 'partnerB', label: 'Second name', value: c ? c.partnerB : '', placeholder: 'Nikki' },
+  {
+    name: 'buyerEmail',
+    label: 'Buyer email',
+    type: 'email',
+    value: c ? c.buyerEmail : '',
+    hint: 'Where the code was sent, so a lost one can be found again.',
+  },
+  { name: 'orderRef', label: 'Order reference', value: c ? c.orderRef : '', placeholder: 'LYL-1001' },
+];
+
+/**
+ * Issue a code by hand.
+ *
+ * The shop mints its own through /api/shop/codes; this is for the cases that
+ * never touch it - a replacement, a gift, a sale taken over the phone.
+ */
+async function codeNew() {
+  const v = await formDialog({
+    title: 'Issue a code',
+    intro:
+      'Both names, because the welcome screen greets them by name — '
+      + '&ldquo;Welcome Mark and Nikki&rdquo;.',
+    fields: CODE_FIELDS(null),
+    confirmLabel: 'Issue it',
+  });
+  if (!v) return;
+
+  try {
+    const res = await api.post('/api/owner/couples', v);
+    state.data.couples = null;
+    await loadTab();
+    // Shown rather than toasted: this is the thing that has to reach a customer,
+    // and a toast that vanishes in two seconds is not where you put it.
+    await dialog({
+      title: `Code for ${esc(v.partnerA)} and ${esc(v.partnerB)}`,
+      bodyHtml:
+        `<p style="font-family:ui-monospace,monospace;font-size:1.4rem;letter-spacing:0.12em;`
+        + `text-align:center;margin:1rem 0">${esc(res.code)}</p>`
+        + '<p class="hint">Send this to them. It is stored here too, so it cannot be lost.</p>',
+      actions: [{ label: 'Done', value: true, className: 'btn' }],
+    });
+  } catch (err) {
+    uiAlert('Could not issue it', err.message);
+  }
+}
+
+async function codeEdit(id) {
+  const c = state.data.couples.couples.find((x) => x.id === id);
+  if (!c) return;
+  const v = await formDialog({
+    title: 'Edit',
+    intro: c.code ? `Code <strong>${esc(c.code)}</strong>. The code itself cannot be changed.` : '',
+    fields: CODE_FIELDS(c),
+    confirmLabel: 'Save',
+  });
+  if (!v) return;
+  try {
+    await api.patch(`/api/owner/couples/${id}`, v);
+    state.data.couples = null;
+    await loadTab();
+    toast('Saved.');
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function codeSuspend(id) {
+  const c = state.data.couples.couples.find((x) => x.id === id);
+  if (!c) return;
+  const suspending = c.codeStatus !== 'suspended';
+
+  if (suspending) {
+    const yes = await uiConfirm(
+      'Suspend this code?',
+      'It stops working immediately — including for anyone using it right now. Their '
+        + 'progress is kept and reinstating it puts everything back.',
+      'Suspend',
+      true
+    );
+    if (!yes) return;
+  }
+
+  try {
+    await api.patch(`/api/owner/couples/${id}`, {
+      codeStatus: suspending ? 'suspended' : 'active',
+    });
+    state.data.couples = null;
+    await loadTab();
+    toast(suspending ? 'Suspended.' : 'Working again.');
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function codeDelete(id) {
+  const c = state.data.couples.couples.find((x) => x.id === id);
+  if (!c) return;
+  const who = c.partnerA && c.partnerB ? `${c.partnerA} and ${c.partnerB}` : 'this couple';
+
+  const yes = await uiConfirm(
+    `Delete the code for ${esc(who)}?`,
+    c.completed
+      ? `They have worked through <strong>${plural(c.completed, 'question', 'questions')}</strong>. `
+        + 'Deleting the code erases that too. Suspending it stops the code and keeps the record.'
+      : 'Nothing has been discussed on this code yet, so there is no history to lose.',
+    'Delete',
+    true
+  );
+  if (!yes) return;
+
+  try {
+    await api.del(`/api/owner/couples/${id}`, { confirmed: true });
+    state.data.couples = null;
+    await loadTab();
+    toast('Deleted.');
+  } catch (err) {
+    uiAlert('Could not delete it', err.message);
+  }
+}
+
+async function codeCopy(id) {
+  const c = state.data.couples.couples.find((x) => x.id === id);
+  if (!c || !c.code) return;
+  try {
+    await navigator.clipboard.writeText(c.code);
+    toast('Code copied.');
+  } catch (err) {
+    // Clipboard access is refused outside a secure context, which is exactly
+    // where somebody is most likely to be testing. Show it rather than fail.
+    await uiAlert('Copy it by hand', c.code);
+  }
+}
+
+/**
+ * The shop's key.
+ *
+ * Generated, never typed: this key mints paid licences, and a key somebody
+ * invents is a key somebody can guess. Shown once, on the response that
+ * created it - after that the API will only say whether one exists.
+ */
+async function shopKey() {
+  const s = state.data.settings;
+  const configured = s && s.shop && s.shop.configured;
+
+  const yes = await uiConfirm(
+    configured ? 'Replace the shop key?' : 'Create a shop key?',
+    configured
+      ? 'The current key stops working immediately. Anything at launchyourlife.co.za still '
+        + 'using it will fail to issue codes until you paste the new one in.'
+      : 'launchyourlife.co.za sends this with every request that mints a code. You will see it '
+        + 'once, here, and never again.',
+    configured ? 'Replace it' : 'Create it',
+    configured
+  );
+  if (!yes) return;
+
+  try {
+    const res = await api.put('/api/owner/settings', { shopKeyAction: 'generate' });
+    state.data.settings = null;
+    await loadTab();
+    await dialog({
+      title: 'Shop key',
+      bodyHtml:
+        `<p style="font-family:ui-monospace,monospace;font-size:0.9rem;word-break:break-all;`
+        + `margin:1rem 0">${esc(res.shopKey)}</p>`
+        + '<p class="hint">Paste it into the shop now. It is not shown again — losing it means '
+        + 'generating another one.</p>'
+        + '<p class="hint" style="margin-top:0.8rem"><strong>How the shop uses it:</strong> '
+        + 'POST to <code>/api/shop/codes</code> with the header <code>x-shop-key</code> and a body '
+        + 'of <code>{ partnerA, partnerB, buyerEmail, orderRef }</code>. The reply carries the '
+        + 'code to email out.</p>',
+      actions: [{ label: 'Saved it', value: true, className: 'btn' }],
+    });
+  } catch (err) {
+    uiAlert('Could not generate a key', err.message);
   }
 }
 
