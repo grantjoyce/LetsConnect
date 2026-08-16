@@ -772,6 +772,10 @@ app.get(
           }
         : null,
       domains,
+      // The ladder travels with the bootstrap call rather than in a request of
+      // its own: it is small, it never changes mid-session, and the selection
+      // screen cannot render without it.
+      depths: await activeDepths(),
       volatile,
     });
   })
@@ -840,6 +844,27 @@ function servableWhere(allowVolatile) {
  * the UI has to be able to grey out a depth that holds nothing. Meaning and
  * Social, for instance, exist only at D1.
  */
+/**
+ * The depth ladder, from the database.
+ *
+ * D1..D5 used to be a constant in public/app.js, which made the one piece of
+ * couple-facing copy the owner could not edit without a deploy. Every read of
+ * the ladder now comes through here, including the "which depth numbers are
+ * even valid" check in parseSelection - otherwise adding a rung would show a
+ * chip that the deck query then silently refused to honour.
+ */
+async function activeDepths() {
+  const rows = await query(
+    'SELECT n, name, blurb, description FROM depths WHERE is_active = 1 ORDER BY sort_order, n'
+  );
+  return rows.map((r) => ({
+    n: Number(r.n),
+    name: r.name,
+    blurb: r.blurb,
+    description: r.description,
+  }));
+}
+
 async function domainsWithProgress(coupleId) {
   const cooloff = await getIntSetting('skip_cooloff_days');
   const allowVolatile = await volatileUnlocked(coupleId);
@@ -1029,8 +1054,14 @@ app.post(
  * "all", so a request with no selection still returns a usable deck rather
  * than an empty screen.
  */
-function parseSelection(req, domainRows) {
+function parseSelection(req, domainRows, depthRows) {
   const bySlug = new Map(domainRows.map((d) => [d.slug, d]));
+
+  // The valid depth numbers come from the ladder, not from a hard-coded 1..5.
+  // A rung the owner adds is selectable the moment it exists; a rung switched
+  // off stops being accepted here as well as disappearing from the picker.
+  const allDepths = (depthRows || []).map((d) => d.n).filter((n) => Number.isInteger(n));
+  const valid = new Set(allDepths);
 
   const wantedSlugs = String(req.query.domains || '')
     .split(',')
@@ -1046,14 +1077,14 @@ function parseSelection(req, domainRows) {
       String(req.query.depths || '')
         .split(',')
         .map((d) => Number(d.trim()))
-        .filter((d) => Number.isInteger(d) && d >= 1 && d <= 5)
+        .filter((d) => valid.has(d))
     ),
-  ].sort();
+  ].sort((a, b) => a - b);
 
   return {
     slugs: chosen,
     ids: chosen.map((s) => bySlug.get(s).id),
-    depths: depths.length ? depths : [1, 2, 3, 4, 5],
+    depths: depths.length ? depths : allDepths,
     unknown: wantedSlugs.filter((s) => !bySlug.has(s)),
   };
 }
@@ -1082,8 +1113,9 @@ app.get(
     const domainRows = await query(
       'SELECT id, slug, name, accent FROM domains WHERE is_active = 1 ORDER BY sort_order'
     );
-    const sel = parseSelection(req, domainRows);
+    const sel = parseSelection(req, domainRows, await activeDepths());
     if (!sel.ids.length) return fail(res, 400, 'Choose at least one topic.');
+    if (!sel.depths.length) return fail(res, 400, 'Choose at least one depth.');
 
     const cooloff = await getIntSetting('skip_cooloff_days');
     const deckSize = await getIntSetting('deck_size');
@@ -1400,9 +1432,11 @@ app.post(
     // a query-shaped object rather than duplicating the parsing.
     const sel = parseSelection(
       { query: { domains: (req.body.domains || []).join(','), depths: (req.body.depths || []).join(',') } },
-      domainRows
+      domainRows,
+      await activeDepths()
     );
     if (!sel.ids.length) return fail(res, 400, 'Choose at least one topic.');
+    if (!sel.depths.length) return fail(res, 400, 'Choose at least one depth.');
 
     const scope = req.body.scope === 'skipped' ? 'skipped' : 'all';
     const result = await query(
@@ -1644,6 +1678,205 @@ function requireOwner(req, res, next) {
   if (!req.user) return fail(res, 401, 'Please log in.');
   if (!req.user.is_owner) return fail(res, 403, 'This area is for the app owner.');
   return next();
+}
+
+// ---------------------------------------------------------------------------
+// Question generation
+//
+// The owner adds an author and the framework they work from, and the app writes
+// candidate questions against it - which is the whole point: the alternative is
+// drafting them somewhere else and pasting them in, and then the corpus's rules
+// never touch them.
+//
+// THREE things this must never do, each of which has burned somebody:
+//
+//   1. Call the model from the browser. The key would be in the page and the
+//      spend would be uncapped. Everything goes through this proxy.
+//   2. Keep the key in .env. It lives in `settings`, encrypted at rest under
+//      SECRET_KEY, and the API only ever tells the browser {configured, masked,
+//      source, model} - never the value.
+//   3. Trust the model to have followed the rules. Asking for an open,
+//      standalone, non-binary question with a context line that supplies no
+//      example answer produces a REQUEST for one. Every candidate is put
+//      through lib/question-rules.js afterwards, and a fatal failure is
+//      recorded on the draft rather than quietly dropped or quietly accepted.
+//
+// Nothing generated is ever served. It lands in `question_drafts` and waits.
+// ---------------------------------------------------------------------------
+
+const Anthropic = require('@anthropic-ai/sdk');
+const { checkQuestion } = require('./lib/question-rules');
+
+const AI_DEFAULT_MODEL = 'claude-opus-5';
+
+/**
+ * Where the key comes from, in priority order.
+ *
+ * The database wins over the environment on purpose: it survives a redeploy
+ * with no file editing on the server, and it is what the admin screen writes.
+ * .env stays as a fallback so an install configured the old way keeps working.
+ */
+async function resolveAnthropicKey() {
+  const stored = await getSetting('anthropic_api_key');
+  if (stored) {
+    const plain = decryptSecret(stored);
+    // Fails SOFT. An unreadable key (SECRET_KEY rotated) must present as "type
+    // it again", not as a crash on an unrelated screen.
+    if (plain) return { key: plain, source: 'settings', unreadable: false };
+    return { key: null, source: 'settings', unreadable: true };
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    return { key: process.env.ANTHROPIC_API_KEY, source: 'env', unreadable: false };
+  }
+  return { key: null, source: null, unreadable: false };
+}
+
+function maskKey(key) {
+  if (!key) return null;
+  return `${key.slice(0, 7)}…${key.slice(-4)}`;
+}
+
+/** The schema the model must fill. Deliberately flat - see the notes above. */
+const DRAFT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['questions'],
+  properties: {
+    questions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['question', 'context', 'depth', 'volatile'],
+        properties: {
+          question: { type: 'string', description: 'The card. One sentence, ending in a question mark.' },
+          context: {
+            type: 'string',
+            description:
+              'The line revealed when the couple taps Expand. Under 18 words. Opens the '
+              + 'territory. Never contains an example answer.',
+          },
+          depth: { type: 'integer', description: 'Which rung of the ladder this sits on.' },
+          volatile: {
+            type: 'boolean',
+            description: 'True only if an honest answer could damage the relationship.',
+          },
+        },
+      },
+    },
+  },
+};
+
+/**
+ * The construction rules, stated for the model.
+ *
+ * Written as what a good card IS rather than as a list of prohibitions, because
+ * enumerating failures anchors output toward them. The code enforces the same
+ * rules afterwards either way.
+ */
+function buildSystemPrompt(depths) {
+  const ladder = depths
+    .map((d) => `D${d.n} ${d.name} - ${d.blurb || ''}`.trim())
+    .join('\n');
+
+  return `You write discussion questions for couples. Each one is printed alone on a card, on a phone, with no other question visible.
+
+HOW A CARD IS BUILT
+A card is one open question that a person can answer out loud without having read anything else. It names its own subject, so a reader never has to ask "which one?". It cannot be answered yes or no - if it opens on do/does/is/are/have/can/will, it must offer a genuine either/or. It is at least five words and reads as a whole sentence, not a fragment or a follow-on.
+
+Every card carries a context line, shown only when the couple asks for it. The context opens the territory in under eighteen words and stops. It does not ask a second question, and it never supplies an example answer - an example anchors every couple to the same reply and kills the question.
+
+THE DEPTH LADDER
+Depth is exposure, and has nothing to do with subject. Write each question at the depth you are asked for.
+${ladder}
+
+VOLATILE
+Mark a question volatile only when an honest answer could genuinely damage the relationship. Both partners have to consent separately before a volatile card is ever dealt, so the flag is a real gate, not a tone marker.
+
+ORIGINALITY
+You are writing to a framework - a way of looking at a relationship - never reproducing anybody's published material. Do not quote, adapt, or paraphrase any existing question, exercise, card deck, or book. Every question you return is newly written.`;
+}
+
+/**
+ * Ask for candidates. Returns raw objects; validation happens to the result.
+ *
+ * Streamed because thinking plus a dozen questions with context lines is enough
+ * output to sit near an HTTP timeout on a non-streaming call, and a timeout
+ * here would look like "generation is broken" rather than "the request was too
+ * big".
+ */
+async function generateCandidates({ key, model, lens, domain, depths, ladder, count, note, avoid }) {
+  const client = new Anthropic({ apiKey: key });
+
+  const lines = [];
+  lines.push(`Write ${count} questions.`);
+  if (lens) {
+    lines.push('');
+    lines.push(`FRAMEWORK: ${lens.name}${lens.author ? ` (${lens.author})` : ''}`);
+    if (lens.brief) lines.push(lens.brief);
+    else if (lens.description) lines.push(lens.description);
+    lines.push(
+      'Interrogate what this framework actually cares about. A reader who knows the '
+        + 'framework should recognise the concern; a reader who does not should still be '
+        + 'able to answer the question.'
+    );
+  }
+  if (domain) {
+    lines.push('');
+    lines.push(`SUBJECT: ${domain.name}${domain.tagline ? ` - ${domain.tagline}` : ''}`);
+    if (domain.description) lines.push(domain.description);
+  }
+  lines.push('');
+  lines.push(`DEPTHS TO COVER: ${depths.join(', ')}. Spread them across the set.`);
+  if (note) {
+    lines.push('');
+    lines.push(`FROM THE EDITOR: ${note}`);
+  }
+  if (avoid && avoid.length) {
+    lines.push('');
+    lines.push('Questions already in the collection. Do not repeat these, or restate them:');
+    avoid.forEach((t) => lines.push(`- ${t}`));
+  }
+
+  const stream = client.messages.stream({
+    model,
+    max_tokens: 16000,
+    thinking: { type: 'adaptive' },
+    output_config: { effort: 'high', format: { type: 'json_schema', schema: DRAFT_SCHEMA } },
+    system: buildSystemPrompt(ladder),
+    messages: [{ role: 'user', content: lines.join('\n') }],
+  });
+
+  const message = await stream.finalMessage();
+
+  // Safety classifiers can decline (HTTP 200, stop_reason "refusal"), so read
+  // stop_reason BEFORE touching content - indexing content[0] on a refusal is
+  // how this turns into an unhandled exception.
+  if (message.stop_reason === 'refusal') {
+    const why = (message.stop_details && message.stop_details.explanation) || '';
+    throw new Error(`The model declined this request.${why ? ` ${why}` : ''}`);
+  }
+  if (message.stop_reason === 'max_tokens') {
+    throw new Error('The reply was cut off before it finished. Ask for fewer questions.');
+  }
+
+  const text = message.content
+    .filter((b) => b.type === 'text')
+    .map((b) => b.text)
+    .join('')
+    .trim()
+    // Structured output should not fence, but a stray fence turns a good reply
+    // into a parse error, which is a silly way to lose a batch.
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '');
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new Error('The reply was not readable as questions. Try again.');
+  }
+  return Array.isArray(parsed.questions) ? parsed.questions : [];
 }
 
 const owner = express.Router();
@@ -1979,9 +2212,20 @@ owner.post(
     const level = await queryOne('SELECT id FROM domains WHERE slug = ? AND is_active = 1', [slug]);
     if (!level) return fail(res, 400, 'Choose a set.');
 
-    const depth = Math.min(5, Math.max(1, Number(req.body.depth) || 2));
+    const ladder = await activeDepths();
+    const validDepths = new Set(ladder.map((d) => d.n));
+    const wantedDepth = Number(req.body.depth);
+    const depth = validDepths.has(wantedDepth) ? wantedDepth : ladder[0] ? ladder[0].n : 1;
     const context = String(req.body.context || '').trim().slice(0, 500) || null;
     const isVolatile = !!req.body.volatile;
+
+    // The lens is provenance and is optional. A code that does not exist is
+    // dropped rather than refused - a badge with no explanation behind it is
+    // worse than no badge.
+    const wantedLens = String(req.body.lens || '').trim().toUpperCase();
+    const lens = wantedLens
+      ? (await queryOne('SELECT code FROM lenses WHERE code = ?', [wantedLens]))?.code || null
+      : null;
 
     // Admin refs are namespaced so they can never collide with a corpus ref,
     // present or future.
@@ -1993,10 +2237,10 @@ owner.post(
 
     const result = await query(
       `INSERT INTO questions
-         (ref, domain_id, depth, is_volatile, source, text, context, sort_order,
+         (ref, domain_id, depth, lens, is_volatile, source, text, context, sort_order,
           is_active, admin_hidden)
-       VALUES (?, ?, ?, ?, 'admin', ?, ?, ?, 1, 0)`,
-      [ref, level.id, depth, isVolatile ? 1 : 0, text, context, n]
+       VALUES (?, ?, ?, ?, ?, 'admin', ?, ?, ?, 1, 0)`,
+      [ref, level.id, depth, lens, isVolatile ? 1 : 0, text, context, n]
     );
     await audit(req, 'question.create', {
       targetType: 'question', targetId: result.insertId, targetLabel: text.slice(0, 120),
@@ -2058,10 +2302,19 @@ owner.patch(
 
     if (req.body.depth !== undefined) {
       const depth = Number(req.body.depth);
-      if (!Number.isInteger(depth) || depth < 1 || depth > 5) {
-        return fail(res, 400, 'Depth must be between 1 and 5.');
+      const ladder = await activeDepths();
+      if (!ladder.some((d) => d.n === depth)) {
+        return fail(res, 400, 'That is not one of the depths on the ladder.');
       }
       await query('UPDATE questions SET depth = ? WHERE id = ?', [depth, id]);
+    }
+
+    if (req.body.lens !== undefined) {
+      const wanted = String(req.body.lens || '').trim().toUpperCase();
+      const lens = wanted
+        ? (await queryOne('SELECT code FROM lenses WHERE code = ?', [wanted]))?.code || null
+        : null;
+      await query('UPDATE questions SET lens = ? WHERE id = ?', [lens, id]);
     }
 
     if (req.body.volatile !== undefined) {
@@ -2377,6 +2630,899 @@ owner.delete(
 
     await query('DELETE FROM domains WHERE id = ?', [id]);
     await audit(req, 'group.delete', { targetType: 'level', targetId: id, targetLabel: level.name });
+    res.json({ ok: true });
+  })
+);
+
+// ---- Depths ---------------------------------------------------------------
+//
+// The other axis. A depth is exposure and says nothing about subject, which is
+// why it is a table of its own rather than a column on `domains` - collapsing
+// the two is the single-axis model the corpus exists to correct.
+
+owner.get(
+  '/depths',
+  wrap(async (req, res) => {
+    const rows = await query(
+      `SELECT dp.id, dp.n, dp.name, dp.blurb, dp.description, dp.sort_order, dp.is_active,
+              (SELECT COUNT(*) FROM questions q WHERE q.depth = dp.n) AS questions,
+              (SELECT COUNT(*) FROM questions q
+                WHERE q.depth = dp.n AND q.is_active = 1 AND q.admin_hidden = 0
+                  AND q.needs_review = 0) AS live
+         FROM depths dp
+        ORDER BY dp.sort_order, dp.n`
+    );
+    res.json({
+      depths: rows.map((r) => ({
+        id: r.id,
+        n: Number(r.n),
+        name: r.name,
+        blurb: r.blurb,
+        description: r.description,
+        sortOrder: r.sort_order,
+        isActive: !!r.is_active,
+        questions: Number(r.questions) || 0,
+        live: Number(r.live) || 0,
+      })),
+    });
+  })
+);
+
+function readDepthBody(body) {
+  return {
+    name: String(body.name || '').trim().slice(0, 60),
+    blurb: String(body.blurb || '').trim().slice(0, 200) || null,
+    description: String(body.description || '').trim() || null,
+  };
+}
+
+owner.post(
+  '/depths',
+  wrap(async (req, res) => {
+    const b = readDepthBody(req.body);
+    if (!b.name) return fail(res, 400, 'Give the depth a name.');
+
+    const n = Number(req.body.n);
+    if (!Number.isInteger(n) || n < 1 || n > 20) {
+      return fail(res, 400, 'The depth number must be a whole number between 1 and 20.');
+    }
+    const clash = await queryOne('SELECT id FROM depths WHERE n = ?', [n]);
+    if (clash) return fail(res, 400, `D${n} already exists.`);
+
+    const result = await query(
+      `INSERT INTO depths (n, name, blurb, description, sort_order, is_active)
+       VALUES (?, ?, ?, ?, ?, 1)`,
+      [n, b.name, b.blurb, b.description, n]
+    );
+    await audit(req, 'depth.create', {
+      targetType: 'depth', targetId: result.insertId, targetLabel: `D${n} ${b.name}`,
+    });
+    res.status(201).json({ ok: true, id: result.insertId });
+  })
+);
+
+owner.patch(
+  '/depths/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const row = await queryOne('SELECT id, n, name, is_active FROM depths WHERE id = ?', [id]);
+    if (!row) return fail(res, 404, 'No such depth.');
+
+    const b = readDepthBody(req.body);
+    if (req.body.name !== undefined && !b.name) return fail(res, 400, 'Give the depth a name.');
+
+    // `n` is deliberately NOT editable. It is what questions.depth stores, so
+    // renumbering a rung would silently move every question sitting on it.
+    const isActive = req.body.isActive === undefined ? !!row.is_active : !!req.body.isActive;
+
+    if (!isActive) {
+      const [{ live }] = await query(
+        `SELECT COUNT(*) AS live FROM questions
+          WHERE depth = ? AND is_active = 1 AND admin_hidden = 0 AND needs_review = 0`,
+        [row.n]
+      );
+      if (Number(live) > 0 && !req.body.confirmed) {
+        return fail(
+          res,
+          409,
+          `D${row.n} still holds ${live} question${Number(live) === 1 ? '' : 's'} that couples can `
+            + 'be dealt. Switching it off takes all of them out of circulation.'
+        );
+      }
+    }
+
+    await query(
+      `UPDATE depths
+          SET name = COALESCE(?, name), blurb = COALESCE(?, blurb),
+              description = COALESCE(?, description), is_active = ?
+        WHERE id = ?`,
+      [
+        req.body.name === undefined ? null : b.name,
+        req.body.blurb === undefined ? null : b.blurb,
+        req.body.description === undefined ? null : b.description,
+        isActive ? 1 : 0,
+        id,
+      ]
+    );
+    await audit(req, 'depth.update', {
+      targetType: 'depth', targetId: id, targetLabel: `D${row.n} ${row.name}`,
+    });
+    res.json({ ok: true });
+  })
+);
+
+owner.delete(
+  '/depths/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const row = await queryOne('SELECT id, n, name FROM depths WHERE id = ?', [id]);
+    if (!row) return fail(res, 404, 'No such depth.');
+
+    // Refused while anything sits on it. There is no foreign key from
+    // questions.depth to enforce this - deleting the row would leave questions
+    // on a rung that no longer has a name, and they would still be dealt.
+    const [{ n }] = await query('SELECT COUNT(*) AS n FROM questions WHERE depth = ?', [row.n]);
+    if (Number(n) > 0) {
+      return fail(
+        res,
+        400,
+        `${n} question${Number(n) === 1 ? ' sits' : 's sit'} at D${row.n}. Move them to another `
+          + 'depth first, or switch this one off instead - deleting it would leave them on a '
+          + 'rung with no name.'
+      );
+    }
+
+    await query('DELETE FROM depths WHERE id = ?', [id]);
+    await audit(req, 'depth.delete', {
+      targetType: 'depth', targetId: id, targetLabel: `D${row.n} ${row.name}`,
+    });
+    res.json({ ok: true });
+  })
+);
+
+// ---- Lenses (authors) -----------------------------------------------------
+
+owner.get(
+  '/lenses',
+  wrap(async (req, res) => {
+    const rows = await query(
+      `SELECT l.id, l.code, l.name, l.author, l.description, l.brief,
+              l.sort_order, l.is_active,
+              (SELECT COUNT(*) FROM questions q WHERE q.lens = l.code) AS questions
+         FROM lenses l
+        ORDER BY l.sort_order, l.code`
+    );
+    res.json({
+      lenses: rows.map((r) => ({
+        id: r.id,
+        code: r.code,
+        name: r.name,
+        author: r.author,
+        description: r.description,
+        brief: r.brief,
+        sortOrder: r.sort_order,
+        isActive: !!r.is_active,
+        questions: Number(r.questions) || 0,
+        // The brief is what the generator reads. Without one it would be
+        // writing to a name, so the UI says so rather than quietly producing
+        // generic questions under a respected label.
+        ready: !!(r.brief && r.brief.trim()),
+      })),
+    });
+  })
+);
+
+function readLensBody(body) {
+  return {
+    name: String(body.name || '').trim().slice(0, 100),
+    author: String(body.author || '').trim().slice(0, 120) || null,
+    description: String(body.description || '').trim() || null,
+    brief: String(body.brief || '').trim() || null,
+  };
+}
+
+owner.post(
+  '/lenses',
+  wrap(async (req, res) => {
+    const b = readLensBody(req.body);
+    if (!b.name) return fail(res, 400, 'Give the framework a name.');
+
+    const code = String(req.body.code || '').trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(code)) {
+      return fail(res, 400, 'The code is exactly three letters, like SHE or GOT.');
+    }
+    const clash = await queryOne('SELECT id FROM lenses WHERE code = ?', [code]);
+    if (clash) return fail(res, 400, `${code} is already taken.`);
+
+    const [{ n }] = await query('SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM lenses');
+    const result = await query(
+      `INSERT INTO lenses (code, name, author, description, brief, sort_order, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [code, b.name, b.author, b.description, b.brief, n]
+    );
+    await audit(req, 'lens.create', {
+      targetType: 'lens', targetId: result.insertId, targetLabel: `${code} ${b.name}`,
+    });
+    res.status(201).json({ ok: true, id: result.insertId, code });
+  })
+);
+
+owner.patch(
+  '/lenses/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const row = await queryOne('SELECT id, code, name, is_active FROM lenses WHERE id = ?', [id]);
+    if (!row) return fail(res, 404, 'No such framework.');
+
+    const b = readLensBody(req.body);
+    if (req.body.name !== undefined && !b.name) return fail(res, 400, 'Give the framework a name.');
+
+    // `code` is not editable. questions.lens stores it with no foreign key, so
+    // changing it here would orphan every question that carries it.
+    const isActive = req.body.isActive === undefined ? !!row.is_active : !!req.body.isActive;
+
+    await query(
+      `UPDATE lenses
+          SET name = COALESCE(?, name), author = COALESCE(?, author),
+              description = COALESCE(?, description), brief = COALESCE(?, brief),
+              is_active = ?
+        WHERE id = ?`,
+      [
+        req.body.name === undefined ? null : b.name,
+        req.body.author === undefined ? null : b.author,
+        req.body.description === undefined ? null : b.description,
+        req.body.brief === undefined ? null : b.brief,
+        isActive ? 1 : 0,
+        id,
+      ]
+    );
+    await audit(req, 'lens.update', {
+      targetType: 'lens', targetId: id, targetLabel: `${row.code} ${row.name}`,
+    });
+    res.json({ ok: true });
+  })
+);
+
+owner.delete(
+  '/lenses/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const row = await queryOne('SELECT id, code, name FROM lenses WHERE id = ?', [id]);
+    if (!row) return fail(res, 404, 'No such framework.');
+
+    const [{ n }] = await query('SELECT COUNT(*) AS n FROM questions WHERE lens = ?', [row.code]);
+    if (Number(n) > 0) {
+      return fail(
+        res,
+        400,
+        `${n} question${Number(n) === 1 ? ' carries' : 's carry'} the ${row.code} badge. Those `
+          + 'cards would keep being dealt with a badge that opens an empty explanation. Switch '
+          + 'it off instead.'
+      );
+    }
+
+    await query('DELETE FROM lenses WHERE id = ?', [id]);
+    await audit(req, 'lens.delete', {
+      targetType: 'lens', targetId: id, targetLabel: `${row.code} ${row.name}`,
+    });
+    res.json({ ok: true });
+  })
+);
+
+// ---- Chains (linked questions) --------------------------------------------
+//
+// A chain is a recommended running order over cards that circle the same
+// construct at rising exposure. Every card in one still stands alone - that is
+// the invariant the editor has to preserve, so membership is managed here and
+// the questions themselves are never rewritten by it.
+
+/**
+ * Recompute a chain's cached shape from its members.
+ *
+ * total / min_depth / max_depth are derived, and the couple app reads them to
+ * decide where the consent gate falls. Letting them drift from the membership
+ * would put the gate in the wrong place, which is the one thing a chain must
+ * not get wrong.
+ */
+async function recomputeChain(chainId) {
+  const [agg] = await query(
+    `SELECT COUNT(*) AS total, MIN(depth) AS lo, MAX(depth) AS hi
+       FROM questions WHERE chain_id = ?`,
+    [chainId]
+  );
+  await query(
+    'UPDATE chains SET total = ?, min_depth = ?, max_depth = ? WHERE id = ?',
+    [Number(agg.total) || 0, Number(agg.lo) || 1, Number(agg.hi) || 1, chainId]
+  );
+}
+
+owner.get(
+  '/chains',
+  wrap(async (req, res) => {
+    const rows = await query(
+      `SELECT ch.id, ch.name, ch.total, ch.min_depth, ch.max_depth, ch.is_active,
+              d.id AS domainId, d.name AS domainName, d.accent,
+              COUNT(q.id) AS members,
+              SUM(CASE WHEN q.is_volatile = 1 THEN 1 ELSE 0 END) AS volatileCount,
+              SUM(CASE WHEN q.chain_position IS NULL THEN 1 ELSE 0 END) AS unpositioned
+         FROM chains ch
+         LEFT JOIN domains d ON d.id = ch.domain_id
+         LEFT JOIN questions q ON q.chain_id = ch.id
+        GROUP BY ch.id, ch.name, ch.total, ch.min_depth, ch.max_depth, ch.is_active,
+                 d.id, d.name, d.accent
+        ORDER BY ch.name`
+    );
+    res.json({
+      chains: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        total: Number(r.total) || 0,
+        minDepth: Number(r.min_depth) || 1,
+        maxDepth: Number(r.max_depth) || 1,
+        isActive: !!r.is_active,
+        domainId: r.domainId,
+        domainName: r.domainName,
+        accent: r.accent,
+        members: Number(r.members) || 0,
+        volatileCount: Number(r.volatileCount) || 0,
+        unpositioned: Number(r.unpositioned) || 0,
+      })),
+    });
+  })
+);
+
+owner.get(
+  '/chains/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const chain = await queryOne(
+      `SELECT ch.id, ch.name, ch.total, ch.min_depth, ch.max_depth, ch.is_active,
+              ch.domain_id, d.name AS domainName
+         FROM chains ch LEFT JOIN domains d ON d.id = ch.domain_id
+        WHERE ch.id = ?`,
+      [id]
+    );
+    if (!chain) return fail(res, 404, 'No such sequence.');
+
+    const members = await query(
+      `SELECT q.id, q.ref, q.text, q.depth, q.lens, q.is_volatile, q.chain_position,
+              q.admin_hidden, q.needs_review, d.name AS domainName
+         FROM questions q LEFT JOIN domains d ON d.id = q.domain_id
+        WHERE q.chain_id = ?
+        ORDER BY q.chain_position, q.depth, q.id`,
+      [id]
+    );
+
+    res.json({
+      chain: {
+        id: chain.id,
+        name: chain.name,
+        total: Number(chain.total) || 0,
+        minDepth: Number(chain.min_depth) || 1,
+        maxDepth: Number(chain.max_depth) || 1,
+        isActive: !!chain.is_active,
+        domainId: chain.domain_id,
+        domainName: chain.domainName,
+      },
+      members: members.map((m) => ({
+        id: m.id,
+        ref: m.ref,
+        text: m.text,
+        depth: Number(m.depth),
+        lens: m.lens,
+        volatile: !!m.is_volatile,
+        position: m.chain_position === null ? null : Number(m.chain_position),
+        hidden: !!m.admin_hidden,
+        needsReview: !!m.needs_review,
+        domainName: m.domainName,
+      })),
+    });
+  })
+);
+
+owner.post(
+  '/chains',
+  wrap(async (req, res) => {
+    const name = String(req.body.name || '').trim().slice(0, 60);
+    if (!name) return fail(res, 400, 'Give the sequence a name.');
+    const clash = await queryOne('SELECT id FROM chains WHERE name = ?', [name]);
+    if (clash) return fail(res, 400, 'A sequence with that name already exists.');
+
+    const domainId = req.body.domainId ? Number(req.body.domainId) : null;
+    const result = await query(
+      'INSERT INTO chains (name, total, min_depth, max_depth, domain_id, is_active) VALUES (?, 0, 1, 1, ?, 1)',
+      [name, domainId || null]
+    );
+    await audit(req, 'chain.create', {
+      targetType: 'chain', targetId: result.insertId, targetLabel: name,
+    });
+    res.status(201).json({ ok: true, id: result.insertId });
+  })
+);
+
+owner.patch(
+  '/chains/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const chain = await queryOne('SELECT id, name, is_active FROM chains WHERE id = ?', [id]);
+    if (!chain) return fail(res, 404, 'No such sequence.');
+
+    if (req.body.name !== undefined) {
+      const name = String(req.body.name).trim().slice(0, 60);
+      if (!name) return fail(res, 400, 'Give the sequence a name.');
+      const clash = await queryOne('SELECT id FROM chains WHERE name = ? AND id <> ?', [name, id]);
+      if (clash) return fail(res, 400, 'A sequence with that name already exists.');
+      await query('UPDATE chains SET name = ? WHERE id = ?', [name, id]);
+    }
+    if (req.body.domainId !== undefined) {
+      const domainId = req.body.domainId ? Number(req.body.domainId) : null;
+      await query('UPDATE chains SET domain_id = ? WHERE id = ?', [domainId || null, id]);
+    }
+    if (req.body.isActive !== undefined) {
+      await query('UPDATE chains SET is_active = ? WHERE id = ?', [req.body.isActive ? 1 : 0, id]);
+    }
+
+    await audit(req, 'chain.update', { targetType: 'chain', targetId: id, targetLabel: chain.name });
+    res.json({ ok: true });
+  })
+);
+
+/**
+ * Set a chain's membership and running order in one call.
+ *
+ * The whole ordered list, not one add at a time, because the order IS the
+ * content of a chain and a half-applied reorder is a chain that plays wrong.
+ * Questions dropped from the list keep existing and keep being dealt on their
+ * own - leaving a chain is not leaving the collection.
+ */
+owner.put(
+  '/chains/:id/questions',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const chain = await queryOne('SELECT id, name FROM chains WHERE id = ?', [id]);
+    if (!chain) return fail(res, 404, 'No such sequence.');
+
+    const wanted = Array.isArray(req.body.order) ? req.body.order.map(Number).filter(Boolean) : [];
+    const unique = [...new Set(wanted)];
+
+    if (unique.length) {
+      const rows = await query(
+        `SELECT id, chain_id FROM questions WHERE id IN (${unique.map(() => '?').join(',')})`,
+        unique
+      );
+      const found = new Set(rows.map((r) => r.id));
+      const missing = unique.filter((qid) => !found.has(qid));
+      if (missing.length) return fail(res, 400, 'Some of those questions no longer exist.');
+
+      const stolen = rows.filter((r) => r.chain_id && r.chain_id !== id);
+      if (stolen.length && !req.body.confirmed) {
+        return fail(
+          res,
+          409,
+          `${stolen.length} of those question${stolen.length === 1 ? ' is' : 's are'} already in `
+            + 'another sequence. A question can only be in one, so adding it here removes it '
+            + 'from there.'
+        );
+      }
+    }
+
+    const conn = await pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      // Clear first, then re-lay the order, so a question dropped from the list
+      // is actually released rather than left pointing at a position it no
+      // longer occupies.
+      await conn.query(
+        'UPDATE questions SET chain_id = NULL, chain_position = NULL WHERE chain_id = ?',
+        [id]
+      );
+      for (let i = 0; i < unique.length; i += 1) {
+        // eslint-disable-next-line no-await-in-loop
+        await conn.query('UPDATE questions SET chain_id = ?, chain_position = ? WHERE id = ?', [
+          id,
+          i + 1,
+          unique[i],
+        ]);
+      }
+      await conn.commit();
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
+
+    await recomputeChain(id);
+    await audit(req, 'chain.members', {
+      targetType: 'chain',
+      targetId: id,
+      targetLabel: chain.name,
+      detail: `${unique.length} question(s)`,
+    });
+
+    const fresh = await queryOne('SELECT total, min_depth, max_depth FROM chains WHERE id = ?', [id]);
+    res.json({
+      ok: true,
+      total: Number(fresh.total),
+      minDepth: Number(fresh.min_depth),
+      maxDepth: Number(fresh.max_depth),
+    });
+  })
+);
+
+owner.delete(
+  '/chains/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const chain = await queryOne('SELECT id, name FROM chains WHERE id = ?', [id]);
+    if (!chain) return fail(res, 404, 'No such sequence.');
+
+    // Safe by construction: questions.chain_id is ON DELETE SET NULL, so the
+    // questions survive and go back to being dealt individually. Only the
+    // recommended order is thrown away - which is what "delete a sequence"
+    // ought to mean.
+    const [{ n }] = await query('SELECT COUNT(*) AS n FROM questions WHERE chain_id = ?', [id]);
+    await query('DELETE FROM chains WHERE id = ?', [id]);
+    await audit(req, 'chain.delete', {
+      targetType: 'chain', targetId: id, targetLabel: chain.name, detail: `released ${n} question(s)`,
+    });
+    res.json({ ok: true, released: Number(n) || 0 });
+  })
+);
+
+// ---- AI configuration and generation --------------------------------------
+
+owner.get(
+  '/ai',
+  wrap(async (req, res) => {
+    const { key, source, unreadable } = await resolveAnthropicKey();
+    const model = (await getSetting('anthropic_model')) || AI_DEFAULT_MODEL;
+    res.json({
+      // The key itself is NEVER in this payload. Only whether one exists, where
+      // it came from, and enough of it to recognise which key it is.
+      configured: !!key,
+      masked: maskKey(key),
+      source,
+      unreadable,
+      model,
+      defaultModel: AI_DEFAULT_MODEL,
+    });
+  })
+);
+
+owner.put(
+  '/ai',
+  wrap(async (req, res) => {
+    if (req.body.apiKey) {
+      const k = String(req.body.apiKey).trim();
+      if (k.length < 20) return fail(res, 400, 'That does not look like an API key.');
+      await setSetting('anthropic_api_key', encryptSecret(k));
+      await audit(req, 'ai.key.set', { detail: maskKey(k) });
+    } else if (req.body.clearKey) {
+      await setSetting('anthropic_api_key', null);
+      await audit(req, 'ai.key.clear');
+    }
+
+    if (req.body.model !== undefined) {
+      const m = String(req.body.model).trim().slice(0, 60);
+      await setSetting('anthropic_model', m || null);
+    }
+
+    res.json({ ok: true });
+  })
+);
+
+owner.post(
+  '/ai/generate',
+  wrap(async (req, res) => {
+    const { key, unreadable } = await resolveAnthropicKey();
+    if (unreadable) {
+      return fail(res, 400, 'The stored API key cannot be read. Enter it again and save.');
+    }
+    if (!key) return fail(res, 400, 'Add an Anthropic API key first.');
+
+    const model = (await getSetting('anthropic_model')) || AI_DEFAULT_MODEL;
+
+    const lens = req.body.lensCode
+      ? await queryOne('SELECT code, name, author, description, brief FROM lenses WHERE code = ?', [
+          String(req.body.lensCode).trim().toUpperCase(),
+        ])
+      : null;
+    if (req.body.lensCode && !lens) return fail(res, 400, 'No such framework.');
+
+    const domain = req.body.domainId
+      ? await queryOne('SELECT id, slug, name, tagline, description FROM domains WHERE id = ?', [
+          Number(req.body.domainId),
+        ])
+      : null;
+    if (req.body.domainId && !domain) return fail(res, 400, 'No such topic.');
+    if (!domain) return fail(res, 400, 'Choose which topic these belong to.');
+
+    const ladder = await activeDepths();
+    const valid = new Set(ladder.map((d) => d.n));
+    const depths = [
+      ...new Set((Array.isArray(req.body.depths) ? req.body.depths : []).map(Number).filter((n) => valid.has(n))),
+    ].sort((a, b) => a - b);
+    if (!depths.length) return fail(res, 400, 'Choose at least one depth.');
+
+    const count = Math.min(20, Math.max(1, Number(req.body.count) || 8));
+    const note = String(req.body.note || '').trim().slice(0, 500) || null;
+
+    // Show it what is already there. Without this the same twenty questions
+    // come back under different framework names, which is worse than useless -
+    // it looks like coverage.
+    const existing = await query(
+      `SELECT text FROM questions
+        WHERE domain_id = ? ${lens ? 'AND lens = ?' : ''}
+        ORDER BY RAND() LIMIT 40`,
+      lens ? [domain.id, lens.code] : [domain.id]
+    );
+
+    let candidates;
+    try {
+      candidates = await generateCandidates({
+        key,
+        model,
+        lens,
+        domain,
+        depths,
+        ladder,
+        count,
+        note,
+        avoid: existing.map((r) => r.text),
+      });
+    } catch (err) {
+      // Surfaced as a 400 with the real reason rather than a 500, because every
+      // realistic failure here (bad key, refusal, cut-off reply) is something
+      // the owner can act on.
+      return fail(res, 400, err.message);
+    }
+
+    if (!candidates.length) return fail(res, 400, 'Nothing came back. Try again.');
+
+    const batch = crypto.randomBytes(8).toString('hex');
+    let ok = 0;
+    let flagged = 0;
+    let rejected = 0;
+
+    for (const c of candidates) {
+      const text = String(c.question || '').trim().slice(0, 500);
+      const context = String(c.context || '').trim().slice(0, 500) || null;
+      const depth = valid.has(Number(c.depth)) ? Number(c.depth) : depths[0];
+
+      // THE ENFORCEMENT. The prompt asked for these rules; this is what makes
+      // them true. A model that ignored them produces a draft marked rejected,
+      // not a card in the deck.
+      const verdictRaw = checkQuestion(text, context);
+      const verdict = verdictRaw.fatal ? 'rejected' : verdictRaw.issues.length ? 'review' : 'ok';
+      if (verdict === 'ok') ok += 1;
+      else if (verdict === 'review') flagged += 1;
+      else rejected += 1;
+
+      // eslint-disable-next-line no-await-in-loop
+      await query(
+        `INSERT INTO question_drafts
+           (batch, lens, domain_id, depth, text, context, is_volatile, verdict, issues,
+            status, model, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+        [
+          batch,
+          lens ? lens.code : null,
+          domain.id,
+          depth,
+          text,
+          context,
+          c.volatile ? 1 : 0,
+          verdict,
+          verdictRaw.issues.map((i) => `${i.level}: ${i.why}`).join(' · ').slice(0, 500) || null,
+          model,
+          req.user.id,
+        ]
+      );
+    }
+
+    await audit(req, 'ai.generate', {
+      targetType: 'domain',
+      targetId: domain.id,
+      targetLabel: `${lens ? `${lens.code} · ` : ''}${domain.name}`,
+      detail: `${candidates.length} drafted (${ok} clean, ${flagged} flagged, ${rejected} rejected) via ${model}`,
+    });
+
+    res.json({ ok: true, batch, drafted: candidates.length, clean: ok, flagged, rejected });
+  })
+);
+
+// ---- Drafts ---------------------------------------------------------------
+
+owner.get(
+  '/drafts',
+  wrap(async (req, res) => {
+    const status = ['pending', 'accepted', 'discarded'].includes(req.query.status)
+      ? req.query.status
+      : 'pending';
+
+    const rows = await query(
+      `SELECT dr.id, dr.batch, dr.lens, dr.depth, dr.text, dr.context, dr.is_volatile,
+              dr.verdict, dr.issues, dr.status, dr.model, dr.created_at, dr.question_id,
+              d.id AS domainId, d.name AS domainName, d.slug AS domainSlug,
+              l.name AS lensName, u.display_name AS byName
+         FROM question_drafts dr
+         LEFT JOIN domains d ON d.id = dr.domain_id
+         LEFT JOIN lenses l ON l.code = dr.lens
+         LEFT JOIN users u ON u.id = dr.created_by
+        WHERE dr.status = ?
+        ORDER BY dr.created_at DESC, dr.id
+        LIMIT 300`,
+      [status]
+    );
+
+    const [counts] = await query(
+      `SELECT
+         SUM(status = 'pending')   AS pending,
+         SUM(status = 'accepted')  AS accepted,
+         SUM(status = 'discarded') AS discarded
+       FROM question_drafts`
+    );
+
+    res.json({
+      status,
+      counts: {
+        pending: Number(counts.pending) || 0,
+        accepted: Number(counts.accepted) || 0,
+        discarded: Number(counts.discarded) || 0,
+      },
+      drafts: rows.map((r) => ({
+        id: r.id,
+        batch: r.batch,
+        lens: r.lens,
+        lensName: r.lensName,
+        depth: Number(r.depth),
+        text: r.text,
+        context: r.context,
+        volatile: !!r.is_volatile,
+        verdict: r.verdict,
+        issues: r.issues,
+        status: r.status,
+        model: r.model,
+        createdAt: r.created_at,
+        questionId: r.question_id,
+        domainId: r.domainId,
+        domainName: r.domainName,
+        domainSlug: r.domainSlug,
+        byName: r.byName,
+      })),
+    });
+  })
+);
+
+/**
+ * Edit a draft.
+ *
+ * Re-checks on every save, so a rejected draft is released by REWRITING it -
+ * the same rule the questions editor applies. Clearing the verdict without
+ * touching the words would just move a broken card one step closer to a couple.
+ */
+owner.patch(
+  '/drafts/:id',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const d = await queryOne('SELECT * FROM question_drafts WHERE id = ?', [id]);
+    if (!d) return fail(res, 404, 'No such draft.');
+    if (d.status !== 'pending') return fail(res, 400, 'That draft has already been dealt with.');
+
+    const text = req.body.text === undefined ? d.text : String(req.body.text).trim().slice(0, 500);
+    const context =
+      req.body.context === undefined
+        ? d.context
+        : String(req.body.context).trim().slice(0, 500) || null;
+    if (!text) return fail(res, 400, 'Enter the question.');
+
+    const ladder = await activeDepths();
+    const valid = new Set(ladder.map((x) => x.n));
+    const depth =
+      req.body.depth === undefined || !valid.has(Number(req.body.depth))
+        ? d.depth
+        : Number(req.body.depth);
+    const domainId = req.body.domainId === undefined ? d.domain_id : Number(req.body.domainId) || null;
+    const isVolatile = req.body.volatile === undefined ? !!d.is_volatile : !!req.body.volatile;
+
+    const check = checkQuestion(text, context);
+    const verdict = check.fatal ? 'rejected' : check.issues.length ? 'review' : 'ok';
+
+    await query(
+      `UPDATE question_drafts
+          SET text = ?, context = ?, depth = ?, domain_id = ?, is_volatile = ?,
+              verdict = ?, issues = ?
+        WHERE id = ?`,
+      [
+        text,
+        context,
+        depth,
+        domainId,
+        isVolatile ? 1 : 0,
+        verdict,
+        check.issues.map((i) => `${i.level}: ${i.why}`).join(' · ').slice(0, 500) || null,
+        id,
+      ]
+    );
+    res.json({ ok: true, verdict, issues: check.issues });
+  })
+);
+
+/**
+ * Accept a draft into the collection.
+ *
+ * Refuses a draft the rules reject. That is the point of the whole queue: the
+ * owner can override a "review" note, which is what review means, but "this
+ * card cannot be answered without having seen another one" is not a matter of
+ * taste, and there is no button that says otherwise.
+ */
+owner.post(
+  '/drafts/:id/accept',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const d = await queryOne('SELECT * FROM question_drafts WHERE id = ?', [id]);
+    if (!d) return fail(res, 404, 'No such draft.');
+    if (d.status !== 'pending') return fail(res, 400, 'That draft has already been dealt with.');
+    if (!d.domain_id) return fail(res, 400, 'Give it a topic first.');
+
+    // Re-checked at the moment of acceptance rather than trusting the stored
+    // verdict, so a rule tightened since the draft was written still applies.
+    const check = checkQuestion(d.text, d.context);
+    if (check.fatal) {
+      return fail(
+        res,
+        400,
+        `This cannot be served as written - ${check.issues
+          .filter((i) => i.level === 'fatal')
+          .map((i) => i.why)
+          .join('; ')}. Rewrite it first.`
+      );
+    }
+
+    const ref = `gen-${crypto.randomBytes(6).toString('hex')}`;
+    const [{ n }] = await query(
+      'SELECT COALESCE(MAX(sort_order), 0) + 1 AS n FROM questions WHERE domain_id = ?',
+      [d.domain_id]
+    );
+
+    const result = await query(
+      `INSERT INTO questions
+         (ref, domain_id, depth, lens, is_volatile, source, text, context, sort_order,
+          needs_review, review_note, is_active, admin_hidden)
+       VALUES (?, ?, ?, ?, ?, 'admin', ?, ?, ?, 0, NULL, 1, 0)`,
+      [ref, d.domain_id, d.depth, d.lens, d.is_volatile, d.text, d.context, n]
+    );
+
+    await query(
+      "UPDATE question_drafts SET status = 'accepted', question_id = ?, reviewed_at = NOW() WHERE id = ?",
+      [result.insertId, id]
+    );
+    await audit(req, 'draft.accept', {
+      targetType: 'question',
+      targetId: result.insertId,
+      targetLabel: d.text.slice(0, 120),
+      detail: `from draft ${id}${d.lens ? ` (${d.lens})` : ''}`,
+    });
+    res.json({ ok: true, questionId: result.insertId, ref });
+  })
+);
+
+owner.post(
+  '/drafts/:id/discard',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const d = await queryOne('SELECT id, text, status FROM question_drafts WHERE id = ?', [id]);
+    if (!d) return fail(res, 404, 'No such draft.');
+    if (d.status !== 'pending') return fail(res, 400, 'That draft has already been dealt with.');
+
+    // Kept, not deleted. A discarded draft is the record of what was tried and
+    // turned down, which is exactly what stops the same idea coming back next
+    // month looking new.
+    await query("UPDATE question_drafts SET status = 'discarded', reviewed_at = NOW() WHERE id = ?", [id]);
+    await audit(req, 'draft.discard', {
+      targetType: 'draft', targetId: id, targetLabel: d.text.slice(0, 120),
+    });
     res.json({ ok: true });
   })
 );

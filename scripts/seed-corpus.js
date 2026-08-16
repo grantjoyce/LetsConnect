@@ -121,33 +121,124 @@ const DOMAIN_PRESENTATION = {
 };
 
 /**
- * Couple-facing copy for each lens, shown when someone taps the code on a card.
+ * Copy for each lens. FOUR fields, two audiences.
  *
- * Written to describe the WAY OF LOOKING, never a book, a deck or an author's
+ *   [0] name        - the heading on the modal
+ *   [1] description - COUPLE-FACING. What someone reads when they tap the code
+ *                     on a card, written for a phone.
+ *   [2] author      - whose framework it is, or null where there is none
+ *   [3] brief       - GENERATOR-FACING. What the framework actually
+ *                     interrogates, written so a question can be composed
+ *                     against it. Never shown to a couple.
+ *
+ * The two prose fields cannot do each other's job: a couple reading a construct
+ * list learns nothing, and a generator reading marketing copy writes generic
+ * questions under a respected name.
+ *
+ * All of it describes the WAY OF LOOKING, never a book, a deck or an author's
  * published material. That is the same line the corpus draws: frameworks are
  * ideas and can be built on freely; expression is protected. Naming the person
- * whose framework it is is attribution, not reproduction.
- *
- * The corpus supplies a one-line note per block; these are longer and written
- * for someone holding a phone, not for a content editor.
+ * whose framework it is is attribution, not reproduction. Five blocks have no
+ * authority behind them at all and say so - attaching Money to a lens would be
+ * a false attribution.
  */
 const LENS_COPY = {
-  GOT: ['Everyday connection', 'Built on the idea that relationships are made in small moments rather than grand ones: noticing each other, turning towards the little bids for attention, and keeping the rituals that hold a couple together. Named for the Gottmans, whose framework this follows.'],
-  PER: ['Desire and distance', 'Looks at the tension between wanting security and wanting freedom, and at how closeness and mystery both feed attraction. Follows Esther Perel’s framework.'],
-  REA: ['Honesty without blame', 'Concerns the difference between speaking plainly and attacking, and what people do with their own part in a problem. Follows Terry Real’s framework.'],
-  EFT: ['The cycle underneath', 'Treats most repeated arguments as one cycle playing out again, driven by a need neither person has said out loud. Drawn from Emotionally Focused work generally rather than one author.'],
-  SOL: ['Knowing your own patterns', 'About seeing your own habits clearly enough to choose differently, rather than explaining your partner to themselves. Follows Alexandra Solomon’s framework.'],
-  MNN: ['How you attach', 'Concerns what each of you does when you feel disconnected — reach harder, or go quiet — and how those reactions collide. Follows Elizabeth Menanno’s framework.'],
-  PHA: ['What you inherited', 'About the family you each grew up in, and the rules about love you absorbed before you were old enough to question them. Follows Vienna Pharaon’s framework.'],
-  TUR: ['Your side of it', 'Stays firmly on what is yours to own, change or admit, rather than what your partner should do differently. Follows Jerry Turecki’s framework.'],
-  NAG: ['How desire works', 'Based on the idea that desire has accelerators and brakes, and that taking your foot off the brake matters more than pressing harder. Follows Emily Nagoski’s framework.'],
-  MAR: ['Saying what you want', 'About being able to talk plainly about sex — what you like, what you do not, and what is hard to raise. Follows Vanessa Marin’s framework.'],
-  LEH: ['Fantasy and novelty', 'Concerns imagination, curiosity and the agreements a couple needs before exploring anything new. Follows Justin Lehmiller’s framework.'],
-  OPN: ['Opening questions', 'Light, low-risk questions written to start a conversation rather than to test one. Not drawn from any framework.'],
-  MON: ['Money', 'Written to the subject directly. No relationship framework covers money properly, and it is among the most common things couples fight about.'],
-  HOM: ['Home and household', 'Written to the subject directly: space, chores, rest, and the invisible work of running a life together.'],
-  FUT: ['The future and ageing', 'Written to the subject directly: plans, decisions, getting older, and the practical arrangements couples avoid making.'],
-  WRK: ['Work and ambition', 'Written to the subject directly: what work takes, what it gives, and what it costs the two of you.'],
+  GOT: [
+    'Everyday connection',
+    'Built on the idea that relationships are made in small moments rather than grand ones: noticing each other, turning towards the little bids for attention, and keeping the rituals that hold a couple together. Named for the Gottmans, whose framework this follows.',
+    'The Gottmans',
+    'Relationships are built or eroded in small daily moments rather than in crises. Interrogate: bids for attention and whether they are turned towards, away from or against; the ratio of warmth to criticism in ordinary exchanges; contempt as the strongest predictor of decay; repair attempts and whether they are accepted; shared rituals of connection; how well each partner knows the other’s inner world.',
+  ],
+  PER: [
+    'Desire and distance',
+    'Looks at the tension between wanting security and wanting freedom, and at how closeness and mystery both feed attraction. Follows Esther Perel’s framework.',
+    'Esther Perel',
+    'Security and adventure are both real needs and they pull against each other. Interrogate: what closeness costs desire; the distance required to want someone; how each partner keeps a self that is not absorbed into the couple; the difference between being loved and being wanted; erotic imagination as separate from intimacy; what each person is unwilling to give up.',
+  ],
+  REA: [
+    'Honesty without blame',
+    'Concerns the difference between speaking plainly and attacking, and what people do with their own part in a problem. Follows Terry Real’s framework.',
+    'Terry Real',
+    'Directness and contempt are not the same act. Interrogate: the move from grandiosity or shame into level standing; owning a share of a problem without collapsing into fault; what each person does when they feel one-up or one-down; the difference between a complaint and a character verdict; asking for something rather than proving a point.',
+  ],
+  EFT: [
+    'The cycle underneath',
+    'Treats most repeated arguments as one cycle playing out again, driven by a need neither person has said out loud. Drawn from Emotionally Focused work generally rather than one author.',
+    null,
+    'A couple usually has one argument in many costumes, driven by attachment fear rather than the stated topic. Interrogate: the pursue-withdraw loop and each person’s move in it; the softer feeling underneath the loud one; what each partner is afraid the other will conclude about them; the moment a fight turns from an issue into a question about the bond.',
+  ],
+  SOL: [
+    'Knowing your own patterns',
+    'About seeing your own habits clearly enough to choose differently, rather than explaining your partner to themselves. Follows Alexandra Solomon’s framework.',
+    'Alexandra Solomon',
+    'Relational self-awareness: knowing your own patterns well enough to choose differently. Interrogate: the story each person tells about why they are like this; what gets repeated across relationships; the gap between intent and impact; noticing a reaction as it starts rather than after it lands; taking responsibility without self-punishment.',
+  ],
+  MNN: [
+    'How you attach',
+    'Concerns what each of you does when you feel disconnected — reach harder, or go quiet — and how those reactions collide. Follows Elizabeth Menanno’s framework.',
+    'Elizabeth Menanno',
+    'Attachment style as observable behaviour under threat, not a label. Interrogate: what each person does in the first hour of feeling disconnected — reach harder, go quiet, get busy, get sharp; what reassurance actually lands; how the two reactions collide and escalate; what each person learned to expect when they needed someone.',
+  ],
+  PHA: [
+    'What you inherited',
+    'About the family you each grew up in, and the rules about love you absorbed before you were old enough to question them. Follows Vienna Pharaon’s framework.',
+    'Vienna Pharaon',
+    'The rules about love absorbed in the family of origin, before anyone was old enough to question them. Interrogate: what was modelled about conflict, affection, money and repair; the unspoken family rule each person is still obeying; what each of them swore never to repeat and does anyway; what a parent needed from them that a partner is now expected to supply.',
+  ],
+  TUR: [
+    'Your side of it',
+    'Stays firmly on what is yours to own, change or admit, rather than what your partner should do differently. Follows Jerry Turecki’s framework.',
+    'Jerry Turecki',
+    'Everything stays on the speaker’s own side of the line. Interrogate: what is genuinely theirs to change; what they have been waiting for the other person to do first; the request they have never actually made out loud; the difference between an apology and an explanation; what they would have to give up to stop being right.',
+  ],
+  NAG: [
+    'How desire works',
+    'Based on the idea that desire has accelerators and brakes, and that taking your foot off the brake matters more than pressing harder. Follows Emily Nagoski’s framework.',
+    'Emily Nagoski',
+    'Desire has accelerators and brakes, and releasing a brake usually matters more than pressing the accelerator. Interrogate: what quietly stops desire — exhaustion, resentment, being watched, an unfinished argument; responsive rather than spontaneous wanting; the context required rather than the technique; what each person needs to have happened earlier in the day.',
+  ],
+  MAR: [
+    'Saying what you want',
+    'About being able to talk plainly about sex — what you like, what you do not, and what is hard to raise. Follows Vanessa Marin’s framework.',
+    'Vanessa Marin',
+    'Being able to say plainly what you want, and hear it without defending. Interrogate: what has never been said out loud and why; how a preference gets raised without it sounding like a complaint; what each person assumes the other wants and has never checked; how they signal yes, no and not tonight; what feedback feels like criticism.',
+  ],
+  LEH: [
+    'Fantasy and novelty',
+    'Concerns imagination, curiosity and the agreements a couple needs before exploring anything new. Follows Justin Lehmiller’s framework.',
+    'Justin Lehmiller',
+    'Imagination, curiosity and the agreements that make exploring anything new safe. Interrogate: the distance between a fantasy and a wish to act on it; what each person is curious about and has not raised; what would need to be agreed first; how they would say no to each other; what novelty is for in a long relationship.',
+  ],
+  OPN: [
+    'Opening questions',
+    'Light, low-risk questions written to start a conversation rather than to test one. Not drawn from any framework.',
+    null,
+    'No framework. Light, low-risk questions written to start a conversation rather than test one. Interrogate: preferences, small habits, everyday noticing, the ordinary texture of a life. Nothing here should require a decision about how honest to be.',
+  ],
+  MON: [
+    'Money',
+    'Written to the subject directly. No relationship framework covers money properly, and it is among the most common things couples fight about.',
+    null,
+    'No framework — written to the subject directly, because none covers money properly and it is among the most common things couples fight about. Interrogate: what money meant growing up; security versus enjoyment; secrecy and small concealments; who decides what; earning disparity; debt; what each person considers waste; what they are saving for and whether the other agrees.',
+  ],
+  HOM: [
+    'Home and household',
+    'Written to the subject directly: space, chores, rest, and the invisible work of running a life together.',
+    null,
+    'No framework — written to the subject directly. Interrogate: the invisible work of noticing what needs doing; standards that differ and are never negotiated; rest and who gets it; space, mess and territory; hosting; what home is supposed to feel like and where that expectation came from.',
+  ],
+  FUT: [
+    'The future and ageing',
+    'Written to the subject directly: plans, decisions, getting older, and the practical arrangements couples avoid making.',
+    null,
+    'No framework — written to the subject directly. Interrogate: plans that have been assumed rather than agreed; getting older and what each person fears about it; care, illness and the arrangements couples avoid making; where they will live; what they still want to do and whether time is being spent on it.',
+  ],
+  WRK: [
+    'Work and ambition',
+    'Written to the subject directly: what work takes, what it gives, and what it costs the two of you.',
+    null,
+    'No framework — written to the subject directly. Interrogate: what work gives each person that the relationship does not; ambition and whose is being deferred; what work takes from the evenings; identity tied to a job; what each would do if money were settled; what the other’s work costs them.',
+  ],
 };
 
 function slugify(v) {
@@ -174,11 +265,26 @@ async function run(options = {}) {
     for (let i = 0; i < (corpus.lenses || []).length; i += 1) {
       const l = corpus.lenses[i];
       const copy = LENS_COPY[l.prefix];
+      // COALESCE on the existing values, not on the seed: an author or brief the
+      // owner has written in the admin area must survive every later seed. Only
+      // a blank column is filled in. Name and description keep their previous
+      // behaviour and are left alone entirely on an existing row.
       const [res] = await conn.query(
-        `INSERT INTO lenses (code, name, description, sort_order, is_active)
-         VALUES (?, ?, ?, ?, 1)
-         ON DUPLICATE KEY UPDATE sort_order = VALUES(sort_order), is_active = 1`,
-        [l.prefix, copy ? copy[0] : l.title, copy ? copy[1] : l.note || null, i + 1]
+        `INSERT INTO lenses (code, name, author, description, brief, sort_order, is_active)
+         VALUES (?, ?, ?, ?, ?, ?, 1)
+         ON DUPLICATE KEY UPDATE
+           sort_order = VALUES(sort_order),
+           is_active  = 1,
+           author     = COALESCE(author, VALUES(author)),
+           brief      = COALESCE(brief, VALUES(brief))`,
+        [
+          l.prefix,
+          copy ? copy[0] : l.title,
+          copy ? copy[2] : null,
+          copy ? copy[1] : l.note || null,
+          copy ? copy[3] : null,
+          i + 1,
+        ]
       );
       if (res.affectedRows === 1) lensesAdded += 1;
     }

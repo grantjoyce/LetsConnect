@@ -111,17 +111,39 @@ CREATE TABLE IF NOT EXISTS domains (
   UNIQUE KEY uq_domains_slug (slug)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Depth: exposure, nothing to do with subject. Rows rather than a constant so
+-- the ladder's couple-facing wording can be edited without a deploy, the same
+-- reason domains and questions live here. `n` is what questions.depth stores.
+CREATE TABLE IF NOT EXISTS depths (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  n           TINYINT NOT NULL,
+  name        VARCHAR(60) NOT NULL,
+  blurb       VARCHAR(200) NULL,
+  description TEXT NULL,
+  sort_order  INT NOT NULL DEFAULT 0,
+  is_active   TINYINT(1) NOT NULL DEFAULT 1,
+  created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_depths_n (n)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- The framework a question was written against, shown as a three-letter code
 -- in the card's top corner and explained when tapped.
 --
 -- questions.lens holds the code with NO foreign key, on purpose: the lens is
 -- provenance, and a question whose lens was renamed or removed must keep being
 -- served rather than break.
+--
+-- Two audiences, two columns: `description` is couple-facing copy read on a
+-- phone; `brief` is written for the generator and says what the framework
+-- actually interrogates. Neither can do the other's job.
 CREATE TABLE IF NOT EXISTS lenses (
   id          INT AUTO_INCREMENT PRIMARY KEY,
   code        VARCHAR(3) NOT NULL,
   name        VARCHAR(100) NOT NULL,
+  author      VARCHAR(120) NULL,
   description TEXT NULL,
+  brief       TEXT NULL,
   sort_order  INT NOT NULL DEFAULT 0,
   is_active   TINYINT(1) NOT NULL DEFAULT 1,
   created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -204,6 +226,45 @@ CREATE TABLE IF NOT EXISTS couple_chain_progress (
     REFERENCES couples (id) ON DELETE CASCADE,
   CONSTRAINT fk_chain_progress_chain FOREIGN KEY (chain_id)
     REFERENCES chains (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Generated candidates, waiting on a person.
+--
+-- Nothing written by a model reaches `questions` directly. Asking for an open,
+-- standalone, non-binary question produces a REQUEST for one, not a guarantee,
+-- so every candidate is put through the same construction rules the corpus
+-- build applies (lib/question-rules.js) and then read by the owner. `verdict`
+-- and `issues` are what the code decided; `status` is what the person decided.
+CREATE TABLE IF NOT EXISTS question_drafts (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  batch        VARCHAR(40) NOT NULL,
+  lens         VARCHAR(3) NULL,
+  domain_id    INT NULL,
+  depth        TINYINT NOT NULL DEFAULT 2,
+  text         TEXT NOT NULL,
+  context      VARCHAR(500) NULL,
+  is_volatile  TINYINT(1) NOT NULL DEFAULT 0,
+  verdict      ENUM('ok','review','rejected') NOT NULL DEFAULT 'ok',
+  issues       VARCHAR(500) NULL,
+  status       ENUM('pending','accepted','discarded') NOT NULL DEFAULT 'pending',
+  question_id  INT NULL,
+  model        VARCHAR(60) NULL,
+  created_by   INT NULL,
+  created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  reviewed_at  DATETIME NULL,
+  KEY idx_drafts_status (status, created_at),
+  KEY idx_drafts_batch (batch),
+  KEY fk_drafts_domain (domain_id),
+  KEY fk_drafts_question (question_id),
+  KEY fk_drafts_user (created_by),
+  CONSTRAINT fk_drafts_domain FOREIGN KEY (domain_id)
+    REFERENCES domains (id) ON DELETE SET NULL,
+  -- SET NULL, not CASCADE: if an accepted question is later deleted, the record
+  -- that it was generated and reviewed is still worth keeping.
+  CONSTRAINT fk_drafts_question FOREIGN KEY (question_id)
+    REFERENCES questions (id) ON DELETE SET NULL,
+  CONSTRAINT fk_drafts_user FOREIGN KEY (created_by)
+    REFERENCES users (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------

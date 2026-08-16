@@ -35,29 +35,18 @@ const BLOCK = /^##\s+([A-Z]{3})\.\s*(.+?)\s*$/;
 
 // ---------------------------------------------------------------------------
 // Validation, from section 5 of the corpus
+//
+// The per-question rules now live in lib/question-rules.js, because they have a
+// second caller: questions written by the generator in the admin area. Keeping
+// two copies would let them drift, and the copy that drifted would be the one
+// guarding the newer, less-reviewed content.
+//
+// What stays here is the part that is specific to a FILE of questions rather
+// than to one question: duplicate refs, and the hand-reviewed standalone list
+// below, which is keyed by ref and so has no meaning to a freshly written card.
 // ---------------------------------------------------------------------------
 
-const OPENERS = /^(which ones|which of yours|who failed|does that|do those|and |but |so |what about|how about|where did that|why not|same for you|what else)/i;
-const FRAGMENT = /^(what|who|where|when|how|why|which)(\s+\w+){0,3}\?$/i;
-const DANGLING = /^\W*(that|those|them|it|this|these)\b/i;
-const AUXILIARY = /^(do|does|did|is|are|was|were|have|has|had|can|could|will|would|should|shall|am)\b/i;
-const CONTEXT_EXAMPLE = /\b(for example|e\.g\.|such as|like when|perhaps you)\b/i;
-
-/**
- * Possible dangling demonstrative. ADVISORY ONLY - see below.
- *
- * English uses "that" as a relative pronoun ("the first image that arrives")
- * and as a pointer ("is that arrangement still right"). The first is correct
- * and extremely common; the second cannot stand alone. Telling them apart
- * needs a part-of-speech parser, and a regex approximation fires on roughly
- * one question in twenty-five - almost all of them correct English.
- *
- * The corpus warns about exactly this: a validator that fires on a large slice
- * of the corpus gets ignored within a day, and the fix is a tighter rule rather
- * than a lower bar. This rule cannot be tightened reliably, so it advises
- * rather than blocks, and the genuine failures are listed by hand below.
- */
-const DEMONSTRATIVE = /\b(that|those|these)\s+(?!(you|we|i|he|she|they|is|was|are|were|has|have|had|do|does|did|would|could|will|can|should|makes|made|feel|feels|felt|sounds|reminds|stayed|landed|hurts|works|matters|means|costs|helps|comes|goes|keeps|stops|shows|puts|gets|takes|needs|belongs|happened|changed|carries|protects|drives|sits|lives|runs|much|many|way|kind|sort|one|thing)\b)(\w+)/i;
+const { checkQuestion } = require('../lib/question-rules');
 
 /**
  * Hand-reviewed failures of the standalone rule.
@@ -92,45 +81,25 @@ function validate(rows) {
   const seen = new Set();
 
   for (const r of rows) {
-    const q = r.question;
     r.issues = [];
 
+    // File-scoped: only a corpus can have a duplicate ref.
     if (seen.has(r.ref)) r.issues.push({ level: 'fatal', why: 'duplicate ID' });
     seen.add(r.ref);
 
-    if (q.split(/\s+/).length < 5) r.issues.push({ level: 'fatal', why: 'too short to stand alone' });
+    const shared = checkQuestion(r.question, r.context);
 
-    // An auxiliary opener is only binary if there is no either/or in it.
-    // "Are you a spender or a saver?" opens with "Are" and cannot be answered
-    // yes or no, so treating it as binary would be a false positive.
-    if (AUXILIARY.test(q) && !/\bor\b/i.test(q)) {
-      r.issues.push({ level: 'fatal', why: 'answerable with yes or no' });
-    } else if (AUXILIARY.test(q)) {
-      r.issues.push({ level: 'review', why: 'opens on an auxiliary; either/or rescues it, but it reads closed' });
-    }
-
-    if (OPENERS.test(q) || FRAGMENT.test(q) || DANGLING.test(q)) {
-      r.issues.push({ level: 'fatal', why: 'reads as a follow-on, not standalone' });
-    }
+    // The hand-reviewed list is keyed by ref and REPLACES the advisory
+    // demonstrative warning for that question - a ref on the list has already
+    // been read by a person, so a "check this reads on its own" note under it
+    // would be telling the reader to redo work that produced the entry.
     if (NOT_STANDALONE[r.ref]) {
-      r.issues.push({ level: 'fatal', why: `not standalone: ${NOT_STANDALONE[r.ref]}` });
+      r.issues.push(
+        ...shared.issues.filter((i) => !i.why.startsWith('check "')),
+        { level: 'fatal', why: `not standalone: ${NOT_STANDALONE[r.ref]}` }
+      );
     } else {
-      const dem = q.match(DEMONSTRATIVE);
-      if (dem) {
-        r.issues.push({
-          level: 'review',
-          why: `check "${dem[1]} ${dem[3]}" reads on its own (usually a relative pronoun and fine)`,
-        });
-      }
-    }
-
-    if (!r.context) r.issues.push({ level: 'fatal', why: 'missing context line' });
-    else {
-      if (r.context.split(/\s+/).length > 18) r.issues.push({ level: 'review', why: 'context over 18 words' });
-      if (r.context.trim().endsWith('?')) r.issues.push({ level: 'review', why: 'context asks a second question' });
-      if (CONTEXT_EXAMPLE.test(r.context)) {
-        r.issues.push({ level: 'review', why: 'context supplies an example answer' });
-      }
+      r.issues.push(...shared.issues);
     }
 
     r.fatal = r.issues.some((i) => i.level === 'fatal');

@@ -1,6 +1,6 @@
 {
   "name": "lets-connect",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "description": "Let's Connect - a PWA that gives couples curated questions to discuss, one card at a time.",
   "main": "server.js",
@@ -19,6 +19,7 @@
     "migrate-add-question-reports": "node scripts/migrate-add-question-reports.js",
     "migrate-corpus-model": "node scripts/migrate-corpus-model.js",
     "migrate-add-lenses": "node scripts/migrate-add-lenses.js",
+    "migrate-add-authoring": "node scripts/migrate-add-authoring.js",
     "migrate-seed-corpus": "node scripts/migrate-seed-corpus.js",
     "build-corpus": "node scripts/build-corpus.js",
     "seed-corpus": "node scripts/seed-corpus.js",
@@ -26,6 +27,7 @@
     "make-icons": "node scripts/make-icons.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.117.1",
     "bcryptjs": "^2.4.3",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",

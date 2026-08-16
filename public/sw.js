@@ -74,6 +74,22 @@ self.addEventListener('fetch', (event) => {
   // browser - an opaque response in the cache tells us nothing useful.
   if (url.origin !== self.location.origin) return;
 
+  /**
+   * The admin area is not ours.
+   *
+   * This worker is registered from the couple app at scope "/", which means it
+   * also controls /admin/ - and /admin/index.html says in as many words that it
+   * deliberately has no service worker. Until now that was an intention rather
+   * than a fact: every admin request was already going through here.
+   *
+   * Found by watching the admin's own network log, where every GET to /api/ came
+   * back 503 "You are offline" from the branch below while POSTs (which this
+   * worker never sees) went through fine. Whatever made fetch() fail inside the
+   * worker there, the admin has no business depending on a worker installed by a
+   * different app, and offline caching is meaningless for it anyway.
+   */
+  if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) return;
+
   // The API is never cached. An answer served from cache would show a couple
   // stale progress, and a cached login response would be worse.
   if (url.pathname.startsWith('/api/')) {

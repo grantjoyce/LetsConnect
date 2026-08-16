@@ -53,6 +53,11 @@ const MIGRATIONS = [
   // The framework each question was written against, so a card can show it.
   'migrate-add-lenses',
 
+  // Depths as rows rather than a hard-coded array, the authoring half of a lens
+  // (who, and what the framework interrogates), and the generated-question
+  // review queue. Extends `lenses`, so it MUST run after migrate-add-lenses.
+  'migrate-add-authoring',
+
   // FIRST-RUN SEED ONLY. Does nothing at all on a database that already has
   // questions - content belongs to the admin area once it exists.
   'migrate-seed-corpus',

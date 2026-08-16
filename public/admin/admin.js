@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 
 const state = {
   ready: false,
@@ -27,19 +27,39 @@ const state = {
   questionLevel: '',
   questionQuery: '',
   reportStatus: 'open',
+  draftStatus: 'pending',
+  chainId: null, // which sequence is open in the editor
+  chainPick: '', // search text for adding a question to a sequence
   importPreview: null,
   importFile: null,
 };
 
+/**
+ * The rail, grouped by what the work actually is.
+ *
+ * Order matters more here than it did as a tab strip: a vertical list reads as
+ * a table of contents, so it runs content first (what couples are dealt), then
+ * the feedback on it, then the people, then the machinery.
+ */
 const TABS = [
   ['overview', 'Overview'],
-  ['groups', 'Groups'],
+
+  // Content
+  ['structure', 'Topics & depths'],
   ['questions', 'Questions'],
+  ['develop', 'Develop'],
+  ['chains', 'Sequences'],
   ['import', 'Import'],
+
+  // What comes back
   ['insights', 'Insights'],
   ['reports', 'Reports'],
+
+  // Who
   ['people', 'People'],
   ['couples', 'Couples'],
+
+  // Machinery
   ['audit', 'Audit'],
   ['settings', 'Settings'],
 ];
@@ -422,22 +442,36 @@ function tabOverview() {
     </div>`;
 }
 
-function tabGroups() {
+/**
+ * Topics and depths on one page, because they are the two axes of the same
+ * grid and reading either one alone tells you nothing about coverage.
+ *
+ * A topic is a SUBJECT and has no depth of its own. A depth is EXPOSURE and
+ * says nothing about subject. That separation is the thing this page exists to
+ * make visible - the old version printed "Depth undefined" on every topic row,
+ * which is what a leftover from the single-axis model looks like.
+ */
+function tabStructure() {
   const d = state.data.groups;
-  if (!d) return loading();
+  const dep = state.data.depths;
+  if (!d || !dep) return loading();
   const levels = d.domains;
 
   return `
     <div class="notice">
-      Groups are what couples choose between. Reordering here changes the order they see.
-      Hiding a group takes it off their list without touching any of its questions.
+      Two independent axes. A <strong>topic</strong> is what a question is about;
+      a <strong>depth</strong> is how exposed answering it makes you. Couples tick any
+      number of each on the start screen and play one shuffled deck drawn from all of it,
+      so every topic can hold questions at every depth.
     </div>
 
-    <button class="btn btn-block btn-ghost" data-action="group-new" style="margin-bottom:1.2rem">
-      Add a group
-    </button>
+    <h2 class="section-title">Topics</h2>
+    <p class="hint" style="margin-bottom:0.8rem">
+      The order here is the order couples see. Hiding a topic takes it off their list
+      without touching any of its questions.
+    </p>
 
-    <div style="border:1px solid var(--line);border-radius:var(--radius);overflow:hidden">
+    <div style="border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:0.8rem">
       ${levels
         .map(
           (l, i) => `
@@ -446,9 +480,16 @@ function tabGroups() {
           <div class="group-main">
             <strong>${esc(l.name)} ${l.isActive ? '' : '<span class="pill pill-off">hidden</span>'}</strong>
             <span class="row-sub">${esc(l.tagline || 'No tagline')}</span>
-            <span class="row-sub">Depth ${l.depth} · ${plural(l.questions, 'question', 'questions')}${
-              l.hidden ? ` · ${l.hidden} hidden` : ''
-            }</span>
+            ${l.description ? `<span class="row-sub">${esc(l.description)}</span>` : ''}
+            <span class="row-sub">
+              ${plural(l.questions, 'question', 'questions')}${
+                l.minDepth === null
+                  ? ' · nothing yet'
+                  : ` · D${l.minDepth}–D${l.maxDepth}`
+              }${l.hidden ? ` · ${l.hidden} hidden` : ''}${
+                l.needsReview ? ` · ${l.needsReview} held back` : ''
+              }${l.volatileCount ? ` · ${l.volatileCount} volatile` : ''}
+            </span>
           </div>
           <div class="group-actions">
             <button class="order-btn" data-action="group-up" data-id="${l.id}" ${i === 0 ? 'disabled' : ''}
@@ -464,7 +505,53 @@ function tabGroups() {
         </div>`
         )
         .join('')}
-    </div>`;
+    </div>
+
+    <button class="btn btn-ghost" data-action="group-new" style="margin-bottom:2rem">
+      Add a topic
+    </button>
+
+    <h2 class="section-title">Depths</h2>
+    <p class="hint" style="margin-bottom:0.8rem">
+      The ladder couples pick from. The <strong>name</strong> and <strong>one-liner</strong>
+      are what they read on the chips; the <strong>description</strong> is the longer
+      explanation. The number itself cannot be changed after the fact — every question
+      sitting on a rung stores it, so renumbering would silently move all of them.
+    </p>
+
+    <div class="table-wrap" style="margin-bottom:0.8rem">
+      <table class="data">
+        <thead>
+          <tr><th>Depth</th><th>Description</th><th class="num">Live</th><th class="num">All</th>
+              <th class="actions">Actions</th></tr>
+        </thead>
+        <tbody>
+          ${dep.depths
+            .map(
+              (x) => `<tr>
+            <td style="${x.isActive ? '' : 'opacity:0.55'}">
+              <strong>D${x.n} · ${esc(x.name)}</strong>
+              ${x.isActive ? '' : '<span class="pill pill-off">off</span>'}
+              <span class="row-sub">${esc(x.blurb || 'No one-liner')}</span>
+            </td>
+            <td>${x.description ? esc(x.description) : '<span class="row-sub">Nothing written yet.</span>'}</td>
+            <td class="num">${x.live}</td>
+            <td class="num">${x.questions}</td>
+            <td class="actions">
+              <button class="mini" data-action="depth-edit" data-id="${x.id}">Edit</button>
+              <button class="mini" data-action="depth-toggle" data-id="${x.id}">
+                ${x.isActive ? 'Switch off' : 'Switch on'}
+              </button>
+              <button class="mini danger" data-action="depth-delete" data-id="${x.id}">Delete</button>
+            </td>
+          </tr>`
+            )
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <button class="btn btn-ghost" data-action="depth-new">Add a depth</button>`;
 }
 
 function tabQuestions() {
@@ -512,7 +599,8 @@ function tabQuestions() {
     <div class="table-wrap">
       <table class="data">
         <thead>
-          <tr><th>Question</th><th>Group</th><th class="num">Answered</th><th class="actions">Actions</th></tr>
+          <tr><th>Question</th><th>Topic</th><th>Depth</th><th>Framework</th>
+              <th class="num">Answered</th><th class="actions">Actions</th></tr>
         </thead>
         <tbody>
           ${
@@ -520,12 +608,23 @@ function tabQuestions() {
               ? shown
                   .map(
                     (x) => `<tr>
-              <td style="${x.hidden ? 'opacity:0.55' : ''}">
+              <td style="${x.hidden || x.needsReview ? 'opacity:0.55' : ''}">
                 ${esc(x.text)}
                 ${x.hidden ? '<span class="pill pill-off">hidden</span>' : ''}
-                <span class="row-sub">${esc(x.ref)} · ${esc(x.source)}</span>
+                ${x.needsReview ? '<span class="pill pill-off">held back</span>' : ''}
+                ${x.volatile ? '<span class="pill">volatile</span>' : ''}
+                ${
+                  x.context
+                    ? `<span class="row-sub">${esc(x.context)}</span>`
+                    : '<span class="row-sub">No context line — this card cannot be served.</span>'
+                }
+                <span class="row-sub">${esc(x.ref)} · ${esc(x.source)}${
+                      x.chainName ? ` · in “${esc(x.chainName)}”` : ''
+                    }</span>
               </td>
               <td>${esc(x.levelName)}</td>
+              <td>D${x.depth}</td>
+              <td>${x.lens ? esc(x.lens) : '—'}</td>
               <td class="num">${x.timesUsed}</td>
               <td class="actions">
                 <button class="mini" data-action="question-edit" data-id="${x.id}">Edit</button>
@@ -537,11 +636,450 @@ function tabQuestions() {
             </tr>`
                   )
                   .join('')
-              : '<tr><td colspan="4">Nothing matches.</td></tr>'
+              : '<tr><td colspan="6">Nothing matches.</td></tr>'
           }
         </tbody>
       </table>
     </div>`;
+}
+
+/**
+ * Question development: authors, the generator, and the review queue.
+ *
+ * One page because it is one flow, and splitting it would let somebody add an
+ * author and never find the thing that uses it. It reads top to bottom in the
+ * order the work happens: connect the key, describe the framework, ask for
+ * questions, read what came back.
+ *
+ * Nothing on this page puts a question in front of a couple. Acceptance does,
+ * and acceptance is a person clicking Accept on a draft that has already passed
+ * the construction rules.
+ */
+function tabDevelop() {
+  const ai = state.data.ai;
+  const lensData = state.data.lenses;
+  const drafts = state.data.drafts;
+  const groups = state.data.groups;
+  const dep = state.data.depths;
+  if (!ai || !lensData || !drafts || !groups || !dep) return loading();
+
+  const lenses = lensData.lenses;
+  const ready = lenses.filter((l) => l.ready && l.isActive);
+
+  return `
+    <div class="notice">
+      Questions are written here, against a framework, and land in a review queue —
+      never straight into the collection. Everything that comes back is put through the
+      same construction rules the corpus is held to, and anything that cannot stand alone
+      on a card is refused rather than quietly accepted.
+    </div>
+
+    <h2 class="section-title">Connection</h2>
+    <form id="ai-form">
+      <div class="panel">
+        <div class="form-cols">
+          <div class="field">
+            <label for="ai-key">Anthropic API key</label>
+            <input class="input" id="ai-key" name="apiKey" type="password" autocomplete="off"
+                   placeholder="${
+                     ai.configured
+                       ? `Stored (${esc(ai.masked)}) — leave blank to keep it`
+                       : 'sk-ant-…'
+                   }">
+            <p class="hint">
+              ${
+                ai.unreadable
+                  ? '<strong>The stored key cannot be read.</strong> Enter it again and save.'
+                  : ai.configured
+                  ? `In use, from ${ai.source === 'env' ? 'the server environment' : 'these settings'}.`
+                  : 'Not set. Generation is off until there is one.'
+              }
+              Encrypted at rest and never sent back to this page.
+            </p>
+          </div>
+          <div class="field">
+            <label for="ai-model">Model</label>
+            <input class="input" id="ai-model" name="model" type="text"
+                   value="${esc(ai.model)}" placeholder="${esc(ai.defaultModel)}">
+            <p class="hint">Blank uses ${esc(ai.defaultModel)}.</p>
+          </div>
+        </div>
+        ${
+          ai.configured && ai.source === 'settings'
+            ? `<div class="field"><label class="check">
+                 <input type="checkbox" name="clearKey"><span>Forget the stored key</span>
+               </label></div>`
+            : ''
+        }
+      </div>
+      <button class="btn" type="submit" style="margin-top:0.8rem">Save connection</button>
+    </form>
+
+    <h2 class="section-title" style="margin-top:2rem">Frameworks</h2>
+    <p class="hint" style="margin-bottom:0.8rem">
+      A framework is a way of looking at a relationship, and the three-letter code is the
+      badge a couple sees in the corner of a card. Attribution runs to the framework and
+      to whose it is — never to a book, a deck, or anybody's published material. Every
+      question here is newly written.
+    </p>
+
+    <div class="table-wrap" style="margin-bottom:0.8rem">
+      <table class="data">
+        <thead>
+          <tr><th>Code</th><th>Framework</th><th>What it interrogates</th>
+              <th class="num">Questions</th><th class="actions">Actions</th></tr>
+        </thead>
+        <tbody>
+          ${
+            lenses.length
+              ? lenses
+                  .map(
+                    (l) => `<tr>
+              <td style="${l.isActive ? '' : 'opacity:0.55'}">
+                <strong>${esc(l.code)}</strong>
+                ${l.isActive ? '' : '<span class="pill pill-off">off</span>'}
+              </td>
+              <td>
+                ${esc(l.name)}
+                <span class="row-sub">${l.author ? esc(l.author) : 'No attribution'}</span>
+              </td>
+              <td>
+                ${
+                  l.brief
+                    ? esc(l.brief)
+                    : '<span class="row-sub">Nothing written. The generator has only a name to '
+                      + 'work from, so it cannot be used here yet.</span>'
+                }
+              </td>
+              <td class="num">${l.questions}</td>
+              <td class="actions">
+                <button class="mini" data-action="lens-edit" data-id="${l.id}">Edit</button>
+                <button class="mini" data-action="lens-toggle" data-id="${l.id}">
+                  ${l.isActive ? 'Switch off' : 'Switch on'}
+                </button>
+                <button class="mini danger" data-action="lens-delete" data-id="${l.id}">Delete</button>
+              </td>
+            </tr>`
+                  )
+                  .join('')
+              : '<tr><td colspan="5">No frameworks yet.</td></tr>'
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <button class="btn btn-ghost" data-action="lens-new">Add an author or framework</button>
+
+    <h2 class="section-title" style="margin-top:2rem">Write new questions</h2>
+    ${
+      !ai.configured
+        ? '<div class="notice">Add an API key above before generating.</div>'
+        : !ready.length
+        ? `<div class="notice">
+             No framework has a brief written yet. The generator needs to know what a
+             framework actually interrogates — a name on its own produces generic questions
+             under a respected label, which is worse than none.
+           </div>`
+        : ''
+    }
+    <form id="gen-form">
+      <div class="panel">
+        <div class="form-cols">
+          <div class="field">
+            <label for="g-lens">Framework</label>
+            <select class="input" id="g-lens" name="lensCode">
+              ${ready
+                .map((l) => `<option value="${esc(l.code)}">${esc(l.code)} · ${esc(l.name)}</option>`)
+                .join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label for="g-domain">Topic</label>
+            <select class="input" id="g-domain" name="domainId">
+              ${groups.domains
+                .map((x) => `<option value="${x.id}">${esc(x.name)}</option>`)
+                .join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label for="g-depths">Depths</label>
+            <select class="input" id="g-depths" name="depths" multiple size="5"
+                    style="height:auto">
+              ${dep.depths
+                .filter((x) => x.isActive)
+                .map((x) => `<option value="${x.n}" selected>D${x.n} · ${esc(x.name)}</option>`)
+                .join('')}
+            </select>
+            <p class="hint">Ctrl-click to pick several. They get spread across the set.</p>
+          </div>
+          <div class="field">
+            <label for="g-count">How many</label>
+            <input class="input" id="g-count" name="count" type="number" min="1" max="20" value="8">
+            <p class="hint">One request, up to twenty. Costs roughly one API call per batch.</p>
+          </div>
+          <div class="field field-wide">
+            <label for="g-note">Anything else</label>
+            <textarea class="input" id="g-note" name="note" rows="2"
+                      placeholder="e.g. lean towards the early years of a relationship"></textarea>
+          </div>
+        </div>
+      </div>
+      <button class="btn" type="submit" style="margin-top:0.8rem"
+              ${!ai.configured || !ready.length || state.busy ? 'disabled' : ''}>
+        ${state.busy ? 'Writing…' : 'Write questions'}
+      </button>
+    </form>
+
+    <h2 class="section-title" style="margin-top:2rem">
+      Review queue
+      ${drafts.counts.pending ? `<span class="pill">${drafts.counts.pending} waiting</span>` : ''}
+    </h2>
+
+    <div class="field" style="max-width:280px">
+      <label for="d-status">Showing</label>
+      <select class="input" id="d-status">
+        <option value="pending"${state.draftStatus === 'pending' ? ' selected' : ''}>
+          Waiting (${drafts.counts.pending})
+        </option>
+        <option value="accepted"${state.draftStatus === 'accepted' ? ' selected' : ''}>
+          Accepted (${drafts.counts.accepted})
+        </option>
+        <option value="discarded"${state.draftStatus === 'discarded' ? ' selected' : ''}>
+          Turned down (${drafts.counts.discarded})
+        </option>
+      </select>
+    </div>
+
+    ${
+      drafts.drafts.length
+        ? drafts.drafts
+            .map(
+              (x) => `
+      <div class="draft is-${esc(x.verdict)}">
+        <div class="draft-q">${esc(x.text)}</div>
+        ${x.context ? `<div class="draft-context">${esc(x.context)}</div>` : ''}
+        <div class="draft-meta">
+          <span class="pill">D${x.depth}</span>
+          ${x.lens ? `<span class="pill">${esc(x.lens)}</span>` : ''}
+          <span>${esc(x.domainName || 'no topic')}</span>
+          ${x.volatile ? '<span class="pill">volatile</span>' : ''}
+          <span>·</span>
+          <span>${esc(fmtWhen(x.createdAt))}</span>
+          ${x.model ? `<span>· ${esc(x.model)}</span>` : ''}
+        </div>
+        ${
+          x.issues
+            ? `<div class="draft-issues">${
+                x.verdict === 'rejected' ? 'Cannot be served as written — ' : 'Worth a look — '
+              }${esc(x.issues)}</div>`
+            : ''
+        }
+        ${
+          x.status === 'pending'
+            ? `<div class="draft-actions">
+                 <button class="mini go" data-action="draft-accept" data-id="${x.id}"
+                         ${x.verdict === 'rejected' ? 'disabled title="Rewrite it first."' : ''}>
+                   Accept
+                 </button>
+                 <button class="mini" data-action="draft-edit" data-id="${x.id}">Rewrite</button>
+                 <button class="mini danger" data-action="draft-discard" data-id="${x.id}">
+                   Turn down
+                 </button>
+               </div>`
+            : `<div class="draft-meta">${
+                x.status === 'accepted' ? 'In the collection.' : 'Turned down.'
+              }</div>`
+        }
+      </div>`
+            )
+            .join('')
+        : `<div class="empty-state">
+             <h3>Nothing ${
+               state.draftStatus === 'pending'
+                 ? 'waiting'
+                 : state.draftStatus === 'accepted'
+                 ? 'accepted yet'
+                 : 'turned down'
+             }</h3>
+             <p>${
+               state.draftStatus === 'pending'
+                 ? 'Write some questions above and they appear here.'
+                 : 'Drafts move here once you have read them.'
+             }</p>
+           </div>`
+    }`;
+}
+
+/**
+ * Sequences — the linked questions.
+ *
+ * A sequence is a recommended running order over cards that circle the same
+ * construct at rising exposure. The invariant is that every card in one STILL
+ * STANDS ALONE: pull one out and it makes complete sense on its own. So this
+ * editor manages membership and order and never rewrites a question — the
+ * order is the only thing a sequence owns.
+ */
+function tabChains() {
+  const d = state.data.chains;
+  const groups = state.data.groups;
+  if (!d || !groups) return loading();
+
+  if (state.chainId) return chainEditor();
+
+  return `
+    <div class="notice">
+      A sequence is a suggested running order, not a new kind of question. Every card in
+      one is still dealt on its own in the normal decks, and still reads on its own —
+      the order only adds something when a couple chooses to play it through.
+    </div>
+
+    <button class="btn btn-ghost" data-action="chain-new" style="margin-bottom:1.2rem">
+      Start a sequence
+    </button>
+
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr><th>Sequence</th><th>Topic</th><th class="num">Cards</th><th>Depth</th>
+              <th class="actions">Actions</th></tr>
+        </thead>
+        <tbody>
+          ${
+            d.chains.length
+              ? d.chains
+                  .map(
+                    (c) => `<tr>
+              <td style="${c.isActive ? '' : 'opacity:0.55'}">
+                <strong>${esc(c.name)}</strong>
+                ${c.isActive ? '' : '<span class="pill pill-off">off</span>'}
+                ${
+                  c.unpositioned
+                    ? `<span class="row-sub">${c.unpositioned} card(s) with no position — open it to set the order</span>`
+                    : ''
+                }
+                ${c.volatileCount ? `<span class="row-sub">${c.volatileCount} volatile</span>` : ''}
+              </td>
+              <td>${esc(c.domainName || '—')}</td>
+              <td class="num">${c.members}</td>
+              <td>${c.members ? `D${c.minDepth}–D${c.maxDepth}` : '—'}</td>
+              <td class="actions">
+                <button class="mini go" data-action="chain-open" data-id="${c.id}">Open</button>
+                <button class="mini" data-action="chain-rename" data-id="${c.id}">Rename</button>
+                <button class="mini" data-action="chain-toggle" data-id="${c.id}">
+                  ${c.isActive ? 'Switch off' : 'Switch on'}
+                </button>
+                <button class="mini danger" data-action="chain-delete" data-id="${c.id}">Delete</button>
+              </td>
+            </tr>`
+                  )
+                  .join('')
+              : '<tr><td colspan="5">No sequences yet.</td></tr>'
+          }
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function chainEditor() {
+  const e = state.data.chain;
+  if (!e) return loading();
+  const { chain, members } = e;
+
+  // Cards not already in this sequence, filtered by whatever has been typed.
+  const q = state.chainPick.trim().toLowerCase();
+  const inChain = new Set(members.map((m) => m.id));
+  const pool = ((state.data.questions && state.data.questions.questions) || [])
+    .filter((x) => !inChain.has(x.id))
+    .filter((x) => (q ? x.text.toLowerCase().includes(q) : false))
+    .slice(0, 12);
+
+  let gateShown = false;
+
+  return `
+    <button class="btn-quiet" data-action="chain-close" style="margin-bottom:1rem">
+      &larr; All sequences
+    </button>
+
+    <h2 class="section-title">${esc(chain.name)}</h2>
+    <p class="hint" style="margin-bottom:1rem">
+      ${plural(members.length, 'card', 'cards')}${
+    members.length ? ` · D${chain.minDepth}–D${chain.maxDepth}` : ''
+  }${chain.domainName ? ` · ${esc(chain.domainName)}` : ''}. Order runs top to bottom.
+    </p>
+
+    <div style="border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;margin-bottom:1rem">
+      ${
+        members.length
+          ? members
+              .map((m, i) => {
+                // The consent gate falls at the transition INTO depth 4, so mark
+                // it here rather than leaving it to be inferred from two numbers.
+                let gate = '';
+                if (!gateShown && m.depth >= 4) {
+                  gateShown = true;
+                  gate =
+                    '<div class="chain-gate">Consent gate — the couple is asked before going past this point.</div>';
+                }
+                return `${gate}
+          <div class="chain-member">
+            <div class="chain-pos">${i + 1}</div>
+            <div class="chain-member-main">
+              <strong>${esc(m.text)}</strong>
+              <span class="row-sub">
+                D${m.depth}${m.lens ? ` · ${esc(m.lens)}` : ''}
+                ${m.domainName ? ` · ${esc(m.domainName)}` : ''}
+                ${m.volatile ? ' · volatile' : ''}
+                ${m.hidden ? ' · hidden' : ''}
+                ${m.needsReview ? ' · held back' : ''}
+              </span>
+            </div>
+            <div class="chain-actions">
+              <button class="order-btn" data-action="chain-up" data-id="${m.id}"
+                      ${i === 0 ? 'disabled' : ''} aria-label="Move up">&#9650;</button>
+              <button class="order-btn" data-action="chain-down" data-id="${m.id}"
+                      ${i === members.length - 1 ? 'disabled' : ''} aria-label="Move down">&#9660;</button>
+              <button class="mini danger" data-action="chain-remove" data-id="${m.id}">Remove</button>
+            </div>
+          </div>`;
+              })
+              .join('')
+          : '<div class="chain-member"><div class="chain-member-main">Nothing in this sequence yet.</div></div>'
+      }
+    </div>
+
+    <p class="hint" style="margin-bottom:0.8rem">
+      Removing a card here does not delete it. It goes back to being dealt on its own.
+    </p>
+
+    <h2 class="section-title">Add a card</h2>
+    <div class="field">
+      <label for="chain-search">Find a question</label>
+      <input class="input" id="chain-search" type="search" placeholder="Type a few words"
+             value="${esc(state.chainPick)}">
+    </div>
+    ${
+      pool.length
+        ? `<div style="border:1px solid var(--line);border-radius:var(--radius);overflow:hidden">
+             ${pool
+               .map(
+                 (x) => `<div class="chain-member">
+               <div class="chain-member-main">
+                 <strong>${esc(x.text)}</strong>
+                 <span class="row-sub">D${x.depth} · ${esc(x.levelName)}${
+                   x.chainName ? ` · already in “${esc(x.chainName)}”` : ''
+                 }</span>
+               </div>
+               <div class="chain-actions">
+                 <button class="mini go" data-action="chain-add" data-id="${x.id}">Add</button>
+               </div>
+             </div>`
+               )
+               .join('')}
+           </div>`
+        : q
+        ? '<p class="hint">Nothing matches.</p>'
+        : '<p class="hint">Type to search across every question.</p>'
+    }`;
 }
 
 function tabImport() {
@@ -1009,10 +1547,12 @@ function render() {
   } else if (!state.me) {
     html = viewLogin();
   } else {
-    const body = {
+    const view = {
       overview: tabOverview,
-      groups: tabGroups,
+      structure: tabStructure,
       questions: tabQuestions,
+      develop: tabDevelop,
+      chains: tabChains,
       import: tabImport,
       insights: tabInsights,
       reports: tabReports,
@@ -1020,7 +1560,10 @@ function render() {
       couples: tabCouples,
       audit: tabAudit,
       settings: tabSettings,
-    }[state.tab]();
+    }[state.tab];
+    // A tab key that no longer exists (an old bookmark, a renamed section) must
+    // land somewhere real rather than throw on an undefined call.
+    const body = view ? view() : tabOverview();
 
     const b = state.branding || {};
     html = `
@@ -1038,19 +1581,21 @@ function render() {
           </div>
         </div>
 
-        <div class="tabs" role="tablist">
-          ${TABS.map(
-            ([key, label]) => `
-            <button class="tab${key === state.tab ? ' is-on' : ''}" role="tab"
-                    aria-selected="${key === state.tab}" data-action="tab" data-tab="${key}">
-              ${esc(label)}${
-              key === 'reports' && state.openReports ? ` (${state.openReports})` : ''
-            }
-            </button>`
-          ).join('')}
-        </div>
+        <div class="admin-body">
+          <nav class="tabs admin-nav" role="tablist" aria-label="Admin sections">
+            ${TABS.map(
+              ([key, label]) => `
+              <button class="tab${key === state.tab ? ' is-on' : ''}" role="tab"
+                      aria-selected="${key === state.tab}" data-action="tab" data-tab="${key}">
+                ${esc(label)}${
+                key === 'reports' && state.openReports ? ` (${state.openReports})` : ''
+              }${key === 'develop' && state.pendingDrafts ? ` (${state.pendingDrafts})` : ''}
+              </button>`
+            ).join('')}
+          </nav>
 
-        <div class="tab-body">${body}</div>
+          <div class="tab-body admin-main">${body}</div>
+        </div>
 
         <div class="footer-note">
           <span class="version-badge${
@@ -1136,6 +1681,37 @@ function wire() {
     };
   }
 
+  const aiForm = document.getElementById('ai-form');
+  if (aiForm) aiForm.onsubmit = onSaveAi;
+
+  const genForm = document.getElementById('gen-form');
+  if (genForm) genForm.onsubmit = onGenerate;
+
+  const dStatus = document.getElementById('d-status');
+  if (dStatus) {
+    dStatus.onchange = () => {
+      state.draftStatus = dStatus.value;
+      state.data.drafts = null;
+      loadTab();
+    };
+  }
+
+  const chainSearch = document.getElementById('chain-search');
+  if (chainSearch) {
+    // Filters in memory, so this is a re-render rather than a request. Restore
+    // the caret, since render() replaces the input underneath it.
+    chainSearch.oninput = () => {
+      state.chainPick = chainSearch.value;
+      const pos = chainSearch.selectionStart;
+      render();
+      const again = document.getElementById('chain-search');
+      if (again) {
+        again.focus();
+        again.setSelectionRange(pos, pos);
+      }
+    };
+  }
+
   const dropzone = document.getElementById('dropzone');
   const fileInput = document.getElementById('import-file');
   if (dropzone && fileInput) {
@@ -1174,6 +1750,41 @@ async function handleAction(action, el) {
       state.data = {};
       render();
       break;
+
+    case 'depth-new': await depthNew(); break;
+    case 'depth-edit': await depthEdit(id); break;
+    case 'depth-toggle': await depthToggle(id); break;
+    case 'depth-delete': await depthDelete(id); break;
+
+    case 'lens-new': await lensNew(); break;
+    case 'lens-edit': await lensEdit(id); break;
+    case 'lens-toggle': await lensToggle(id); break;
+    case 'lens-delete': await lensDelete(id); break;
+
+    case 'draft-accept': await draftAccept(id); break;
+    case 'draft-edit': await draftEdit(id); break;
+    case 'draft-discard': await draftDiscard(id); break;
+
+    case 'chain-new': await chainNew(); break;
+    case 'chain-open':
+      state.chainId = id;
+      state.chainPick = '';
+      state.data.chain = null;
+      render();
+      loadTab();
+      break;
+    case 'chain-close':
+      state.chainId = null;
+      state.data.chain = null;
+      render();
+      break;
+    case 'chain-rename': await chainRename(id); break;
+    case 'chain-toggle': await chainToggle(id); break;
+    case 'chain-delete': await chainDelete(id); break;
+    case 'chain-add': await chainMove(id, 'add'); break;
+    case 'chain-remove': await chainMove(id, 'remove'); break;
+    case 'chain-up': await chainMove(id, -1); break;
+    case 'chain-down': await chainMove(id, 1); break;
 
     case 'group-new': await groupNew(); break;
     case 'group-edit': await groupEdit(id); break;
@@ -1255,11 +1866,45 @@ async function loadTab() {
     if (t === 'overview' && !state.data.overview) {
       state.data.overview = await api.get('/api/owner/overview');
       state.openReports = Number(state.data.overview.counts.openReports) || 0;
-    } else if (t === 'groups' && !state.data.groups) {
-      state.data.groups = await api.get('/api/owner/domains');
-    } else if (t === 'questions') {
-      // Questions needs the group list too, for the filter and the editor.
+    } else if (t === 'structure') {
       if (!state.data.groups) state.data.groups = await api.get('/api/owner/domains');
+      if (!state.data.depths) state.data.depths = await api.get('/api/owner/depths');
+    } else if (t === 'develop') {
+      // Five payloads, fetched together rather than one per section, because the
+      // page is a single flow and staggering them would show it assembling.
+      const [ai, lenses, drafts, groups, depths] = await Promise.all([
+        state.data.ai || api.get('/api/owner/ai'),
+        state.data.lenses || api.get('/api/owner/lenses'),
+        state.data.drafts || api.get(`/api/owner/drafts?status=${state.draftStatus}`),
+        state.data.groups || api.get('/api/owner/domains'),
+        state.data.depths || api.get('/api/owner/depths'),
+      ]);
+      state.data.ai = ai;
+      state.data.lenses = lenses;
+      state.data.drafts = drafts;
+      state.data.groups = groups;
+      state.data.depths = depths;
+      state.pendingDrafts = Number(drafts.counts.pending) || 0;
+    } else if (t === 'chains') {
+      if (!state.data.groups) state.data.groups = await api.get('/api/owner/domains');
+      if (!state.data.chains) state.data.chains = await api.get('/api/owner/chains');
+      if (state.chainId) {
+        // The editor searches across every question, so it needs the full list
+        // rather than whatever the Questions tab happens to be filtered to.
+        if (!state.data.chain) {
+          state.data.chain = await api.get(`/api/owner/chains/${state.chainId}`);
+        }
+        if (!state.data.questions) {
+          state.data.questions = await api.get('/api/owner/questions?level=');
+        }
+      }
+    } else if (t === 'questions') {
+      // The editor sets topic, depth and framework, so all three lists have to
+      // be here before it opens - not fetched when the dialog appears, which
+      // would leave an empty select on a slow connection.
+      if (!state.data.groups) state.data.groups = await api.get('/api/owner/domains');
+      if (!state.data.depths) state.data.depths = await api.get('/api/owner/depths');
+      if (!state.data.lenses) state.data.lenses = await api.get('/api/owner/lenses');
       if (!state.data.questions) {
         state.data.questions = await api.get(
           `/api/owner/questions?level=${encodeURIComponent(state.questionLevel)}`
@@ -1295,6 +1940,552 @@ function invalidateContent() {
   state.data.questions = null;
   state.data.groups = null;
   state.data.insights = null;
+  state.data.depths = null;
+  state.data.lenses = null;
+  state.data.chains = null;
+  state.data.chain = null;
+}
+
+// ---- Depths ---------------------------------------------------------------
+
+const DEPTH_FIELDS = (d) => [
+  { name: 'name', label: 'Name', value: d ? d.name : '', placeholder: 'Reflective' },
+  {
+    name: 'blurb',
+    label: 'One-liner',
+    value: d ? d.blurb : '',
+    placeholder: 'Needs a moment’s thought. Mild disclosure.',
+    hint: 'Shown on the chip when a couple holds it, so keep it to one short sentence.',
+  },
+  {
+    name: 'description',
+    label: 'Description',
+    type: 'textarea',
+    value: d ? d.description : '',
+    hint: 'The longer explanation of what this rung asks of them.',
+  },
+];
+
+async function depthNew() {
+  const v = await formDialog({
+    title: 'Add a depth',
+    intro:
+      'Depth is <strong>exposure</strong> and has nothing to do with subject. The number is '
+      + 'permanent once questions sit on it, so choose it deliberately.',
+    fields: [
+      {
+        name: 'n',
+        label: 'Number',
+        type: 'number',
+        min: 1,
+        max: 20,
+        value: '',
+        hint: 'Shown as D6, D7 and so on. Cannot be changed later.',
+      },
+      ...DEPTH_FIELDS(null),
+    ],
+    confirmLabel: 'Add depth',
+  });
+  if (!v) return;
+  try {
+    await api.post('/api/owner/depths', v);
+    state.data.depths = null;
+    await loadTab();
+    toast('Depth added.');
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function depthEdit(id) {
+  const d = state.data.depths.depths.find((x) => x.id === id);
+  if (!d) return;
+  const v = await formDialog({
+    title: `Edit D${d.n}`,
+    intro: `<strong>${plural(d.questions, 'question sits', 'questions sit')}</strong> on this rung.
+            The number itself cannot be changed — every one of them stores it.`,
+    fields: DEPTH_FIELDS(d),
+    confirmLabel: 'Save',
+  });
+  if (!v) return;
+  try {
+    await api.patch(`/api/owner/depths/${id}`, v);
+    state.data.depths = null;
+    await loadTab();
+    toast('Saved.');
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function depthToggle(id) {
+  const d = state.data.depths.depths.find((x) => x.id === id);
+  if (!d) return;
+  try {
+    await api.patch(`/api/owner/depths/${id}`, { isActive: !d.isActive });
+  } catch (err) {
+    // 409 means it holds live questions. Say the number and let them decide -
+    // switching off a whole rung is not something to do by accident.
+    const ok = await uiConfirm('Switch this depth off?', esc(err.message), 'Switch off', true);
+    if (!ok) return;
+    try {
+      await api.patch(`/api/owner/depths/${id}`, { isActive: false, confirmed: true });
+    } catch (err2) {
+      return toast(err2.message, true);
+    }
+  }
+  state.data.depths = null;
+  await loadTab();
+  return toast(d.isActive ? 'Switched off.' : 'Switched on.');
+}
+
+async function depthDelete(id) {
+  const d = state.data.depths.depths.find((x) => x.id === id);
+  if (!d) return;
+  const ok = await uiConfirm(
+    `Delete D${d.n}?`,
+    'Switching it off keeps it and its questions. Deleting it is only possible when nothing sits on it.',
+    'Delete',
+    true
+  );
+  if (!ok) return;
+  try {
+    await api.del(`/api/owner/depths/${id}`);
+    state.data.depths = null;
+    await loadTab();
+    toast('Deleted.');
+  } catch (err) {
+    uiAlert('Cannot delete that depth', err.message);
+  }
+}
+
+// ---- Frameworks (lenses) --------------------------------------------------
+
+const LENS_FIELDS = (l) => [
+  { name: 'name', label: 'Framework name', value: l ? l.name : '', placeholder: 'Purpose and identity' },
+  {
+    name: 'author',
+    label: 'Whose framework',
+    value: l ? l.author : '',
+    placeholder: 'Jay Shetty',
+    hint: 'Attribution runs to the framework, never to a book, deck or published material.',
+  },
+  {
+    name: 'description',
+    label: 'What a couple reads',
+    type: 'textarea',
+    value: l ? l.description : '',
+    hint: 'Shown when they tap the badge on a card. Written for someone holding a phone.',
+  },
+  {
+    name: 'brief',
+    label: 'What it interrogates',
+    type: 'textarea',
+    value: l ? l.brief : '',
+    hint:
+      'This is what the generator works from. Name the constructs the framework actually '
+      + 'cares about, in a few sentences. Without it, questions come back generic under a '
+      + 'respected name.',
+  },
+];
+
+async function lensNew() {
+  const v = await formDialog({
+    title: 'Add an author or framework',
+    intro:
+      'You are describing a <strong>way of looking at a relationship</strong>, so that '
+      + 'questions can be written to it. Never a book, a deck, or anybody’s published '
+      + 'material — everything written here is original.',
+    fields: [
+      {
+        name: 'code',
+        label: 'Code',
+        value: '',
+        placeholder: 'SHE',
+        hint: 'Exactly three letters. This is the badge in the corner of a card, and it is permanent.',
+      },
+      ...LENS_FIELDS(null),
+    ],
+    confirmLabel: 'Add framework',
+  });
+  if (!v) return;
+  try {
+    await api.post('/api/owner/lenses', v);
+    state.data.lenses = null;
+    await loadTab();
+    toast('Framework added.');
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function lensEdit(id) {
+  const l = state.data.lenses.lenses.find((x) => x.id === id);
+  if (!l) return;
+  const v = await formDialog({
+    title: `Edit ${l.code}`,
+    intro: `The code cannot be changed — ${plural(
+      l.questions,
+      'question carries',
+      'questions carry'
+    )} it.`,
+    fields: LENS_FIELDS(l),
+    confirmLabel: 'Save',
+  });
+  if (!v) return;
+  try {
+    await api.patch(`/api/owner/lenses/${id}`, v);
+    state.data.lenses = null;
+    await loadTab();
+    toast('Saved.');
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function lensToggle(id) {
+  const l = state.data.lenses.lenses.find((x) => x.id === id);
+  if (!l) return;
+  try {
+    await api.patch(`/api/owner/lenses/${id}`, { isActive: !l.isActive });
+    state.data.lenses = null;
+    await loadTab();
+    toast(l.isActive ? 'Switched off.' : 'Switched on.');
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function lensDelete(id) {
+  const l = state.data.lenses.lenses.find((x) => x.id === id);
+  if (!l) return;
+  const ok = await uiConfirm(
+    `Delete ${l.code}?`,
+    'Only possible while no question carries the badge.',
+    'Delete',
+    true
+  );
+  if (!ok) return;
+  try {
+    await api.del(`/api/owner/lenses/${id}`);
+    state.data.lenses = null;
+    await loadTab();
+    toast('Deleted.');
+  } catch (err) {
+    uiAlert('Cannot delete that framework', err.message);
+  }
+}
+
+// ---- AI and generation ----------------------------------------------------
+
+async function onSaveAi(e) {
+  e.preventDefault();
+  const f = e.target;
+  const body = { model: f.model.value.trim() };
+  if (f.apiKey.value) body.apiKey = f.apiKey.value;
+  if (f.clearKey && f.clearKey.checked) body.clearKey = true;
+
+  try {
+    await api.put('/api/owner/ai', body);
+    state.data.ai = null;
+    await loadTab();
+    toast('Saved.');
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function onGenerate(e) {
+  e.preventDefault();
+  if (state.busy) return;
+  const f = e.target;
+
+  const depths = [...f.depths.selectedOptions].map((o) => Number(o.value));
+  if (!depths.length) return toast('Pick at least one depth.', true);
+
+  state.busy = true;
+  render();
+  // The button is disabled while this runs, so say what is happening - a model
+  // writing a dozen questions takes long enough for silence to read as failure.
+  toast('Writing. This takes a moment…');
+
+  try {
+    const res = await api.post('/api/owner/ai/generate', {
+      lensCode: f.lensCode.value,
+      domainId: Number(f.domainId.value),
+      depths,
+      count: Number(f.count.value) || 8,
+      note: f.note.value.trim(),
+    });
+    state.busy = false;
+    state.draftStatus = 'pending';
+    state.data.drafts = null;
+    await loadTab();
+    toast(
+      `${plural(res.drafted, 'draft', 'drafts')} — ${res.clean} clean`
+        + `${res.flagged ? `, ${res.flagged} to look at` : ''}`
+        + `${res.rejected ? `, ${res.rejected} refused` : ''}.`
+    );
+  } catch (err) {
+    state.busy = false;
+    render();
+    uiAlert('Could not write questions', err.message);
+  }
+  return undefined;
+}
+
+// ---- Drafts ---------------------------------------------------------------
+
+async function draftAccept(id) {
+  try {
+    await api.post(`/api/owner/drafts/${id}/accept`);
+    state.data.drafts = null;
+    invalidateContent();
+    state.tab = 'develop';
+    await loadTab();
+    toast('In the collection.');
+  } catch (err) {
+    uiAlert('Not accepted', err.message);
+  }
+}
+
+async function draftEdit(id) {
+  const d = state.data.drafts.drafts.find((x) => x.id === id);
+  if (!d) return;
+  const groups = (state.data.groups && state.data.groups.domains) || [];
+  const depths = ((state.data.depths && state.data.depths.depths) || []).filter((x) => x.isActive);
+
+  const v = await formDialog({
+    title: 'Rewrite this draft',
+    intro: d.issues
+      ? `The rules say: <strong>${esc(d.issues)}</strong>. Rewriting is how a refused draft is released.`
+      : 'Every save re-checks it against the construction rules.',
+    fields: [
+      { name: 'text', label: 'Question', type: 'textarea', value: d.text },
+      {
+        name: 'context',
+        label: 'Context line',
+        type: 'textarea',
+        value: d.context,
+        hint: 'Under 18 words. Opens the territory and never supplies an example answer.',
+      },
+      {
+        name: 'depth',
+        label: 'Depth',
+        type: 'select',
+        value: String(d.depth),
+        options: depths.map((x) => ({ value: String(x.n), label: `D${x.n} · ${x.name}` })),
+      },
+      {
+        name: 'domainId',
+        label: 'Topic',
+        type: 'select',
+        value: String(d.domainId || ''),
+        options: groups.map((x) => ({ value: String(x.id), label: x.name })),
+      },
+      {
+        name: 'volatile',
+        label: 'Volatile',
+        type: 'select',
+        value: d.volatile ? '1' : '0',
+        options: [
+          { value: '0', label: 'No' },
+          { value: '1', label: 'Yes — both partners must consent first' },
+        ],
+      },
+    ],
+    confirmLabel: 'Save',
+  });
+  if (!v) return;
+
+  try {
+    const res = await api.patch(`/api/owner/drafts/${id}`, {
+      text: v.text,
+      context: v.context,
+      depth: Number(v.depth),
+      domainId: Number(v.domainId),
+      volatile: v.volatile === '1',
+    });
+    state.data.drafts = null;
+    await loadTab();
+    toast(
+      res.verdict === 'ok'
+        ? 'Saved — it passes.'
+        : res.verdict === 'review'
+        ? 'Saved, still worth a look.'
+        : 'Saved, but it still cannot be served.'
+    );
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function draftDiscard(id) {
+  try {
+    await api.post(`/api/owner/drafts/${id}/discard`);
+    state.data.drafts = null;
+    await loadTab();
+    toast('Turned down.');
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+// ---- Sequences (chains) ---------------------------------------------------
+
+async function chainNew() {
+  const groups = (state.data.groups && state.data.groups.domains) || [];
+  const v = await formDialog({
+    title: 'Start a sequence',
+    intro:
+      'A running order over cards that circle the same thing at rising exposure. '
+      + 'Every card in it still stands alone.',
+    fields: [
+      { name: 'name', label: 'Name', value: '', placeholder: 'The thing we do not say' },
+      {
+        name: 'domainId',
+        label: 'Topic',
+        type: 'select',
+        value: '',
+        options: [{ value: '', label: 'No particular topic' }].concat(
+          groups.map((x) => ({ value: String(x.id), label: x.name }))
+        ),
+      },
+    ],
+    confirmLabel: 'Create',
+  });
+  if (!v) return;
+  try {
+    const res = await api.post('/api/owner/chains', {
+      name: v.name,
+      domainId: v.domainId ? Number(v.domainId) : null,
+    });
+    state.data.chains = null;
+    state.chainId = res.id;
+    state.data.chain = null;
+    state.chainPick = '';
+    await loadTab();
+    toast('Sequence created.');
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function chainRename(id) {
+  const c = state.data.chains.chains.find((x) => x.id === id);
+  if (!c) return;
+  const groups = (state.data.groups && state.data.groups.domains) || [];
+  const v = await formDialog({
+    title: 'Rename',
+    fields: [
+      { name: 'name', label: 'Name', value: c.name },
+      {
+        name: 'domainId',
+        label: 'Topic',
+        type: 'select',
+        value: String(c.domainId || ''),
+        options: [{ value: '', label: 'No particular topic' }].concat(
+          groups.map((x) => ({ value: String(x.id), label: x.name }))
+        ),
+      },
+    ],
+    confirmLabel: 'Save',
+  });
+  if (!v) return;
+  try {
+    await api.patch(`/api/owner/chains/${id}`, {
+      name: v.name,
+      domainId: v.domainId ? Number(v.domainId) : null,
+    });
+    state.data.chains = null;
+    await loadTab();
+    toast('Saved.');
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function chainToggle(id) {
+  const c = state.data.chains.chains.find((x) => x.id === id);
+  if (!c) return;
+  try {
+    await api.patch(`/api/owner/chains/${id}`, { isActive: !c.isActive });
+    state.data.chains = null;
+    await loadTab();
+    toast(c.isActive ? 'Switched off.' : 'Switched on.');
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function chainDelete(id) {
+  const c = state.data.chains.chains.find((x) => x.id === id);
+  if (!c) return;
+  const ok = await uiConfirm(
+    `Delete “${esc(c.name)}”?`,
+    `The ${plural(c.members, 'card', 'cards')} in it are <strong>not</strong> deleted — they go `
+      + 'back to being dealt on their own. Only the running order is thrown away.',
+    'Delete the sequence',
+    true
+  );
+  if (!ok) return;
+  try {
+    const res = await api.del(`/api/owner/chains/${id}`);
+    state.data.chains = null;
+    if (state.chainId === id) {
+      state.chainId = null;
+      state.data.chain = null;
+    }
+    await loadTab();
+    toast(`Deleted. ${plural(res.released, 'card', 'cards')} released.`);
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+/**
+ * Every membership change goes through the same call, because the server takes
+ * the WHOLE ordered list. Building the new order here and sending it in one go
+ * means a reorder can never half-apply, which for a sequence would mean a chain
+ * that plays in the wrong order rather than one that failed visibly.
+ */
+async function chainMove(questionId, how) {
+  const e = state.data.chain;
+  if (!e) return;
+  const order = e.members.map((m) => m.id);
+  const i = order.indexOf(questionId);
+
+  if (how === 'add') {
+    if (i !== -1) return;
+    order.push(questionId);
+  } else if (how === 'remove') {
+    if (i === -1) return;
+    order.splice(i, 1);
+  } else {
+    const j = i + how;
+    if (i === -1 || j < 0 || j >= order.length) return;
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+
+  try {
+    await api.put(`/api/owner/chains/${state.chainId}/questions`, { order });
+  } catch (err) {
+    // 409: one of these already belongs to another sequence. A question can only
+    // be in one, so say which way it goes rather than failing silently.
+    const ok = await uiConfirm('Already in another sequence', esc(err.message), 'Move it here', false);
+    if (!ok) return;
+    try {
+      await api.put(`/api/owner/chains/${state.chainId}/questions`, { order, confirmed: true });
+    } catch (err2) {
+      return toast(err2.message, true);
+    }
+  }
+
+  state.data.chain = null;
+  state.data.chains = null;
+  state.data.questions = null;
+  await loadTab();
+  return undefined;
 }
 
 // ---- Groups ---------------------------------------------------------------
@@ -1313,17 +2504,13 @@ const GROUP_FIELDS = (l) => [
     label: 'Description',
     type: 'textarea',
     value: l ? l.description : '',
-    hint: 'Longer explanation, shown when they open the group’s menu.',
+    hint: 'Longer explanation, shown when they open the topic’s menu.',
   },
-  {
-    name: 'depth',
-    label: 'Depth (1–5)',
-    type: 'number',
-    min: 1,
-    max: 5,
-    value: l ? l.depth : 3,
-    hint: '1 is light and playful, 5 is as deep as it gets.',
-  },
+  // No depth field here, deliberately. A topic is a SUBJECT and carries no
+  // depth of its own - depth belongs to the question and is chosen separately
+  // by the couple. This form used to ask for one; the server has never stored
+  // it, so it was a leftover of the single-axis model asking for a number that
+  // went nowhere.
   {
     name: 'accent',
     label: 'Colour',
@@ -1335,18 +2522,20 @@ const GROUP_FIELDS = (l) => [
 
 async function groupNew() {
   const v = await formDialog({
-    title: 'New group',
-    intro: 'Couples will see this as one of the depths they can choose.',
+    title: 'New topic',
+    intro:
+      'A subject couples can tick on the start screen. It carries no depth of its own — '
+      + 'depth belongs to each question and is chosen separately.',
     fields: GROUP_FIELDS(null),
     confirmLabel: 'Create',
   });
   if (!v) return;
-  if (!v.name) return uiAlert('Name needed', 'Give the group a name.');
+  if (!v.name) return uiAlert('Name needed', 'Give the topic a name.');
   try {
     await api.post('/api/owner/domains', v);
     invalidateContent();
     await loadTab();
-    toast('Group created.');
+    toast('Topic created.');
   } catch (err) {
     uiAlert('Could not create it', err.message);
   }
@@ -1407,7 +2596,7 @@ async function groupDelete(id) {
     await api.del(`/api/owner/domains/${id}`);
     invalidateContent();
     await loadTab();
-    toast('Group deleted.');
+    toast('Topic deleted.');
   } catch (err) {
     uiAlert('Could not delete it', err.message);
   }
@@ -1443,28 +2632,100 @@ function groupOptions() {
   }));
 }
 
+/** Depth options, from the ladder rather than a hard-coded D1..D5. */
+function depthOptions() {
+  return ((state.data.depths && state.data.depths.depths) || [])
+    .filter((x) => x.isActive)
+    .map((x) => ({ value: String(x.n), label: `D${x.n} · ${x.name}` }));
+}
+
+/** Framework options. "None" first, because most questions have no lens. */
+function lensOptions() {
+  return [{ value: '', label: 'No framework' }].concat(
+    ((state.data.lenses && state.data.lenses.lenses) || [])
+      .filter((x) => x.isActive)
+      .map((x) => ({ value: x.code, label: `${x.code} · ${x.name}` }))
+  );
+}
+
+/**
+ * The whole question, not just its words.
+ *
+ * A question carries four things beyond its text: which topic it belongs to,
+ * which rung of the ladder it sits on, the line revealed on tap, and whether
+ * an honest answer could do damage. The editor used to offer two of those, so
+ * anything written here landed at a default depth with no context line - and a
+ * card with no context line is one the corpus rules refuse.
+ */
+const QUESTION_FIELDS = (q, levelOptions) => [
+  {
+    name: 'text',
+    label: 'Question',
+    type: 'textarea',
+    value: q ? q.text : '',
+    placeholder: 'What would you like to ask?',
+    hint: 'It has to read on its own, on a card, with nothing else visible — and it cannot be answered yes or no.',
+  },
+  {
+    name: 'context',
+    label: 'Context line',
+    type: 'textarea',
+    value: q ? q.context : '',
+    hint: 'Revealed when they tap Expand. Under 18 words, and never an example answer — an example anchors every couple to the same reply.',
+  },
+  {
+    name: 'level',
+    label: 'Topic',
+    type: 'select',
+    options: levelOptions,
+    value: q ? q.levelSlug : state.questionLevel || levelOptions[0].value,
+  },
+  {
+    name: 'depth',
+    label: 'Depth',
+    type: 'select',
+    options: depthOptions(),
+    value: q ? String(q.depth) : '',
+  },
+  {
+    name: 'lens',
+    label: 'Framework',
+    type: 'select',
+    options: lensOptions(),
+    value: q ? q.lens || '' : '',
+  },
+  {
+    name: 'volatile',
+    label: 'Volatile',
+    type: 'select',
+    value: q && q.volatile ? '1' : '0',
+    options: [
+      { value: '0', label: 'No' },
+      { value: '1', label: 'Yes — both partners must consent first' },
+    ],
+  },
+];
+
 async function questionNew() {
   const options = groupOptions();
-  if (!options.length) return uiAlert('No groups', 'Create a group first.');
+  if (!options.length) return uiAlert('No topics', 'Create a topic first.');
 
   const v = await formDialog({
     title: 'New question',
-    fields: [
-      { name: 'text', label: 'Question', type: 'textarea', placeholder: 'What would you like to ask?' },
-      {
-        name: 'level',
-        label: 'Group',
-        type: 'select',
-        options,
-        value: state.questionLevel || options[0].value,
-      },
-    ],
+    fields: QUESTION_FIELDS(null, options),
     confirmLabel: 'Add it',
   });
   if (!v || !v.text) return undefined;
 
   try {
-    await api.post('/api/owner/questions', { text: v.text, level: v.level });
+    await api.post('/api/owner/questions', {
+      text: v.text,
+      context: v.context,
+      level: v.level,
+      depth: Number(v.depth),
+      lens: v.lens,
+      volatile: v.volatile === '1',
+    });
     invalidateContent();
     await loadTab();
     toast('Question added.');
@@ -1481,17 +2742,29 @@ async function questionEdit(id) {
 
   const v = await formDialog({
     title: 'Edit question',
-    intro: `${esc(q.ref)} · answered ${plural(q.timesUsed, 'time', 'times')}`,
-    fields: [
-      { name: 'text', label: 'Question', type: 'textarea', value: q.text },
-      { name: 'level', label: 'Group', type: 'select', options, value: q.levelSlug },
-    ],
+    intro:
+      `${esc(q.ref)} · answered ${plural(q.timesUsed, 'time', 'times')}`
+      + (q.needsReview
+        ? `<br><strong>Held back:</strong> ${esc(q.reviewNote || 'fails the construction rules')}. `
+          + 'Rewriting the words is what releases it.'
+        : '')
+      + (q.chainName ? `<br>In the sequence “${esc(q.chainName)}”.` : ''),
+    fields: QUESTION_FIELDS(q, options),
     confirmLabel: 'Save',
   });
   if (!v || !v.text) return;
 
   try {
-    if (v.text !== q.text) await api.patch(`/api/owner/questions/${id}`, { text: v.text });
+    // One PATCH with everything that changed, rather than one per field - the
+    // route takes them all and a half-applied edit is worse than a failed one.
+    const patch = {};
+    if (v.text !== q.text) patch.text = v.text;
+    if ((v.context || '') !== (q.context || '')) patch.context = v.context;
+    if (Number(v.depth) !== q.depth) patch.depth = Number(v.depth);
+    if ((v.lens || '') !== (q.lens || '')) patch.lens = v.lens;
+    if ((v.volatile === '1') !== q.volatile) patch.volatile = v.volatile === '1';
+
+    if (Object.keys(patch).length) await api.patch(`/api/owner/questions/${id}`, patch);
     if (v.level !== q.levelSlug) await api.patch(`/api/owner/questions/${id}/level`, { level: v.level });
     invalidateContent();
     await loadTab();

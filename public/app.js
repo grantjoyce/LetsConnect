@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -34,6 +34,11 @@ const state = {
   // depth of its own; each domain reports what it holds at each depth, so the
   // picker can grey out a depth that has nothing in it.
   domains: [],
+
+  // The depth ladder, from /api/data. It used to be a constant in this file,
+  // which made the one piece of couple-facing copy the owner could not edit
+  // without a deploy.
+  depths: [],
 
   // What the couple has ticked on the start screen. Both are chosen BEFORE
   // play, and the deck is one shuffled pile drawn from all of it - not one
@@ -517,14 +522,24 @@ function topbar(showAccount) {
     </div>`;
 }
 
-/** D1..D5. Exposure only - nothing to do with subject. */
-const DEPTHS = [
-  { n: 1, name: 'Open', blurb: 'Answerable straight away. Nothing at stake.' },
-  { n: 2, name: 'Reflective', blurb: 'Needs a moment’s thought. Mild disclosure.' },
-  { n: 3, name: 'Personal', blurb: 'Real disclosure. Assumes you already trust each other.' },
-  { n: 4, name: 'Exposed', blurb: 'Shame, fear, unmet need. Give it proper time.' },
-  { n: 5, name: 'Rupture', blurb: 'Damage that cannot be taken back. Only when you both mean it.' },
+/**
+ * The depth ladder. Exposure only - nothing to do with subject.
+ *
+ * Comes down with /api/data. The fallback is not a second source of truth: it
+ * is what the picker draws if the ladder has not arrived yet, so a slow first
+ * response shows the rungs greyed rather than an empty row where the chips go.
+ */
+const DEPTH_FALLBACK = [
+  { n: 1, name: 'Open', blurb: '' },
+  { n: 2, name: 'Reflective', blurb: '' },
+  { n: 3, name: 'Personal', blurb: '' },
+  { n: 4, name: 'Exposed', blurb: '' },
+  { n: 5, name: 'Rupture', blurb: '' },
 ];
+
+function depthLadder() {
+  return state.depths && state.depths.length ? state.depths : DEPTH_FALLBACK;
+}
 
 /** Selected topics, defaulting to all of them. */
 function selectedDomains() {
@@ -532,9 +547,9 @@ function selectedDomains() {
   return state.domains.map((d) => d.slug);
 }
 
-/** Selected depths, defaulting to all five. */
+/** Selected depths, defaulting to every rung on the ladder. */
 function selectedDepths() {
-  return state.selection.depths || [1, 2, 3, 4, 5];
+  return state.selection.depths || depthLadder().map((d) => d.n);
 }
 
 /**
@@ -631,7 +646,7 @@ function viewSelection() {
 
       <h2 class="section-title">How deep tonight?</h2>
       <div class="depth-filter depth-filter--page" role="group" aria-label="Depth">
-        ${DEPTHS.map((depth) => {
+        ${depthLadder().map((depth) => {
           const on = deps.includes(depth.n);
           return `
             <button class="depth-chip${on ? ' is-on' : ''}"
@@ -748,7 +763,7 @@ function viewDeck() {
   if (!card) return deckFinished();
 
   const inChain = !!d.chain;
-  const depth = DEPTHS.find((x) => x.n === card.depth) || { n: card.depth, name: '' };
+  const depth = depthLadder().find((x) => x.n === card.depth) || { n: card.depth, name: '' };
 
   // Each card carries its own topic colour, so a mixed selection is visibly
   // moving between subjects rather than looking like one flat pile.
@@ -1170,7 +1185,9 @@ async function handleAction(action, el) {
       } else {
         on.add(n);
       }
-      state.selection.depths = [...on].sort();
+      // Numeric sort, not the default lexicographic one. Harmless at five
+      // rungs and wrong the moment there is a tenth.
+      state.selection.depths = [...on].sort((a, b) => a - b);
       render();
       break;
     }
@@ -2143,6 +2160,7 @@ async function loadData() {
     state.me = data.me;
     state.couple = data.couple;
     state.domains = data.domains || [];
+    state.depths = data.depths || [];
     state.volatile = data.volatile || null;
     state.serverVersion = data.version;
     if (data.branding) {
@@ -2177,7 +2195,8 @@ document.addEventListener('visibilitychange', () => {
     .then((data) => {
       state.couple = data.couple;
       state.domains = data.domains || [];
-    state.volatile = data.volatile || null;
+      state.depths = data.depths || [];
+      state.volatile = data.volatile || null;
       state.serverVersion = data.version;
       render();
     })

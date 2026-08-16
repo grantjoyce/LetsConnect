@@ -1,14 +1,22 @@
 /* Admin-only styles, layered on top of the shared tokens in /styles.css.
  *
- * The couple app is phone-first and stays that way. This is the opposite: it is
- * used at a desk, with tables and long lists, so it gets a wider shell and
- * denser rows - while still collapsing to something usable on a phone, because
- * "hide a bad question" is exactly the sort of thing you end up doing away from
- * your desk. */
+ * DESKTOP FIRST, on purpose, and the opposite way round from the couple app.
+ *
+ * The couple app is a phone held in one hand and stays that way. This is a
+ * laptop: twelve sections, wide tables, forms with a dozen fields, and work
+ * that involves reading one thing while editing another. Building it phone-up
+ * and stretching it produces a 1100px column of full-width inputs on a 27"
+ * screen - technically responsive, actually unusable.
+ *
+ * So the layout starts at the desk: a persistent left rail, a wide content
+ * column, and forms in two columns where the fields are short. Below 1000px it
+ * folds back down to the horizontal tab strip and single column it had before,
+ * because "hide a bad question" is exactly the sort of thing you end up doing
+ * from a phone. Nothing is hidden at any width - it only reflows. */
 
 .admin-shell {
   width: 100%;
-  max-width: 1100px;
+  max-width: 1680px;
   margin: 0 auto;
   padding: 1.25rem 1.15rem 4rem;
 }
@@ -22,6 +30,76 @@
   border-bottom: 1px solid var(--line);
   margin-bottom: 1.25rem;
   flex-wrap: wrap;
+}
+
+/* Desk layout ------------------------------------------------------------- */
+
+.admin-body {
+  display: block;
+}
+
+.admin-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 1.2rem;
+}
+
+.admin-nav .tab { flex: none; }
+
+.admin-main { min-width: 0; }
+
+/* The measure. Long prose in a 1600px-wide paragraph is unreadable, so text
+ * blocks and forms are capped independently of the shell - tables and lists
+ * are what actually want the full width. */
+.admin-main > .notice,
+.admin-main > form,
+.admin-main > p.hint { max-width: 78ch; }
+
+@media (min-width: 1000px) {
+  .admin-shell { padding: 1.5rem 2rem 4rem; }
+
+  .admin-body {
+    display: grid;
+    grid-template-columns: 210px minmax(0, 1fr);
+    gap: 2rem;
+    align-items: start;
+  }
+
+  /* Sticky rather than fixed: it scrolls with a short page and holds on a long
+   * one, without taking the page out of normal flow. */
+  .admin-nav {
+    position: sticky;
+    top: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 0.15rem;
+    margin: 0;
+    border-right: 1px solid var(--line);
+    padding-right: 1rem;
+  }
+
+  .admin-nav .tab {
+    width: 100%;
+    text-align: left;
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+  }
+
+  /* Two columns for short fields. Anything with a textarea opts out with
+   * .field-wide, because a 400px-wide description box is a worse experience
+   * than a full-width one. */
+  .form-cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 1.2rem;
+  }
+  .form-cols .field-wide { grid-column: 1 / -1; }
+}
+
+@media (min-width: 1500px) {
+  .admin-body { grid-template-columns: 230px minmax(0, 1fr); }
 }
 
 .admin-who {
@@ -180,6 +258,35 @@ table.data td.actions { white-space: nowrap; text-align: right; }
 
 .group-actions { display: flex; gap: 0.3rem; flex: none; align-items: center; }
 
+/* On a narrow screen the five action buttons refuse to shrink, so they take the
+ * row and squeeze the text to about one word per line. Stack instead: the row
+ * is a description with controls under it, not a table. */
+@media (max-width: 760px) {
+  .group-row,
+  .chain-member {
+    flex-wrap: wrap;
+  }
+
+  .group-main,
+  .chain-member-main {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .group-actions,
+  .chain-actions {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    margin-top: 0.5rem;
+  }
+
+  /* The swatch and the position number keep their place at the top of the row
+   * rather than becoming a stray line of their own. */
+  .group-swatch { align-self: flex-start; }
+  .chain-member { align-items: center; }
+}
+
 .order-btn {
   width: 30px;
   height: 30px;
@@ -273,3 +380,89 @@ table.data td.actions { white-space: nowrap; text-align: right; }
 
 .log-what strong { font-weight: 700; }
 .log-detail { grid-column: 2; color: var(--text-faint); font-size: 0.8rem; }
+
+/* Drafts ------------------------------------------------------------------ */
+
+/* A draft is read, not scanned - it is a paragraph of English somebody has to
+ * judge - so it gets a card rather than a table row. */
+.draft {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  padding: 1rem 1.1rem;
+  margin-bottom: 0.8rem;
+}
+
+.draft.is-ok { border-left-color: #35B7A6; }
+.draft.is-review { border-left-color: #F2A33C; }
+.draft.is-rejected { border-left-color: #E2574C; }
+
+.draft-q {
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.45;
+  margin-bottom: 0.4rem;
+}
+
+.draft-context {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin-bottom: 0.6rem;
+}
+
+.draft-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  margin-bottom: 0.6rem;
+}
+
+.draft-issues {
+  font-size: 0.8rem;
+  color: #ffb3ac;
+  margin-bottom: 0.6rem;
+}
+
+.draft-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+/* Chain editor ------------------------------------------------------------ */
+
+.chain-member {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  padding: 0.7rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-raised);
+}
+
+.chain-member:last-child { border-bottom: none; }
+
+.chain-pos {
+  flex: none;
+  width: 2rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  color: var(--text-faint);
+  padding-top: 0.1rem;
+}
+
+.chain-member-main { flex: 1; min-width: 0; }
+.chain-member-main strong { display: block; font-weight: 600; line-height: 1.45; }
+.chain-actions { flex: none; display: flex; gap: 0.25rem; align-items: flex-start; }
+
+/* The consent gate is the whole reason a chain's depth range matters, so the
+ * transition into it is marked in the editor rather than left to be inferred
+ * from two numbers in a header. */
+.chain-gate {
+  padding: 0.5rem 0.9rem;
+  background: rgba(226, 87, 76, 0.1);
+  border-bottom: 1px solid rgba(226, 87, 76, 0.3);
+  font-size: 0.8rem;
+  color: #ffb3ac;
+  font-weight: 700;
+}
