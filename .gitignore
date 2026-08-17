@@ -6,3 +6,9 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 scratch/
+
+# curl cookie jars and header dumps from local API testing. One of these was
+# committed by accident - it holds a live session id.
+*.cookies
+lc*.txt
+headers.txt
