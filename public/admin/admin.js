@@ -11,12 +11,15 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.12.1';
+const APP_VERSION = '1.13.0';
 
 const state = {
   ready: false,
   me: null,
   branding: null,
+  // True only while the users table is empty. Turns the sign-in screen into a
+  // create-owner screen on a fresh install. Decided by the server, not here.
+  needsSetup: false,
   serverVersion: null,
   tab: 'overview',
   error: null,
@@ -324,8 +327,64 @@ function formDialog({ title, intro, fields, confirmLabel }) {
 // Login
 // ---------------------------------------------------------------------------
 
+/**
+ * First run: no accounts exist, so offer to create one instead of asking to
+ * sign in to something that isn't there.
+ *
+ * The register route has always existed and the first account has always become
+ * the owner - but no screen ever called it, so a fresh deployment presented a
+ * sign-in form and no way to obtain a login for it. The only way in was the
+ * browser console, which is not a setup process.
+ *
+ * The server decides when to show this (`needsSetup`), not the client, and it
+ * is true only while the users table is empty.
+ */
+function viewSetup() {
+  const b = state.branding || {};
+  return `
+    <div class="admin-login">
+      <div style="width:100%;max-width:420px">
+        <div class="hero">
+          <div class="hero-mark" aria-hidden="true">${esc(b.brand_mark || '❤')}</div>
+          <h1>${esc(b.app_name || "Let's Connect")}</h1>
+          <p>Create the owner account</p>
+        </div>
+        <div class="panel">
+          ${state.error ? `<div class="form-error">${esc(state.error)}</div>` : ''}
+          <p class="hint" style="margin-bottom:1rem">
+            This install has no accounts yet. The first one created owns the app and
+            can never be locked out by another — so make it yours.
+          </p>
+          <form id="setup-form" novalidate>
+            <div class="field">
+              <label for="s-name">Your name</label>
+              <input class="input" id="s-name" name="displayName" type="text"
+                     autocomplete="name" value="${esc(state.form.displayName || '')}" required>
+            </div>
+            <div class="field">
+              <label for="s-email">Email</label>
+              <input class="input" id="s-email" name="email" type="email" autocomplete="email"
+                     value="${esc(state.form.email || '')}" required>
+              <p class="hint">Password resets are sent here, so use an address you control.</p>
+            </div>
+            <div class="field">
+              <label for="s-password">Password</label>
+              <input class="input" id="s-password" name="password" type="password"
+                     autocomplete="new-password" required>
+              <p class="hint">At least 8 characters.</p>
+            </div>
+            <button class="btn btn-block" type="submit" ${state.busy ? 'disabled' : ''}>
+              ${state.busy ? 'Creating…' : 'Create owner account'}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>`;
+}
+
 function viewLogin() {
   const b = state.branding || {};
+  if (state.needsSetup) return viewSetup();
   return `
     <div class="admin-login">
       <div style="width:100%;max-width:420px">
@@ -2042,6 +2101,9 @@ function wire() {
     handleAction(el.dataset.action, el);
   };
 
+  const setup = document.getElementById('setup-form');
+  if (setup) setup.onsubmit = onCreateOwner;
+
   const login = document.getElementById('login-form');
   if (login) login.onsubmit = onLogin;
 
@@ -2321,6 +2383,54 @@ async function handleAction(action, el) {
 
     default: break;
   }
+}
+
+/**
+ * Create the first owner. Only reachable while the server reports needsSetup.
+ *
+ * The register route decides ownership itself - first account wins - so there
+ * is nothing here that could hand out ownership to a second person. If two
+ * people somehow open this screen at once, the second gets "there is already an
+ * account with that email" or lands as an ordinary user, and the check below
+ * catches it rather than dropping them into an admin that refuses everything.
+ */
+async function onCreateOwner(e) {
+  e.preventDefault();
+  if (state.busy) return;
+  const displayName = e.target.displayName.value.trim();
+  const email = e.target.email.value.trim();
+  const password = e.target.password.value;
+
+  state.form = { displayName, email };
+  state.error = null;
+  state.busy = true;
+  render();
+
+  try {
+    await api.call('POST', '/api/auth/register', { displayName, email, password });
+    const data = await api.get('/api/data');
+    if (!data.me || !data.me.isOwner) {
+      await api.post('/api/auth/logout');
+      state.busy = false;
+      state.error = 'An account already existed, so this one is not the owner. Sign in instead.';
+      state.needsSetup = false;
+      return render();
+    }
+    state.me = data.me;
+    state.branding = data.branding;
+    state.serverVersion = data.version;
+    state.needsSetup = false;
+    state.busy = false;
+    state.form = {};
+    render();
+    loadTab();
+    toast('Owner account created.');
+  } catch (err) {
+    state.busy = false;
+    state.error = err.message;
+    render();
+  }
+  return undefined;
 }
 
 async function onLogin(e) {
@@ -3840,6 +3950,7 @@ async function boot() {
     const pub = await api.get('/api/branding');
     state.branding = pub.branding;
     state.serverVersion = pub.version;
+    state.needsSetup = !!pub.needsSetup;
     applyBranding();
   } catch (err) {
     /* falls back to the built-in name */

@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.12.1';
+const APP_VERSION = '1.13.0';
 
 // ---------------------------------------------------------------------------
 // State

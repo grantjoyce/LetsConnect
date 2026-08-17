@@ -643,7 +643,26 @@ app.get('/api/health', (req, res) => {
 app.get(
   '/api/branding',
   wrap(async (req, res) => {
-    res.json({ branding: await getBranding(), version: APP_VERSION });
+    // `needsSetup` is what turns the owner sign-in screen into a create-account
+    // screen on a fresh install. Registration has always existed as a route,
+    // and the first account has always become the owner - but nothing in the UI
+    // called it, so a new deployment had a sign-in form and no way to get a
+    // login for it. That was found the hard way on the first live install.
+    //
+    // Safe to expose publicly: it is only ever true when the users table is
+    // empty, and at that point the register route is open anyway. The moment an
+    // account exists it goes false and stays false.
+    let needsSetup = false;
+    try {
+      const any = await queryOne('SELECT id FROM users LIMIT 1');
+      needsSetup = !any;
+    } catch (err) {
+      // A database that cannot be read should not turn the admin into a setup
+      // screen - that would invite a second owner on an install that has one.
+      console.error('[setup] user check failed:', err.message);
+    }
+
+    res.json({ branding: await getBranding(), version: APP_VERSION, needsSetup });
   })
 );
 
