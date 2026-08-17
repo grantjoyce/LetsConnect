@@ -321,13 +321,16 @@ a:hover { text-decoration-color: var(--lamplight); }
  * horizontal variant of the same logo would read at half the height - worth
  * asking for, and this rule is where it would change. */
 .brand-logo--bar {
-  height: 58px;
+  height: 76px;
   max-width: 62vw;
   flex: none;
 }
 
-@media (max-width: 380px) {
-  .brand-logo--bar { height: 48px; }
+/* Steps down rather than scaling smoothly, because below this the wordmark
+ * inside the artwork stops being readable and the logo may as well be a
+ * symbol. */
+@media (max-width: 420px) {
+  .brand-logo--bar { height: 64px; }
 }
 
 /* An uploaded logo replaces the tile rather than sitting inside it. Somebody
