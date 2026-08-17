@@ -4704,13 +4704,51 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong on our side.' });
 });
 
-// 3200, not 3000. Port 3000 belongs to the AppFirm CRM on this machine, and two
-// apps defaulting to the same port means whichever booted first silently keeps
-// it while the other looks like it started fine and serves the wrong app.
-// Production ignores this entirely - Passenger assigns the port.
+// 3200, not 3000. Port 3000 belongs to the AppFirm CRM on the development
+// machine, and two apps defaulting to the same port means whichever booted
+// first silently keeps it while the other looks like it started fine and
+// serves the wrong app.
 const PORT = process.env.PORT || 3200;
-app.listen(PORT, () => {
-  console.log(`Let's Connect v${APP_VERSION} listening on port ${PORT} (${IS_PROD ? 'production' : 'development'})`);
+
+const server = app.listen(PORT, () => {
+  console.log(
+    `Let's Connect v${APP_VERSION} listening on ${
+      process.env.PORT ? `port ${PORT} (assigned)` : `port ${PORT} (FALLBACK - PORT was not set)`
+    } (${IS_PROD ? 'production' : 'development'})`
+  );
+
+  // Under Passenger, PORT is normally supplied and listen() is intercepted, so
+  // falling back to a hard-coded port in production means something is wrong
+  // with how the app was started. Say so, loudly.
+  //
+  // This cost hours on the first deploy: the app bound 3200, reported itself
+  // healthy, and every request 404'd because the web server was looking for it
+  // somewhere else. A process that is running and unreachable looks identical
+  // to a process that is broken, unless it tells you which port it took.
+  if (IS_PROD && !process.env.PORT) {
+    console.warn(
+      '[boot] WARNING: PORT was not provided by the environment, so this process '
+        + `bound ${PORT} of its own accord. If the site returns 404 or 500 for /api `
+        + 'routes while static files load, this is why - the web server is not '
+        + 'looking for the app here.'
+    );
+  }
+});
+
+// EADDRINUSE is the one startup failure worth explaining rather than dumping a
+// stack trace for. It means another copy of this app is already running -
+// usually one started by hand from a panel and never stopped.
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(
+      `\n[boot] Port ${PORT} is already in use.\n`
+        + '       Another copy of this app is running - most likely one started\n'
+        + '       by hand and left behind. Stop it before starting another:\n\n'
+        + '         npm run kill-stray\n'
+    );
+    process.exit(1);
+  }
+  throw err;
 });
 
 module.exports = app;
