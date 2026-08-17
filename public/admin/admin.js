@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.13.1';
+const APP_VERSION = '1.13.2';
 
 const state = {
   ready: false,
@@ -3959,6 +3959,21 @@ function applyBranding() {
   }
 
   if (b.brand_accent) document.documentElement.style.setProperty('--accent', b.brand_accent);
+
+  // The uploaded favicon, which the admin was ignoring - it kept the static
+  // /icons/favicon-32.png in the markup, so an owner who uploaded a favicon saw
+  // it on the couple app and the old one on the tab they spend all day in.
+  //
+  // Replaced rather than re-pointed: some browsers ignore an href change on an
+  // icon link they have already resolved.
+  if (b.assets && b.assets.favicon) {
+    document.querySelectorAll('link[rel~="icon"]').forEach((el) => el.remove());
+    const link = document.createElement('link');
+    link.rel = 'icon';
+    link.href = b.assets.faviconUrl;
+    document.head.appendChild(link);
+  }
+
   document.title = `Admin · ${b.app_name}`;
 }
 
