@@ -667,6 +667,102 @@ app.get(
 );
 
 /**
+ * Width and height straight out of a PNG header.
+ *
+ * A PNG is an 8-byte signature, then the IHDR chunk whose width and height are
+ * two big-endian 32-bit integers at offsets 16 and 20. That is the whole format
+ * as far as this needs to care, which is why there is no image library here for
+ * a job that is two reads.
+ *
+ * The manifest has to declare real sizes: a lie there gets the icon rejected,
+ * and "192x192" on a 200px image is a lie.
+ */
+function pngSize(buf) {
+  if (!buf || buf.length < 24) return null;
+  if (buf.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') return null;
+  return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+}
+
+/** A home-screen label: the name whole, or cut back to a whole word. */
+function shortName(name) {
+  const n = String(name || '').trim();
+  if (n.length <= 20) return n;
+  const cut = n.slice(0, 20);
+  const lastSpace = cut.lastIndexOf(' ');
+  return (lastSpace > 6 ? cut.slice(0, lastSpace) : cut).trim();
+}
+
+/**
+ * The web app manifest, generated rather than served from disk.
+ *
+ * It used to be a static file naming /icons/*.png. That meant the icon on a
+ * phone's home screen was fixed at build time - so an owner could upload their
+ * logo, watch it appear everywhere in the app, install to their home screen and
+ * get the old artwork. On this deployment they got worse than that: the static
+ * icons were missing, so Android drew its own grey tile with a letter in it.
+ *
+ * An uploaded logo is now the installed icon, and the colours come from the
+ * palette, so the whole thing follows Settings > Brand with no deploy.
+ *
+ * purpose is "any", deliberately NOT "maskable". A maskable icon is cropped to
+ * whatever shape the launcher likes, with only the centre 80% guaranteed - and
+ * these logos are wordmarks with the name set near the bottom edge, which is
+ * exactly what a circular mask cuts off. Better a letterboxed icon that reads
+ * than a cropped one that does not.
+ */
+app.get(
+  '/manifest.webmanifest',
+  wrap(async (req, res) => {
+    const b = await getBranding();
+    const ground = (b.palette && b.palette['--night']) || '#11141B';
+
+    let icons = [
+      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ];
+
+    if (b.assets && b.assets.logo) {
+      const row = await queryOne(
+        `SELECT
+           (SELECT setting_value FROM settings WHERE setting_key = ?) AS data,
+           (SELECT setting_value FROM settings WHERE setting_key = ?) AS type`,
+        [BRAND_ASSETS.logo.key, BRAND_ASSETS.logo.typeKey]
+      );
+      if (row && row.data) {
+        const type = row.type || 'image/png';
+        const size = type === 'image/png' ? pngSize(Buffer.from(row.data, 'base64')) : null;
+        // An SVG has no fixed pixel size, which is what "any" means here. A PNG
+        // whose header could not be read is skipped rather than guessed at.
+        const sizes = type === 'image/svg+xml' ? 'any' : size ? `${size.w}x${size.h}` : null;
+        if (sizes) {
+          icons = [{ src: b.assets.logoUrl, sizes, type, purpose: 'any' }];
+        }
+      }
+    }
+
+    res.type('application/manifest+json');
+    res.json({
+      name: b.app_name,
+      // Android truncates this itself with an ellipsis, so a name of ordinary
+      // length is passed through whole. Only a genuinely long one is shortened,
+      // and then at a word boundary - a blind slice turned "Let's Connect" into
+      // "Let's Connec", which looks like a typo rather than an abbreviation.
+      short_name: shortName(b.app_name),
+      description: b.app_tagline,
+      start_url: '/',
+      scope: '/',
+      display: 'standalone',
+      orientation: 'portrait',
+      background_color: ground,
+      theme_color: ground,
+      categories: ['lifestyle', 'social'],
+      icons,
+    });
+  })
+);
+
+/**
  * The uploaded logo and favicon.
  *
  * Public for the same reason the branding above is: both appear on the welcome
