@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.13.0';
+const APP_VERSION = '1.13.1';
 
 const state = {
   ready: false,
@@ -339,14 +339,35 @@ function formDialog({ title, intro, fields, confirmLabel }) {
  * The server decides when to show this (`needsSetup`), not the client, and it
  * is true only while the users table is empty.
  */
+/**
+ * The brand lockup: mark AND name as one unit.
+ *
+ * An uploaded logo replaces BOTH. These are wordmarks - the name is drawn into
+ * the artwork - so setting the app name in type beside one prints it twice. The
+ * admin ignored the uploaded logo entirely until now, which meant the owner
+ * could upload a logo, see it applied to the couple app, and still be met by a
+ * heart character every time they signed in here.
+ */
+function brandLockup(size) {
+  const b = state.branding || {};
+  const name = b.app_name || "Let's Connect";
+  if (b.assets && b.assets.logo) {
+    return `<img class="brand-logo brand-logo--${size}" src="${esc(b.assets.logoUrl)}" alt="${esc(name)}">`;
+  }
+  return size === 'hero'
+    ? `<div class="hero-mark" aria-hidden="true">${esc(b.brand_mark || '❤')}</div>
+       <h1>${esc(name)}</h1>`
+    : `<span class="brand-mark" aria-hidden="true">${esc(b.brand_mark || '❤')}</span>
+       <span>${esc(name)}</span>`;
+}
+
 function viewSetup() {
   const b = state.branding || {};
   return `
     <div class="admin-login">
       <div style="width:100%;max-width:420px">
         <div class="hero">
-          <div class="hero-mark" aria-hidden="true">${esc(b.brand_mark || '❤')}</div>
-          <h1>${esc(b.app_name || "Let's Connect")}</h1>
+          ${brandLockup('hero')}
           <p>Create the owner account</p>
         </div>
         <div class="panel">
@@ -389,8 +410,7 @@ function viewLogin() {
     <div class="admin-login">
       <div style="width:100%;max-width:420px">
         <div class="hero">
-          <div class="hero-mark" aria-hidden="true">${esc(b.brand_mark || '❤')}</div>
-          <h1>${esc(b.app_name || "Let's Connect")}</h1>
+          ${brandLockup('hero')}
           <p>Owner sign-in</p>
         </div>
         <div class="panel">
@@ -2050,8 +2070,7 @@ function render() {
       <div class="admin-shell">
         <div class="admin-top">
           <div class="brand">
-            <span class="brand-mark" aria-hidden="true">${esc(b.brand_mark || '❤')}</span>
-            <span>${esc(b.app_name || "Let's Connect")}</span>
+            ${brandLockup('bar')}
             <span class="admin-badge">Admin</span>
           </div>
           <div class="admin-who">

@@ -292,6 +292,44 @@ a:hover { text-decoration-color: var(--lamplight); }
   font-size: 1.15rem;
 }
 
+/* An uploaded logo, standing in for the mark AND the name.
+ *
+ * Sized by HEIGHT with width auto, because a logo's aspect ratio is the
+ * owner's business, not ours. The old .brand-img rules forced it into the
+ * character tile's square, which crushes a wordmark - and these logos are
+ * wordmarks, with the name drawn into the artwork.
+ *
+ * The header height is set generously enough that the name inside the artwork
+ * is still legible at a glance; anything around 30px turns it into a smudge. */
+.brand-logo {
+  display: block;
+  width: auto;
+  object-fit: contain;
+  background: none;
+  box-shadow: none;
+}
+
+.brand-logo--hero {
+  height: 132px;
+  max-width: 100%;
+  margin: 0 auto 1.1rem;
+}
+
+/* 58px, which is tall for a header strip and deliberate. The supplied logo is
+ * a SQUARE with the wordmark set small inside generous padding, so the name
+ * only becomes legible once the whole square is about this big. A wide,
+ * horizontal variant of the same logo would read at half the height - worth
+ * asking for, and this rule is where it would change. */
+.brand-logo--bar {
+  height: 58px;
+  max-width: 62vw;
+  flex: none;
+}
+
+@media (max-width: 380px) {
+  .brand-logo--bar { height: 48px; }
+}
+
 /* An uploaded logo replaces the tile rather than sitting inside it. Somebody
  * who has supplied their own mark does not want it framed in a coloured square,
  * and a transparent PNG on a gradient looks like a mistake. */

@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.13.0';
+const APP_VERSION = '1.13.1';
 
 // ---------------------------------------------------------------------------
 // State
@@ -309,8 +309,7 @@ function viewGate() {
   return `
     <div class="screen screen--centred">
       <div class="hero">
-        ${brandMark('hero-mark')}
-        <h1>${esc(brand().name)}</h1>
+        ${brandLockup('hero')}
         <p>${esc(brand().tagline)}</p>
       </div>
 
@@ -424,8 +423,7 @@ function topbar(showAccount, isSettings) {
   return `
     <div class="topbar">
       <div class="brand">
-        ${brandMark('brand-mark')}
-        <span>${esc(brand().name)}</span>
+        ${brandLockup('bar')}
       </div>
       <div class="topbar-actions">
         <button class="icon-btn" data-action="how" aria-label="How it works" title="How it works">?</button>
@@ -1520,15 +1518,33 @@ function applyBranding() {
   }
 }
 
-/** The logo tile: an uploaded image if there is one, otherwise the character. */
-function brandMark(className) {
+/** Whether the owner has uploaded a logo. */
+function hasLogo() {
   const b = state.branding || {};
-  if (b.assets && b.assets.logo) {
-    return `<img class="${className} brand-img" src="${esc(b.assets.logoUrl)}" alt="${esc(
-      brand().name
-    )}">`;
+  return !!(b.assets && b.assets.logo);
+}
+
+/**
+ * The whole brand lockup: mark AND name, as one unit.
+ *
+ * An uploaded logo replaces BOTH, and that is the point. These logos are
+ * wordmarks - the name is drawn into the artwork - so rendering the app name in
+ * text beside one prints it twice. The character tile is the fallback, and only
+ * then does the name need setting in type next to it.
+ *
+ * `size` is 'hero' for the welcome screen or 'bar' for the header.
+ */
+function brandLockup(size) {
+  const name = brand().name;
+  if (hasLogo()) {
+    const url = (state.branding.assets || {}).logoUrl;
+    return `<img class="brand-logo brand-logo--${size}" src="${esc(url)}" alt="${esc(name)}">`;
   }
-  return `<div class="${className}" aria-hidden="true">${esc(brand().mark)}</div>`;
+  return size === 'hero'
+    ? `<div class="hero-mark" aria-hidden="true">${esc(brand().mark)}</div>
+       <h1>${esc(name)}</h1>`
+    : `<span class="brand-mark" aria-hidden="true">${esc(brand().mark)}</span>
+       <span>${esc(name)}</span>`;
 }
 
 // ---------------------------------------------------------------------------
