@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.14.0';
+const APP_VERSION = '1.14.1';
 
 const state = {
   ready: false,
@@ -1649,8 +1649,13 @@ function tabCouples() {
               </td>
               <td>
                 ${
+                  // The code itself copies. It is the thing you are looking at
+                  // and reaching for, and a "Copy" button at the far right of a
+                  // wide row is a long way from where your eye already is.
+                  // The button stays too - some people go looking for one.
                   c.code
-                    ? `<code style="letter-spacing:0.06em">${esc(c.code)}</code>`
+                    ? `<button class="code-chip" data-action="code-copy" data-id="${c.id}"
+                               title="Copy this code">${esc(c.code)}</button>`
                     : '<span class="row-sub">none — pre-dates codes</span>'
                 }
               </td>
@@ -3094,17 +3099,62 @@ async function codeDelete(id) {
   }
 }
 
+/**
+ * Copy a code to the clipboard.
+ *
+ * Three attempts, because navigator.clipboard is refused more often than it
+ * looks: outside a secure context, and also whenever the document is not
+ * focused - which happens if the click landed while focus was elsewhere. That
+ * second one is transient and used to drop straight to "copy it by hand",
+ * making a working feature look broken.
+ *
+ * So the modern API is tried first, then the old execCommand route, which has
+ * no such focus requirement, and only then does it give up and show the code
+ * for the person to read.
+ */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (err) {
+    /* fall through */
+  }
+
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    // Off-screen rather than hidden: a display:none textarea cannot be selected,
+    // so the copy silently does nothing.
+    ta.style.cssText = 'position:fixed;top:-1000px;left:-1000px;opacity:0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    if (ok) return true;
+  } catch (err) {
+    /* fall through */
+  }
+
+  return false;
+}
+
 async function codeCopy(id) {
   const c = state.data.couples.couples.find((x) => x.id === id);
   if (!c || !c.code) return;
-  try {
-    await navigator.clipboard.writeText(c.code);
-    toast('Code copied.');
-  } catch (err) {
-    // Clipboard access is refused outside a secure context, which is exactly
-    // where somebody is most likely to be testing. Show it rather than fail.
-    await uiAlert('Copy it by hand', c.code);
+  if (await copyText(c.code)) {
+    toast(`${c.code} copied.`);
+    return;
   }
+  // Last resort: show it big enough to read off the screen and type.
+  await dialog({
+    title: 'Copy it by hand',
+    bodyHtml:
+      '<p class="hint">Your browser would not let the app reach the clipboard.</p>'
+      + `<p style="font-family:ui-monospace,monospace;font-size:1.3rem;letter-spacing:0.12em;`
+      + `text-align:center;margin:0.8rem 0">${esc(c.code)}</p>`,
+    actions: [{ label: 'Done', value: true, className: 'btn' }],
+  });
 }
 
 /**

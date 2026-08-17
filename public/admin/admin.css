@@ -689,3 +689,30 @@ table.data--feedback { min-width: 1020px; }
 table.data--feedback td:first-child,
 table.data--feedback th:first-child { min-width: 300px; }
 table.data--feedback td:first-child strong { font-weight: 600; line-height: 1.45; }
+
+/* The code itself is the copy button.
+ *
+ * It reads as a code first and a control second: monospaced and letter-spaced
+ * so it can be read aloud over a phone, with the affordance only appearing on
+ * hover. A row full of obvious buttons would pull attention away from the
+ * couple's name, which is what the eye is actually scanning for. */
+.code-chip {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  background: var(--raised);
+  border: 1px solid var(--hairline);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.code-chip:hover {
+  border-color: var(--edge-hi);
+  background: var(--slate);
+}
+
+.code-chip:active { background: var(--raised); }
