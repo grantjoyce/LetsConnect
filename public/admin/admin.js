@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.15.0';
+const APP_VERSION = '1.15.1';
 
 const state = {
   ready: false,
@@ -431,8 +431,8 @@ function viewLogin() {
             </button>
           </form>
           <p class="hint" style="margin-top:1rem;text-align:center">
-            This area is for the app owner. Couples sign in at
-            <a href="/">the main app</a>.
+            This area is for the app owner.<br>
+            Couples sign in at <a href="/">the main app</a>.
           </p>
         </div>
       </div>
