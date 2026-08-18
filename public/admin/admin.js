@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.15.1';
+const APP_VERSION = '1.16.0';
 
 const state = {
   ready: false,
@@ -1871,8 +1871,17 @@ function brandAssets(b) {
       </div>
     </div>`;
 
+  const wmSrc = assets.watermarkUrl || assets.logoUrl || '/api/brand/logo';
+
+  // Money's colour, from the live topic list so the preview cannot drift from
+  // the real thing. Falls back to the palette's D2 if the list is not loaded.
+  const domains = (state.data.groups && state.data.groups.domains) || [];
+  const money = domains.find((d) => /money/i.test(d.name));
+  const previewAccent = (money && money.accent) || '#7FA391';
+
   return `
     <h2 class="section-title" style="margin-top:2rem">Logo &amp; favicon</h2>
+    <div class="brand-assets-grid">
     <div class="panel">
       ${row(
         'logo',
@@ -1919,9 +1928,43 @@ function brandAssets(b) {
       <p class="hint" style="margin-top:0.8rem">
         Uploads save immediately — no need to press Save branding.
         These are stored in the database, so they survive a redeploy.
-        The installed app icon (the one on a phone's home screen) is a separate
-        set of PNGs in <code>public/icons</code> and is not changed here.
+        The installed app icon comes from the <strong>favicon</strong> above; after changing
+        it, the app has to be uninstalled and re-installed before a phone will show the new
+        one, because the icon is cached at install time.
       </p>
+    </div>
+
+    ${/* A real card, not a picture of one. It uses the SAME classes as the
+         couple app - .qcard, .qcard-watermark, .qtext - so it inherits the
+         actual stylesheet rather than an approximation that can drift away
+         from it. What you see here is what the card does. */ ''}
+    <div class="brand-preview">
+      <div class="lbl">Live preview</div>
+      ${/* The topic colour has to be set explicitly. .qcard's top edge reads
+           --lv-accent and falls back to the brand accent, so without this the
+           preview wore a pink bar that appears on no real card - Money is
+           #7FA391. Taken from the live topic list rather than hard-coded, so it
+           follows whatever the topic colours are set to. */ ''}
+      <div class="qcard preview-qcard" style="--lv-accent:${esc(previewAccent)}">
+        <div class="qcard-top">
+          <span class="depth-badge" data-depth="2">D2 · Reflective</span>
+          <div class="qcard-provenance">
+            <span class="card-topic">Money</span>
+            <span class="lens-badge" aria-hidden="true">MON</span>
+          </div>
+        </div>
+        <img class="qcard-watermark" id="wm-preview" src="${esc(wmSrc)}" alt=""
+             aria-hidden="true" style="opacity:${opacity / 100}">
+        <div class="qcard-middle">
+          <div class="qtext">How much of our money should go to charity, family or
+            church each year, and who decides?</div>
+        </div>
+      </div>
+      <p class="hint" style="margin-top:0.7rem">
+        Drag the strength slider and watch this. The question has to stay the easiest
+        thing to read on the card — if your eye goes to the mark first, it is too strong.
+      </p>
+    </div>
     </div>`;
 }
 
@@ -2207,7 +2250,13 @@ function wire() {
     // Two events on purpose: `input` fires continuously while dragging and only
     // updates the number, `change` fires once on release and is what saves. A
     // PUT per pixel of drag would be dozens of writes for one decision.
-    wm.oninput = () => { if (out) out.textContent = wm.value + '%'; };
+    const preview = document.getElementById('wm-preview');
+    wm.oninput = () => {
+      if (out) out.textContent = wm.value + '%';
+      // The point of the preview is seeing it move, so it tracks the drag
+      // rather than waiting for the save.
+      if (preview) preview.style.opacity = String(Number(wm.value) / 100);
+    };
     wm.onchange = () => saveWatermarkStrength(Number(wm.value));
   }
 
