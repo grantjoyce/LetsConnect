@@ -395,7 +395,21 @@ const BRAND_ASSETS = {
     maxBytes: 128 * 1024,
     types: ['image/png', 'image/x-icon', 'image/vnd.microsoft.icon', 'image/svg+xml'],
   },
+  // The watermark behind a question. Its own slot rather than reusing the logo,
+  // because it is doing a different job: the header logo has to read at 96px on
+  // a phone, while this one sits large and faint behind text and is usually a
+  // symbol without the wordmark. Falls back to the logo when nothing is set.
+  watermark: {
+    key: 'brand_watermark',
+    typeKey: 'brand_watermark_type',
+    maxBytes: 512 * 1024,
+    types: ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'],
+  },
 };
+
+/** How strongly the card watermark shows, 0-100. 0 turns it off entirely. */
+const WATERMARK_OPACITY_KEY = 'brand_watermark_opacity';
+const WATERMARK_OPACITY_DEFAULT = 6;
 
 /**
  * Everything the front ends need to paint themselves, in ONE query.
@@ -409,7 +423,7 @@ const BRAND_ASSETS = {
  * caller gets a flag saying an image exists and a URL to fetch it from.
  */
 async function getBranding() {
-  const keys = [...Object.keys(BRAND_DEFAULTS), ...PALETTE.map((t) => t.key), 'brand_asset_stamp'];
+  const keys = [...Object.keys(BRAND_DEFAULTS), ...PALETTE.map((t) => t.key), 'brand_asset_stamp', WATERMARK_OPACITY_KEY];
   const stored = {};
   try {
     const rows = await query(
@@ -434,16 +448,17 @@ async function getBranding() {
 
   // Which images exist, asked as LENGTH() rather than by selecting them: this
   // runs on every deck load and the values are hundreds of kilobytes each.
-  const present = { logo: false, favicon: false };
+  const present = { logo: false, favicon: false, watermark: false };
   try {
     const rows = await query(
       `SELECT setting_key, LENGTH(setting_value) AS n FROM settings
-        WHERE setting_key IN (?, ?)`,
-      [BRAND_ASSETS.logo.key, BRAND_ASSETS.favicon.key]
+        WHERE setting_key IN (?, ?, ?)`,
+      [BRAND_ASSETS.logo.key, BRAND_ASSETS.favicon.key, BRAND_ASSETS.watermark.key]
     );
     for (const r of rows) {
       if (r.setting_key === BRAND_ASSETS.logo.key) present.logo = r.n > 0;
       if (r.setting_key === BRAND_ASSETS.favicon.key) present.favicon = r.n > 0;
+      if (r.setting_key === BRAND_ASSETS.watermark.key) present.watermark = r.n > 0;
     }
   } catch (err) {
     console.error('[branding] asset check failed:', err.message);
@@ -455,9 +470,21 @@ async function getBranding() {
   out.assets = {
     logo: present.logo,
     favicon: present.favicon,
+    watermark: present.watermark,
     logoUrl: `/api/brand/logo?v=${encodeURIComponent(stamp)}`,
     faviconUrl: `/api/brand/favicon?v=${encodeURIComponent(stamp)}`,
+    // Falls back to the logo, so switching the watermark on does not also
+    // require uploading a second image before anything appears.
+    watermarkUrl: present.watermark
+      ? `/api/brand/watermark?v=${encodeURIComponent(stamp)}`
+      : `/api/brand/logo?v=${encodeURIComponent(stamp)}`,
   };
+
+  const rawOpacity = stored[WATERMARK_OPACITY_KEY];
+  const n = Number(rawOpacity);
+  out.watermarkOpacity =
+    rawOpacity !== undefined && Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : WATERMARK_OPACITY_DEFAULT;
+
   return out;
 }
 
@@ -808,7 +835,7 @@ app.get(
  * scripts/migrate-add-brand-assets.js for why that trade was made.
  */
 app.get(
-  '/api/brand/:which(logo|favicon)',
+  '/api/brand/:which(logo|favicon|watermark)',
   wrap(async (req, res) => {
     const spec = BRAND_ASSETS[req.params.which];
     const row = await queryOne(
@@ -827,7 +854,7 @@ app.get(
         __dirname,
         'public',
         'icons',
-        req.params.which === 'logo' ? 'icon-192.png' : 'favicon-32.png'
+        req.params.which === 'favicon' ? 'favicon-32.png' : 'icon-192.png'
       );
       return res.sendFile(builtIn, (err) => {
         // The built-in is missing too. Say so rather than leaving the request
@@ -4716,6 +4743,10 @@ owner.get(
           maxKb: Math.round(BRAND_ASSETS.favicon.maxBytes / 1024),
           types: BRAND_ASSETS.favicon.types,
         },
+        watermark: {
+          maxKb: Math.round(BRAND_ASSETS.watermark.maxBytes / 1024),
+          types: BRAND_ASSETS.watermark.types,
+        },
       },
     });
   })
@@ -4742,6 +4773,14 @@ owner.put(
       // One or two characters: this sits in a 30px circle and anything longer
       // simply will not fit.
       await setSetting('brand_mark', [...String(b.brand_mark).trim()].slice(0, 2).join(''));
+    }
+
+    if (b.watermarkOpacity !== undefined) {
+      const n = Number(b.watermarkOpacity);
+      if (!Number.isFinite(n) || n < 0 || n > 100) {
+        return fail(res, 400, 'Watermark strength must be between 0 and 100.');
+      }
+      await setSetting(WATERMARK_OPACITY_KEY, Math.round(n));
     }
 
     // The palette. Sent as { palette: { night: '#11141B', ... } }, keyed by
@@ -4778,7 +4817,7 @@ owner.put(
 // configuration rather than user data.
 
 owner.post(
-  '/branding/:which(logo|favicon)',
+  '/branding/:which(logo|favicon|watermark)',
   upload.single('file'),
   wrap(async (req, res) => {
     const spec = BRAND_ASSETS[req.params.which];
@@ -4825,7 +4864,7 @@ owner.post(
 );
 
 owner.delete(
-  '/branding/:which(logo|favicon)',
+  '/branding/:which(logo|favicon|watermark)',
   wrap(async (req, res) => {
     const spec = BRAND_ASSETS[req.params.which];
     await setSetting(spec.key, null);

@@ -1193,6 +1193,39 @@ a:hover { text-decoration-color: var(--lamplight); }
   background: rgba(255, 255, 255, 0.05);
 }
 
+/* The card watermark.
+ *
+ * Absolutely positioned so it takes no part in the card's layout - the question
+ * must not move because a logo was uploaded, and a tall card of text should not
+ * push it around. Centred on the card and capped so it never reaches the edges.
+ *
+ * pointer-events:none matters: the card has a tap target on it, and an image
+ * lying across the middle would silently swallow taps meant for the card.
+ *
+ * Opacity is set inline from the owner's setting, so nothing here fixes it.
+ */
+.qcard-watermark {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 78%;
+  max-width: 320px;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+}
+
+/* The question and everything else sit above it. Without this the watermark
+   would paint over the text it is meant to sit behind. */
+.qcard-top,
+.qcard-middle,
+.qcard-bottom {
+  position: relative;
+  z-index: 1;
+}
+
 .depth-badge {
   font-size: 0.68rem;
   font-weight: 800;

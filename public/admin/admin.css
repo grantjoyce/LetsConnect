@@ -716,3 +716,26 @@ table.data--feedback td:first-child strong { font-weight: 600; line-height: 1.45
 }
 
 .code-chip:active { background: var(--raised); }
+
+/* Watermark strength ------------------------------------------------------ */
+
+.wm-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.wm-row input[type='range'] {
+  flex: 1;
+  accent-color: var(--lamplight);
+  cursor: pointer;
+}
+
+.wm-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.9rem;
+  width: 3.5rem;
+  text-align: right;
+  color: var(--text);
+}

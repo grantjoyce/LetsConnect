@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.14.4';
+const APP_VERSION = '1.15.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -665,6 +665,8 @@ function viewDeck() {
                 : ''
             }
           </div>
+
+          ${cardWatermark()}
 
           <div class="qcard-middle">
             <div class="qtext">${esc(card.text)}</div>
@@ -1531,6 +1533,27 @@ function applyBranding() {
     touch.href = b.assets.favicon ? b.assets.faviconUrl : b.assets.logoUrl;
     document.head.appendChild(touch);
   }
+}
+
+/**
+ * The watermark on a question card.
+ *
+ * Sits BEHIND the question rather than above it, and is marked aria-hidden and
+ * pointer-events:none so it cannot take a tap meant for the card or be read
+ * aloud to somebody using a screen reader. It is decoration; the question is
+ * the content.
+ *
+ * Strength is the owner's, from Settings > Brand. Zero means off, and off is a
+ * real answer - a watermark competing with the question would be exactly the
+ * wrong outcome on a screen whose whole job is one sentence.
+ */
+function cardWatermark() {
+  const b = state.branding || {};
+  const opacity = Number(b.watermarkOpacity);
+  if (!b.assets || !(b.assets.watermark || b.assets.logo)) return '';
+  if (!Number.isFinite(opacity) || opacity <= 0) return '';
+  return `<img class="qcard-watermark" src="${esc(b.assets.watermarkUrl)}" alt=""
+               aria-hidden="true" style="opacity:${opacity / 100}">`;
 }
 
 /** Whether the owner has uploaded a logo. */

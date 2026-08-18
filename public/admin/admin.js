@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.14.4';
+const APP_VERSION = '1.15.0';
 
 const state = {
   ready: false,
@@ -1836,8 +1836,10 @@ function domainColours() {
  * Save. The buttons say so.
  */
 function brandAssets(b) {
-  const limits = b.assetLimits || { logo: {}, favicon: {} };
+  const limits = b.assetLimits || { logo: {}, favicon: {}, watermark: {} };
   const assets = (b.branding && b.branding.assets) || {};
+  const opacity =
+    b.branding && b.branding.watermarkOpacity !== undefined ? b.branding.watermarkOpacity : 6;
 
   const row = (which, title, hint, has, url, limit) => `
     <div class="asset-row">
@@ -1884,11 +1886,36 @@ function brandAssets(b) {
       ${row(
         'favicon',
         'Favicon',
-        'The small icon in the browser tab. Square, and legible at 16 pixels.',
+        'The small icon in the browser tab, and the icon used when the app is installed '
+          + 'to a phone. This one wants a SOLID background — it is placed on whatever '
+          + 'colour the phone chooses, so a transparent logo disappears into it.',
         !!assets.favicon,
         assets.faviconUrl,
         limits.favicon || {}
       )}
+      ${row(
+        'watermark',
+        'Card watermark',
+        'Sits large and faint behind each question. Leave it empty to use the logo. '
+          + 'A symbol without the wordmark usually works better here.',
+        !!assets.watermark,
+        assets.watermarkUrl,
+        limits.watermark || {}
+      )}
+
+      <div class="field" style="margin-top:0.9rem">
+        <label for="wm-strength">Watermark strength</label>
+        <div class="wm-row">
+          <input type="range" id="wm-strength" min="0" max="100" step="1"
+                 value="${esc(String(opacity))}">
+          <output class="wm-value" for="wm-strength">${esc(String(opacity))}%</output>
+        </div>
+        <p class="hint">
+          How strongly it shows through. <strong>0 switches it off.</strong> Around 5–10%
+          reads as a watermark; much above that competes with the question, which is the
+          one thing on that screen that matters.
+        </p>
+      </div>
       <p class="hint" style="margin-top:0.8rem">
         Uploads save immediately — no need to press Save branding.
         These are stored in the database, so they survive a redeploy.
@@ -2174,6 +2201,16 @@ function wire() {
 
   // Choosing a file uploads it. There is no separate confirm step: the preview
   // updating IS the confirmation, and Remove undoes it.
+  const wm = document.getElementById('wm-strength');
+  if (wm) {
+    const out = document.querySelector('.wm-value');
+    // Two events on purpose: `input` fires continuously while dragging and only
+    // updates the number, `change` fires once on release and is what saves. A
+    // PUT per pixel of drag would be dozens of writes for one decision.
+    wm.oninput = () => { if (out) out.textContent = wm.value + '%'; };
+    wm.onchange = () => saveWatermarkStrength(Number(wm.value));
+  }
+
   document.querySelectorAll('[data-asset-input]').forEach((input) => {
     input.onchange = () => {
       if (input.files && input.files[0]) uploadAsset(input.dataset.assetInput, input.files[0]);
@@ -3918,7 +3955,19 @@ async function onSaveDomainColours(e) {
   }
 }
 
-const ASSET_LABEL = { logo: 'Logo', favicon: 'Favicon' };
+async function saveWatermarkStrength(value) {
+  try {
+    const res = await api.put('/api/owner/branding', { watermarkOpacity: value });
+    state.branding = res.branding;
+    if (state.data.branding) state.data.branding.branding = res.branding;
+    applyBranding();
+    toast(value === 0 ? 'Watermark switched off.' : `Watermark strength ${value}%.`);
+  } catch (err) {
+    uiAlert('Could not save', err.message);
+  }
+}
+
+const ASSET_LABEL = { logo: 'Logo', favicon: 'Favicon', watermark: 'Card watermark' };
 
 /**
  * Send one image up.
@@ -3963,7 +4012,9 @@ async function clearAsset(which) {
     `Remove the ${ASSET_LABEL[which].toLowerCase()}?`,
     which === 'logo'
       ? 'The character tile comes back in its place.'
-      : 'The built-in icon comes back in its place.',
+      : which === 'watermark'
+        ? 'The logo will be used behind questions instead.'
+        : 'The built-in icon comes back in its place.',
     'Remove',
     true
   );
