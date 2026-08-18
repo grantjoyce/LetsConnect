@@ -280,7 +280,9 @@ a:hover { text-decoration-color: var(--lamplight); }
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  margin-bottom: 1.5rem;
+  /* Tight, because the logo brings its own generous padding with it. 1.5rem
+     on top of that read as a hole between the mark and the greeting. */
+  margin-bottom: 0.5rem;
 }
 
 .brand {
@@ -321,16 +323,21 @@ a:hover { text-decoration-color: var(--lamplight); }
  * horizontal variant of the same logo would read at half the height - worth
  * asking for, and this rule is where it would change. */
 .brand-logo--bar {
-  height: 76px;
+  height: 114px;
   max-width: 62vw;
   flex: none;
+  /* The artwork is a square with the wordmark set small inside heavy padding,
+     so most of this height is the logo's own whitespace. The negative margins
+     claw back the part of it that sits above and below the visible mark -
+     without them, growing the logo just grows the gap around it. */
+  margin: -0.9rem 0;
 }
 
 /* Steps down rather than scaling smoothly, because below this the wordmark
  * inside the artwork stops being readable and the logo may as well be a
  * symbol. */
 @media (max-width: 420px) {
-  .brand-logo--bar { height: 64px; }
+  .brand-logo--bar { height: 96px; margin: -0.7rem 0; }
 }
 
 /* An uploaded logo replaces the tile rather than sitting inside it. Somebody
