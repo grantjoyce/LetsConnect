@@ -9,6 +9,7 @@
 
 require('dotenv').config();
 
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
@@ -716,29 +717,44 @@ app.get(
     const b = await getBranding();
     const ground = (b.palette && b.palette['--night']) || '#11141B';
 
-    let icons = [
-      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: '/icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
-    ];
+    // ALWAYS point at /api/brand/logo, never at a path under /icons.
+    //
+    // Those static files are not reliably reaching this server - they are in
+    // the repository and in the pushed commit, and they still 404 live - and a
+    // manifest naming icons that 404 is precisely why an installed app ends up
+    // as a blank shortcut. The route is served by Express from either the
+    // uploaded image or the built-in file on disk, so it cannot 404 the way a
+    // static path can.
+    let icons = [];
+    const row = await queryOne(
+      `SELECT
+         (SELECT setting_value FROM settings WHERE setting_key = ?) AS data,
+         (SELECT setting_value FROM settings WHERE setting_key = ?) AS type`,
+      [BRAND_ASSETS.logo.key, BRAND_ASSETS.logo.typeKey]
+    );
 
-    if (b.assets && b.assets.logo) {
-      const row = await queryOne(
-        `SELECT
-           (SELECT setting_value FROM settings WHERE setting_key = ?) AS data,
-           (SELECT setting_value FROM settings WHERE setting_key = ?) AS type`,
-        [BRAND_ASSETS.logo.key, BRAND_ASSETS.logo.typeKey]
-      );
-      if (row && row.data) {
-        const type = row.type || 'image/png';
-        const size = type === 'image/png' ? pngSize(Buffer.from(row.data, 'base64')) : null;
-        // An SVG has no fixed pixel size, which is what "any" means here. A PNG
-        // whose header could not be read is skipped rather than guessed at.
-        const sizes = type === 'image/svg+xml' ? 'any' : size ? `${size.w}x${size.h}` : null;
-        if (sizes) {
-          icons = [{ src: b.assets.logoUrl, sizes, type, purpose: 'any' }];
-        }
+    let type = 'image/png';
+    let buf = null;
+    if (row && row.data) {
+      type = row.type || 'image/png';
+      buf = Buffer.from(row.data, 'base64');
+    } else {
+      // Whatever /api/brand/logo would fall back to, so the size declared here
+      // describes the bytes actually served.
+      try {
+        buf = fs.readFileSync(path.join(__dirname, 'public', 'icons', 'icon-192.png'));
+      } catch (err) {
+        buf = null;
       }
+    }
+
+    // An SVG has no fixed pixel size, which is what "any" means. A PNG whose
+    // header will not parse is left out rather than guessed at - a wrong size
+    // gets the icon rejected outright.
+    const size = type === 'image/png' ? pngSize(buf) : null;
+    const sizes = type === 'image/svg+xml' ? 'any' : size ? `${size.w}x${size.h}` : null;
+    if (sizes) {
+      icons = [{ src: (b.assets && b.assets.logoUrl) || '/api/brand/logo', sizes, type, purpose: 'any' }];
     }
 
     res.type('application/manifest+json');
@@ -782,7 +798,24 @@ app.get(
          (SELECT setting_value FROM settings WHERE setting_key = ?) AS type`,
       [spec.key, spec.typeKey]
     );
-    if (!row || !row.data) return fail(res, 404, 'Not set.');
+    // Nothing uploaded: fall back to the built-in icon on disk, so a link tag
+    // pointing here is always valid. index.html points BOTH the favicon and the
+    // apple-touch-icon at this route for exactly that reason - the static
+    // /icons/*.png files are not reliably reaching the server, and a 404 icon
+    // is what left the installed app with no icon at all.
+    if (!row || !row.data) {
+      const builtIn = path.join(
+        __dirname,
+        'public',
+        'icons',
+        req.params.which === 'logo' ? 'icon-192.png' : 'favicon-32.png'
+      );
+      return res.sendFile(builtIn, (err) => {
+        // The built-in is missing too. Say so rather than leaving the request
+        // hanging - a half-sent response cannot be turned into a 404.
+        if (err && !res.headersSent) fail(res, 404, 'Not set.');
+      });
+    }
 
     const buf = Buffer.from(row.data, 'base64');
     res.set('Content-Type', row.type || 'image/png');

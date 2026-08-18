@@ -14,8 +14,13 @@
 <meta name="apple-mobile-web-app-title" content="Let's Connect">
 
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<!-- Served by the app, not from disk: /api/brand/favicon returns the uploaded
+     favicon and falls back to the built-in one, so this is correct before
+     app.js has run and on an install that has uploaded nothing. The static
+     /icons/*.png files these used to name are not reliably reaching the
+     server, which is what left the installed app with no icon at all. -->
+<link rel="icon" href="/api/brand/favicon">
+<link rel="apple-touch-icon" href="/api/brand/favicon">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
