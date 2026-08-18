@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.16.0';
+const APP_VERSION = '1.17.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -1552,8 +1552,21 @@ function cardWatermark() {
   const opacity = Number(b.watermarkOpacity);
   if (!b.assets || !(b.assets.watermark || b.assets.logo)) return '';
   if (!Number.isFinite(opacity) || opacity <= 0) return '';
+  // Size and position come from the owner too. Percentages, not pixels: a card
+  // is a different size on every phone, so anything fixed would sit correctly
+  // on exactly one of them.
+  const size = Number(b.watermarkSize);
+  const x = Number(b.watermarkX);
+  const y = Number(b.watermarkY);
+  const style = [
+    `opacity:${opacity / 100}`,
+    `width:${Number.isFinite(size) ? size : 78}%`,
+    `left:${Number.isFinite(x) ? x : 50}%`,
+    `top:${Number.isFinite(y) ? y : 50}%`,
+  ].join(';');
+
   return `<img class="qcard-watermark" src="${esc(b.assets.watermarkUrl)}" alt=""
-               aria-hidden="true" style="opacity:${opacity / 100}">`;
+               aria-hidden="true" style="${style}">`;
 }
 
 /** Whether the owner has uploaded a logo. */

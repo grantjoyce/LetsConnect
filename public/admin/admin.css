@@ -787,3 +787,42 @@ table.data--feedback td:first-child strong { font-weight: 600; line-height: 1.45
 .preview-qcard .qtext {
   font-size: 1.15rem;
 }
+
+/* Watermark position ------------------------------------------------------ */
+
+.wm-pos {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.9rem;
+}
+
+.wm-pos-sliders { flex: 1; display: grid; gap: 0.5rem; }
+
+/* A fixed width so the two rows line up with each other and with the strength
+   and size sliders above them - ragged slider starts make a stack of controls
+   look broken. */
+.wm-axis {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  width: 6.5rem;
+  flex: none;
+}
+
+.wm-centre {
+  flex: none;
+  padding: 0.5rem 0.9rem;
+  min-height: 0;
+  font-size: 0.82rem;
+}
+
+/* The preview has to clip, because the size slider goes past 100% and an
+   overflowing watermark would otherwise spill across the admin page. The real
+   card clips too, so this matches it. */
+.preview-qcard { overflow: hidden; }
+
+@media (max-width: 700px) {
+  .wm-pos { flex-direction: column; align-items: stretch; }
+  .wm-centre { align-self: flex-start; }
+}

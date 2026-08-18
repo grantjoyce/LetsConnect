@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.16.0';
+const APP_VERSION = '1.17.0';
 
 const state = {
   ready: false,
@@ -1826,6 +1826,19 @@ function domainColours() {
     </form>`;
 }
 
+/** One labelled slider with a live readout. */
+function wmSlider(id, label, value, min, max, hintHtml) {
+  return `
+    <div class="field" style="margin-top:0.9rem">
+      <label for="${id}">${esc(label)}</label>
+      <div class="wm-row">
+        <input type="range" id="${id}" min="${min}" max="${max}" step="1" value="${esc(String(value))}">
+        <output class="wm-value" for="${id}">${esc(String(value))}%</output>
+      </div>
+      <p class="hint">${hintHtml}</p>
+    </div>`;
+}
+
 /**
  * Logo and favicon.
  *
@@ -1838,8 +1851,12 @@ function domainColours() {
 function brandAssets(b) {
   const limits = b.assetLimits || { logo: {}, favicon: {}, watermark: {} };
   const assets = (b.branding && b.branding.assets) || {};
-  const opacity =
-    b.branding && b.branding.watermarkOpacity !== undefined ? b.branding.watermarkOpacity : 6;
+  const num = (field, fallback) =>
+    b.branding && b.branding[field] !== undefined ? b.branding[field] : fallback;
+  const opacity = num('watermarkOpacity', 6);
+  const size = num('watermarkSize', 78);
+  const px = num('watermarkX', 50);
+  const py = num('watermarkY', 50);
 
   const row = (which, title, hint, has, url, limit) => `
     <div class="asset-row">
@@ -1912,17 +1929,36 @@ function brandAssets(b) {
         limits.watermark || {}
       )}
 
+      ${wmSlider('wm-strength', 'Watermark strength', opacity, 0, 100,
+        'How strongly it shows through. <strong>0 switches it off.</strong> Around 5–10% '
+        + 'reads as a watermark; much above that competes with the question, which is the '
+        + 'one thing on that screen that matters.')}
+
+      ${wmSlider('wm-size', 'Watermark size', size, 10, 160,
+        'A percentage of the card width, so it scales with the phone rather than being '
+        + 'fixed in pixels. Above 100% it runs past the edges of the card, which is a '
+        + 'legitimate look for a large faint mark.')}
+
       <div class="field" style="margin-top:0.9rem">
-        <label for="wm-strength">Watermark strength</label>
-        <div class="wm-row">
-          <input type="range" id="wm-strength" min="0" max="100" step="1"
-                 value="${esc(String(opacity))}">
-          <output class="wm-value" for="wm-strength">${esc(String(opacity))}%</output>
+        <label>Watermark position</label>
+        <div class="wm-pos">
+          <div class="wm-pos-sliders">
+            <div class="wm-row">
+              <span class="wm-axis">Left · Right</span>
+              <input type="range" id="wm-x" min="0" max="100" step="1" value="${esc(String(px))}">
+              <output class="wm-value" for="wm-x">${esc(String(px))}%</output>
+            </div>
+            <div class="wm-row">
+              <span class="wm-axis">Top · Bottom</span>
+              <input type="range" id="wm-y" min="0" max="100" step="1" value="${esc(String(py))}">
+              <output class="wm-value" for="wm-y">${esc(String(py))}%</output>
+            </div>
+          </div>
+          <button type="button" class="btn btn-ghost wm-centre" data-action="wm-centre">Centre it</button>
         </div>
         <p class="hint">
-          How strongly it shows through. <strong>0 switches it off.</strong> Around 5–10%
-          reads as a watermark; much above that competes with the question, which is the
-          one thing on that screen that matters.
+          Where the middle of the mark sits on the card. 50 / 50 is centred; drop it to the
+          top left and it clears the question text entirely.
         </p>
       </div>
       <p class="hint" style="margin-top:0.8rem">
@@ -1954,7 +1990,8 @@ function brandAssets(b) {
           </div>
         </div>
         <img class="qcard-watermark" id="wm-preview" src="${esc(wmSrc)}" alt=""
-             aria-hidden="true" style="opacity:${opacity / 100}">
+             aria-hidden="true"
+             style="opacity:${opacity / 100};width:${size}%;left:${px}%;top:${py}%">
         <div class="qcard-middle">
           <div class="qtext">How much of our money should go to charity, family or
             church each year, and who decides?</div>
@@ -2244,21 +2281,30 @@ function wire() {
 
   // Choosing a file uploads it. There is no separate confirm step: the preview
   // updating IS the confirmation, and Remove undoes it.
-  const wm = document.getElementById('wm-strength');
-  if (wm) {
-    const out = document.querySelector('.wm-value');
-    // Two events on purpose: `input` fires continuously while dragging and only
-    // updates the number, `change` fires once on release and is what saves. A
-    // PUT per pixel of drag would be dozens of writes for one decision.
-    const preview = document.getElementById('wm-preview');
-    wm.oninput = () => {
-      if (out) out.textContent = wm.value + '%';
-      // The point of the preview is seeing it move, so it tracks the drag
-      // rather than waiting for the save.
-      if (preview) preview.style.opacity = String(Number(wm.value) / 100);
+  // The three watermark sliders, wired identically.
+  //
+  // Two events on purpose: `input` fires continuously while dragging and only
+  // moves the preview and the readout, `change` fires once on release and is
+  // what saves. A PUT per pixel of drag would be dozens of writes for one
+  // decision.
+  const preview = document.getElementById('wm-preview');
+  const WM_SLIDERS = [
+    { id: 'wm-strength', field: 'watermarkOpacity', apply: (el, v) => { el.style.opacity = String(v / 100); } },
+    { id: 'wm-size', field: 'watermarkSize', apply: (el, v) => { el.style.width = v + '%'; } },
+    { id: 'wm-x', field: 'watermarkX', apply: (el, v) => { el.style.left = v + '%'; } },
+    { id: 'wm-y', field: 'watermarkY', apply: (el, v) => { el.style.top = v + '%'; } },
+  ];
+
+  WM_SLIDERS.forEach((sl) => {
+    const el = document.getElementById(sl.id);
+    if (!el) return;
+    const out = document.querySelector(`output[for="${sl.id}"]`);
+    el.oninput = () => {
+      if (out) out.textContent = el.value + '%';
+      if (preview) sl.apply(preview, Number(el.value));
     };
-    wm.onchange = () => saveWatermarkStrength(Number(wm.value));
-  }
+    el.onchange = () => saveWatermarkSetting(sl.field, Number(el.value));
+  });
 
   document.querySelectorAll('[data-asset-input]').forEach((input) => {
     input.onchange = () => {
@@ -2490,6 +2536,7 @@ async function handleAction(action, el) {
       break;
     }
     case 'clear-asset': await clearAsset(el.dataset.which); break;
+    case 'wm-centre': await watermarkCentre(); break;
 
     default: break;
   }
@@ -4004,13 +4051,46 @@ async function onSaveDomainColours(e) {
   }
 }
 
-async function saveWatermarkStrength(value) {
+const WM_LABEL = {
+  watermarkOpacity: 'Watermark strength',
+  watermarkSize: 'Watermark size',
+  watermarkX: 'Watermark position',
+  watermarkY: 'Watermark position',
+};
+
+async function saveWatermarkSetting(field, value) {
   try {
-    const res = await api.put('/api/owner/branding', { watermarkOpacity: value });
+    const res = await api.put('/api/owner/branding', { [field]: value });
     state.branding = res.branding;
+    // Keep the cached settings payload in step, or the next render of this tab
+    // would put the sliders back where they were before the drag.
     if (state.data.branding) state.data.branding.branding = res.branding;
     applyBranding();
-    toast(value === 0 ? 'Watermark switched off.' : `Watermark strength ${value}%.`);
+    toast(
+      field === 'watermarkOpacity' && value === 0
+        ? 'Watermark switched off.'
+        : `${WM_LABEL[field]} ${value}%.`
+    );
+  } catch (err) {
+    uiAlert('Could not save', err.message);
+  }
+}
+
+/** Put the mark back in the middle - one tap instead of two slider drags. */
+async function watermarkCentre() {
+  const x = document.getElementById('wm-x');
+  const y = document.getElementById('wm-y');
+  const preview = document.getElementById('wm-preview');
+  if (x) { x.value = 50; if (preview) preview.style.left = '50%'; }
+  if (y) { y.value = 50; if (preview) preview.style.top = '50%'; }
+  document.querySelectorAll('output[for="wm-x"], output[for="wm-y"]').forEach((o) => {
+    o.textContent = '50%';
+  });
+  try {
+    const res = await api.put('/api/owner/branding', { watermarkX: 50, watermarkY: 50 });
+    state.branding = res.branding;
+    if (state.data.branding) state.data.branding.branding = res.branding;
+    toast('Watermark centred.');
   } catch (err) {
     uiAlert('Could not save', err.message);
   }

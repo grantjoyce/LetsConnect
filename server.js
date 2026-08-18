@@ -407,9 +407,24 @@ const BRAND_ASSETS = {
   },
 };
 
-/** How strongly the card watermark shows, 0-100. 0 turns it off entirely. */
-const WATERMARK_OPACITY_KEY = 'brand_watermark_opacity';
-const WATERMARK_OPACITY_DEFAULT = 6;
+/**
+ * The card watermark's numeric settings.
+ *
+ * One table rather than four near-identical blocks: each is a whole number in a
+ * range with a default, and adding another - a rotation, say - should be one
+ * line here and one slider in the admin, not a fifth copy of the same
+ * validation.
+ *
+ * Position is expressed as a PERCENTAGE of the card rather than pixels, because
+ * a card is a different size on every phone. 50/50 is centred; 0/0 is the top
+ * left corner. Size is a percentage of the card's width for the same reason.
+ */
+const WATERMARK_NUMS = {
+  watermarkOpacity: { key: 'brand_watermark_opacity', def: 6, min: 0, max: 100, label: 'Strength' },
+  watermarkSize: { key: 'brand_watermark_size', def: 78, min: 10, max: 160, label: 'Size' },
+  watermarkX: { key: 'brand_watermark_x', def: 50, min: 0, max: 100, label: 'Horizontal position' },
+  watermarkY: { key: 'brand_watermark_y', def: 50, min: 0, max: 100, label: 'Vertical position' },
+};
 
 /**
  * Everything the front ends need to paint themselves, in ONE query.
@@ -423,7 +438,12 @@ const WATERMARK_OPACITY_DEFAULT = 6;
  * caller gets a flag saying an image exists and a URL to fetch it from.
  */
 async function getBranding() {
-  const keys = [...Object.keys(BRAND_DEFAULTS), ...PALETTE.map((t) => t.key), 'brand_asset_stamp', WATERMARK_OPACITY_KEY];
+  const keys = [
+    ...Object.keys(BRAND_DEFAULTS),
+    ...PALETTE.map((t) => t.key),
+    'brand_asset_stamp',
+    ...Object.values(WATERMARK_NUMS).map((w) => w.key),
+  ];
   const stored = {};
   try {
     const rows = await query(
@@ -480,10 +500,12 @@ async function getBranding() {
       : `/api/brand/logo?v=${encodeURIComponent(stamp)}`,
   };
 
-  const rawOpacity = stored[WATERMARK_OPACITY_KEY];
-  const n = Number(rawOpacity);
-  out.watermarkOpacity =
-    rawOpacity !== undefined && Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : WATERMARK_OPACITY_DEFAULT;
+  for (const [field, spec] of Object.entries(WATERMARK_NUMS)) {
+    const raw = stored[spec.key];
+    const n = Number(raw);
+    out[field] =
+      raw !== undefined && Number.isFinite(n) ? Math.min(spec.max, Math.max(spec.min, n)) : spec.def;
+  }
 
   return out;
 }
@@ -4775,12 +4797,13 @@ owner.put(
       await setSetting('brand_mark', [...String(b.brand_mark).trim()].slice(0, 2).join(''));
     }
 
-    if (b.watermarkOpacity !== undefined) {
-      const n = Number(b.watermarkOpacity);
-      if (!Number.isFinite(n) || n < 0 || n > 100) {
-        return fail(res, 400, 'Watermark strength must be between 0 and 100.');
+    for (const [field, spec] of Object.entries(WATERMARK_NUMS)) {
+      if (b[field] === undefined) continue;
+      const n = Number(b[field]);
+      if (!Number.isFinite(n) || n < spec.min || n > spec.max) {
+        return fail(res, 400, `${spec.label} must be between ${spec.min} and ${spec.max}.`);
       }
-      await setSetting(WATERMARK_OPACITY_KEY, Math.round(n));
+      await setSetting(spec.key, Math.round(n));
     }
 
     // The palette. Sent as { palette: { night: '#11141B', ... } }, keyed by

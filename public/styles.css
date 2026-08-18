@@ -1206,11 +1206,16 @@ a:hover { text-decoration-color: var(--lamplight); }
  */
 .qcard-watermark {
   position: absolute;
+  /* top, left and width are set inline from the owner's settings. These are the
+     values used when nothing has been chosen. */
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
   width: 78%;
-  max-width: 320px;
+  /* The translate is what makes left/top mean "the CENTRE of the mark sits
+     here", which is the only way a position control reads the way someone
+     expects when they drag it toward a corner. No max-width: capping it would
+     silently ignore the size slider on a wide card. */
+  transform: translate(-50%, -50%);
   height: auto;
   pointer-events: none;
   user-select: none;
