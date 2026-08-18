@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.14.2';
+const APP_VERSION = '1.14.3';
 
 // ---------------------------------------------------------------------------
 // State
@@ -1517,15 +1517,18 @@ function applyBranding() {
     document.head.appendChild(link);
   }
 
-  // iOS ignores the manifest for the home-screen icon and uses this instead,
-  // so an uploaded logo has to be pointed at separately or iPhone users get a
-  // screenshot of the page as their icon. Prefers the logo over the favicon:
-  // this one is displayed at 180px, where a favicon-sized image looks soft.
-  if (b.assets && (b.assets.logo || b.assets.favicon)) {
+  // iOS ignores the manifest for the home-screen icon and uses this instead, so
+  // it has to be pointed at separately or iPhone users get a screenshot of the
+  // page as their icon.
+  //
+  // Prefers the FAVICON, same reasoning as the manifest: a home-screen icon is
+  // composited onto a background someone else chooses, and the favicon is the
+  // solid one. The logo is line art on transparency and disappears there.
+  if (b.assets && (b.assets.favicon || b.assets.logo)) {
     document.querySelectorAll('link[rel="apple-touch-icon"]').forEach((el) => el.remove());
     const touch = document.createElement('link');
     touch.rel = 'apple-touch-icon';
-    touch.href = b.assets.logo ? b.assets.logoUrl : b.assets.faviconUrl;
+    touch.href = b.assets.favicon ? b.assets.faviconUrl : b.assets.logoUrl;
     document.head.appendChild(touch);
   }
 }

@@ -725,12 +725,25 @@ app.get(
     // as a blank shortcut. The route is served by Express from either the
     // uploaded image or the built-in file on disk, so it cannot 404 the way a
     // static path can.
+    // THE FAVICON, not the logo, and the two are not interchangeable here.
+    //
+    // A home-screen icon is composited onto a background the launcher chooses,
+    // so it wants a solid, full shape. Measured on the real artwork: the
+    // favicon is 78% opaque - a solid disc - while the logo is 5%, thin line
+    // work on transparency. Installing the logo produced a few pale strokes
+    // floating on whatever colour Android picked.
+    //
+    // The logo is still right in the app, where it sits on a known dark ground.
+    // Different jobs, different files.
     let icons = [];
+    const prefer = b.assets && b.assets.favicon ? BRAND_ASSETS.favicon : BRAND_ASSETS.logo;
+    const preferUrl =
+      b.assets && b.assets.favicon ? b.assets.faviconUrl : (b.assets && b.assets.logoUrl) || '/api/brand/logo';
     const row = await queryOne(
       `SELECT
          (SELECT setting_value FROM settings WHERE setting_key = ?) AS data,
          (SELECT setting_value FROM settings WHERE setting_key = ?) AS type`,
-      [BRAND_ASSETS.logo.key, BRAND_ASSETS.logo.typeKey]
+      [prefer.key, prefer.typeKey]
     );
 
     let type = 'image/png';
@@ -746,6 +759,9 @@ app.get(
       } catch (err) {
         buf = null;
       }
+      // Nothing uploaded, so the URL has to name the route that serves that
+      // built-in file rather than the one for an asset that does not exist.
+      
     }
 
     // An SVG has no fixed pixel size, which is what "any" means. A PNG whose
@@ -754,7 +770,10 @@ app.get(
     const size = type === 'image/png' ? pngSize(buf) : null;
     const sizes = type === 'image/svg+xml' ? 'any' : size ? `${size.w}x${size.h}` : null;
     if (sizes) {
-      icons = [{ src: (b.assets && b.assets.logoUrl) || '/api/brand/logo', sizes, type, purpose: 'any' }];
+      // purpose "any", not "maskable": a maskable icon is cropped to the
+      // launcher's shape with only the centre 80% guaranteed, and this artwork
+      // is already a disc that reaches the edges of its own square.
+      icons = [{ src: buf && row && row.data ? preferUrl : '/api/brand/logo', sizes, type, purpose: 'any' }];
     }
 
     res.type('application/manifest+json');
