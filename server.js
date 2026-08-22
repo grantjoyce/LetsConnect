@@ -938,7 +938,7 @@ app.post(
     const note = String(req.body.note || '').trim().slice(0, 500);
 
     if (!a || !b) return fail(res, 400, 'Both names, please.');
-    if (!email || !/^[^s@]+@[^s@]+.[^s@]+$/.test(email)) {
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return fail(res, 400, 'Enter a valid email address.');
     }
 
@@ -2649,7 +2649,7 @@ owner.post(
     const a = String(req.body.partnerA || '').trim();
     const b = String(req.body.partnerB || '').trim();
     if (!a || !b) {
-      return fail(res, 400, 'Both names, please — the welcome screen greets them by name.');
+      return fail(res, 400, 'Both names, please - the welcome screen greets them by name.');
     }
 
     const issued = await issueCode({

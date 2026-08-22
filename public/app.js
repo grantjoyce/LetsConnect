@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.20.1';
+const APP_VERSION = '1.20.2';
 
 // ---------------------------------------------------------------------------
 // State
@@ -330,7 +330,7 @@ function viewRegister() {
           ${brandLockup('hero')}
         </div>
         <div class="panel">
-          <h2 class="panel-title">Thank you — that is with us</h2>
+          <h2 class="panel-title">Thank you - that is with us</h2>
           <p class="hint" style="margin-bottom:1.1rem">
             We will email your code to <strong>${esc(state.registeredEmail || 'you')}</strong>.
             When it arrives, come back here and enter it.
@@ -353,7 +353,7 @@ function viewRegister() {
         <h2 class="panel-title">Register</h2>
         <p class="hint" style="margin-bottom:1.1rem">
           Tell us who the two of you are and we will send a code to your email.
-          One code covers both of you — this is done sitting together, with one
+          One code covers both of you - this is done sitting together, with one
           phone between you.
         </p>
 
@@ -408,7 +408,7 @@ function viewGate() {
       <div class="panel">
         <h2 class="panel-title">Enter your code</h2>
         <p class="hint" style="margin-bottom:1.1rem">
-          The code from your order email. Sit somewhere you will not be interrupted —
+          The code from your order email. Sit somewhere you will not be interrupted -
           this works best with one phone between the two of you.
         </p>
 
@@ -473,13 +473,13 @@ function viewAccount() {
         <h2 class="panel-title">The ones with consequences</h2>
         <p class="hint" style="margin-bottom:0.9rem">
           ${plural(v.available || 0, 'question is', 'questions are')} held back until you
-          both say so. These are not the most exposing questions — they are the ones
+          both say so. These are not the most exposing questions - they are the ones
           where an honest answer <strong>forces something to happen</strong>. A hidden
           debt, a crossed line, a doubt about staying. Decide out loud, together,
           before you turn them on.
         </p>
         <button class="btn ${v.unlocked ? 'btn-ghost' : ''} btn-block" data-action="volatile">
-          ${v.unlocked ? 'Put them away again' : 'We both agree — include them'}
+          ${v.unlocked ? 'Put them away again' : 'We both agree - include them'}
         </button>
         ${
           v.unlocked
@@ -492,7 +492,7 @@ function viewAccount() {
         <h2 class="panel-title">Start again</h2>
         <p class="hint" style="margin-bottom:0.9rem">
           Clears what you have worked through so the cards come back. Nothing you
-          said is stored anywhere — only which cards you dealt with.
+          said is stored anywhere - only which cards you dealt with.
         </p>
         <button class="btn btn-ghost btn-block" data-action="reset-all">
           Clear our progress
@@ -502,7 +502,7 @@ function viewAccount() {
       <div class="panel">
         <h2 class="panel-title">Finish</h2>
         <p class="hint" style="margin-bottom:0.9rem">
-          Closes the code on this phone. It keeps working — enter it again whenever
+          Closes the code on this phone. It keeps working - enter it again whenever
           you sit down together.
         </p>
         <button class="btn btn-ghost btn-block" data-action="leave">Close the app</button>
@@ -656,7 +656,7 @@ function viewSelection() {
             <button class="depth-chip${on ? ' is-on' : ''}"
                     data-action="toggle-depth" data-depth="${depth.n}"
                     role="checkbox" aria-checked="${on}"
-                    title="${esc(depth.name)} — ${esc(depth.blurb)}">
+                    title="${esc(depth.name)} - ${esc(depth.blurb)}">
               D${depth.n}
               <span class="depth-chip-n">${esc(depth.name)}</span>
             </button>`;
@@ -779,7 +779,7 @@ function viewDeck() {
             <div class="qtext">${esc(card.text)}</div>
             ${
               card.seenBefore
-                ? '<div class="qcard-note">You skipped this one before — it has come back around.</div>'
+                ? '<div class="qcard-note">You skipped this one before - it has come back around.</div>'
                 : ''
             }
             ${
@@ -1105,10 +1105,10 @@ function copyText(text) {
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(
       () => toast('Copied.'),
-      () => toast('Could not copy — write it down instead.', true)
+      () => toast('Could not copy - write it down instead.', true)
     );
   } else {
-    toast('Copying is not available here — write it down.', true);
+    toast('Copying is not available here - write it down.', true);
   }
 }
 
@@ -1178,7 +1178,7 @@ async function showLens(code, ref) {
       <p style="margin-top:0.9rem;font-size:0.85rem;color:var(--text-faint)">
         ${
           lens.author
-            ? `This question was written from that way of looking — newly written for this
+            ? `This question was written from that way of looking - newly written for this
                app, and not taken from ${esc(possessive(lens.author))} published material.
                Nobody named here is involved in this app.`
             : `No outside framework sits behind these. They are written straight to the
@@ -1257,7 +1257,7 @@ async function toggleVolatile() {
   if (turningOn) {
     const yes = await uiConfirm(
       'Include the ones with consequences?',
-      `<strong>${v.available}</strong> questions are held back — not because they are the most ` +
+      `<strong>${v.available}</strong> questions are held back - not because they are the most ` +
         'exposing, but because an honest answer to them forces something to happen. A hidden ' +
         'debt, a crossed line, a doubt about staying.' +
         '<br><br>Say it out loud to each other before you tap. Either of you can put them away ' +
@@ -1356,7 +1356,7 @@ async function askHowItLanded(card) {
     title: 'How did that land?',
     bodyHtml: `
       <p style="color:var(--text-dim);margin-bottom:0.9rem">
-        Only if you want to. It helps us write better questions — and it is not
+        Only if you want to. It helps us write better questions - and it is not
         stored against you, just against the question.
       </p>
       <div class="landed-list">
@@ -1473,7 +1473,7 @@ async function reportQuestion() {
 
   const note = await promptDialog({
     title: 'Anything to add?',
-    message: 'Optional — but a sentence here is worth far more than the category alone.',
+    message: 'Optional - but a sentence here is worth far more than the category alone.',
     label: 'Your note',
     placeholder: 'Leave blank if you would rather not say',
     confirmLabel: 'Send it',
@@ -1482,7 +1482,7 @@ async function reportQuestion() {
 
   try {
     await api.post('/api/report', { questionId: card.id, reason, note });
-    toast('Thank you — that has been passed on.');
+    toast('Thank you - that has been passed on.');
   } catch (err) {
     toast(err.message, true);
   }
@@ -1522,7 +1522,7 @@ async function resetDeck(scope) {
           count === 1 ? '' : 's'
         } for ${esc(where)} at ${
           d.selection ? `depth ${esc(d.selection.depths.join(', '))}` : 'these depths'
-        } — every question becomes available again, as if you had never opened it. This cannot be undone.`,
+        } - every question becomes available again, as if you had never opened it. This cannot be undone.`,
     isSkipped ? 'Bring them back' : `Clear ${count}`,
     !isSkipped
   );
@@ -1884,6 +1884,11 @@ window.addEventListener('beforeinstallprompt', (e) => {
 // taps on their own phone are picked up.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible' || !state.me) return;
+  // The register form is typed into, and a render() would throw it away. This
+  // only ever fires for a signed-in owner previewing the page - a stranger has
+  // no state.me and never reaches here - but losing a half-filled form on a
+  // tab switch is not something to leave in.
+  if (isRegisterRoute()) return;
   if (state.view === 'deck') return; // never swap the card out from under them
   api
     .get('/api/data')

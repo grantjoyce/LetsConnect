@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.20.1';
+const APP_VERSION = '1.20.2';
 
 const state = {
   ready: false,
@@ -84,16 +84,16 @@ function esc(v) {
 }
 
 function fmtDate(v) {
-  if (!v) return '—';
+  if (!v) return '-';
   const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return '-';
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function fmtWhen(v) {
-  if (!v) return '—';
+  if (!v) return '-';
   const d = new Date(v);
-  if (Number.isNaN(d.getTime())) return '—';
+  if (Number.isNaN(d.getTime())) return '-';
   return `${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} ${d.toLocaleTimeString(
     undefined,
     { hour: '2-digit', minute: '2-digit' }
@@ -374,7 +374,7 @@ function viewSetup() {
           ${state.error ? `<div class="form-error">${esc(state.error)}</div>` : ''}
           <p class="hint" style="margin-bottom:1rem">
             This install has no accounts yet. The first one created owns the app and
-            can never be locked out by another — so make it yours.
+            can never be locked out by another - so make it yours.
           </p>
           <form id="setup-form" novalidate>
             <div class="field">
@@ -491,7 +491,7 @@ function tabOverview() {
       d.email.unreadable
         ? `<div class="notice" style="margin-top:1.2rem">
              <strong>The saved SMTP password cannot be read.</strong> SECRET_KEY or
-             SESSION_SECRET changed on the server — retype the password in Settings.
+             SESSION_SECRET changed on the server - retype the password in Settings.
            </div>`
         : ''
     }
@@ -612,7 +612,7 @@ function tabStructure() {
     <p class="hint" style="margin-bottom:0.8rem">
       The ladder couples pick from. The <strong>name</strong> and <strong>one-liner</strong>
       are what they read on the chips; the <strong>description</strong> is the longer
-      explanation. The number itself cannot be changed after the fact — every question
+      explanation. The number itself cannot be changed after the fact - every question
       sitting on a rung stores it, so renumbering would silently move all of them.
     </p>
 
@@ -653,7 +653,7 @@ function tabStructure() {
     <h2 class="section-title" style="margin-top:2rem">Lens mapping</h2>
     <p class="hint" style="margin-bottom:0.8rem">
       The third axis. A lens is the way of looking a question was written from, and its
-      three letters are the front of the question's own ID — <code>GOT-001</code> is the
+      three letters are the front of the question's own ID - <code>GOT-001</code> is the
       first question written through the Gottman lens. Couples see those letters in the
       corner of every card and can tap them.
       <br><br>
@@ -683,7 +683,7 @@ function tabStructure() {
               ${
                 l.author
                   ? esc(l.author)
-                  : '<span class="row-sub">No authority — written to the subject directly</span>'
+                  : '<span class="row-sub">No authority - written to the subject directly</span>'
               }
             </td>
             <td>
@@ -693,7 +693,7 @@ function tabStructure() {
                   : '<span class="row-sub">Nothing carries this badge yet</span>'
               }
             </td>
-            <td>${l.minDepth === null ? '—' : `D${l.minDepth}–D${l.maxDepth}`}</td>
+            <td>${l.minDepth === null ? '-' : `D${l.minDepth}–D${l.maxDepth}`}</td>
             <td class="num">${l.questions}${
                       l.volatileCount ? `<span class="row-sub">${l.volatileCount} volatile</span>` : ''
                     }</td>
@@ -769,7 +769,7 @@ function tabQuestions() {
                 ${
                   x.context
                     ? `<span class="row-sub">${esc(x.context)}</span>`
-                    : '<span class="row-sub">No context line — this card cannot be served.</span>'
+                    : '<span class="row-sub">No context line - this card cannot be served.</span>'
                 }
                 <span class="row-sub">${esc(x.ref)} · ${esc(x.source)}${
                       x.chainName ? ` · in “${esc(x.chainName)}”` : ''
@@ -777,7 +777,7 @@ function tabQuestions() {
               </td>
               <td>${esc(x.levelName)}</td>
               <td>D${x.depth}</td>
-              <td>${x.lens ? esc(x.lens) : '—'}</td>
+              <td>${x.lens ? esc(x.lens) : '-'}</td>
               <td class="num">${x.timesUsed}</td>
               <td class="actions">
                 <button class="mini" data-action="question-edit" data-id="${x.id}">Edit</button>
@@ -821,7 +821,7 @@ function tabDevelop() {
 
   return `
     <div class="notice">
-      Questions are written here, against a framework, and land in a review queue —
+      Questions are written here, against a framework, and land in a review queue -
       never straight into the collection. Everything that comes back is put through the
       same construction rules the corpus is held to, and anything that cannot stand alone
       on a card is refused rather than quietly accepted.
@@ -836,7 +836,7 @@ function tabDevelop() {
             <input class="input" id="ai-key" name="apiKey" type="password" autocomplete="off"
                    placeholder="${
                      ai.configured
-                       ? `Stored (${esc(ai.masked)}) — leave blank to keep it`
+                       ? `Stored (${esc(ai.masked)}) - leave blank to keep it`
                        : 'sk-ant-…'
                    }">
             <p class="hint">
@@ -872,7 +872,7 @@ function tabDevelop() {
     <p class="hint" style="margin-bottom:0.8rem">
       A framework is a way of looking at a relationship, and the three-letter code is the
       badge a couple sees in the corner of a card. Attribution runs to the framework and
-      to whose it is — never to a book, a deck, or anybody's published material. Every
+      to whose it is - never to a book, a deck, or anybody's published material. Every
       question here is newly written.
     </p>
 
@@ -930,7 +930,7 @@ function tabDevelop() {
         : !ready.length
         ? `<div class="notice">
              No framework has a brief written yet. The generator needs to know what a
-             framework actually interrogates — a name on its own produces generic questions
+             framework actually interrogates - a name on its own produces generic questions
              under a respected label, which is worse than none.
            </div>`
         : ''
@@ -1023,7 +1023,7 @@ function tabDevelop() {
         ${
           x.issues
             ? `<div class="draft-issues">${
-                x.verdict === 'rejected' ? 'Cannot be served as written — ' : 'Worth a look — '
+                x.verdict === 'rejected' ? 'Cannot be served as written - ' : 'Worth a look - '
               }${esc(x.issues)}</div>`
             : ''
         }
@@ -1064,12 +1064,12 @@ function tabDevelop() {
 }
 
 /**
- * Sequences — the linked questions.
+ * Sequences - the linked questions.
  *
  * A sequence is a recommended running order over cards that circle the same
  * construct at rising exposure. The invariant is that every card in one STILL
  * STANDS ALONE: pull one out and it makes complete sense on its own. So this
- * editor manages membership and order and never rewrites a question — the
+ * editor manages membership and order and never rewrites a question - the
  * order is the only thing a sequence owns.
  */
 function tabChains() {
@@ -1082,7 +1082,7 @@ function tabChains() {
   return `
     <div class="notice">
       A sequence is a suggested running order, not a new kind of question. Every card in
-      one is still dealt on its own in the normal decks, and still reads on its own —
+      one is still dealt on its own in the normal decks, and still reads on its own -
       the order only adds something when a couple chooses to play it through.
     </div>
 
@@ -1107,14 +1107,14 @@ function tabChains() {
                 ${c.isActive ? '' : '<span class="pill pill-off">off</span>'}
                 ${
                   c.unpositioned
-                    ? `<span class="row-sub">${c.unpositioned} card(s) with no position — open it to set the order</span>`
+                    ? `<span class="row-sub">${c.unpositioned} card(s) with no position - open it to set the order</span>`
                     : ''
                 }
                 ${c.volatileCount ? `<span class="row-sub">${c.volatileCount} volatile</span>` : ''}
               </td>
-              <td>${esc(c.domainName || '—')}</td>
+              <td>${esc(c.domainName || '-')}</td>
               <td class="num">${c.members}</td>
-              <td>${c.members ? `D${c.minDepth}–D${c.maxDepth}` : '—'}</td>
+              <td>${c.members ? `D${c.minDepth}–D${c.maxDepth}` : '-'}</td>
               <td class="actions">
                 <button class="mini go" data-action="chain-open" data-id="${c.id}">Open</button>
                 <button class="mini" data-action="chain-rename" data-id="${c.id}">Rename</button>
@@ -1171,7 +1171,7 @@ function chainEditor() {
                 if (!gateShown && m.depth >= 4) {
                   gateShown = true;
                   gate =
-                    '<div class="chain-gate">Consent gate — the couple is asked before going past this point.</div>';
+                    '<div class="chain-gate">Consent gate - the couple is asked before going past this point.</div>';
                 }
                 return `${gate}
           <div class="chain-member">
@@ -1242,7 +1242,7 @@ function tabImport() {
     <div class="notice">
       Upload an <strong>.xlsx</strong>, <strong>.xls</strong> or <strong>.csv</strong> with a
       <code>group</code> column and a <code>question</code> column. Nothing is saved until you
-      confirm — you always see what a file will do first.
+      confirm - you always see what a file will do first.
     </div>
 
     <div class="admin-grid two" style="margin-bottom:1.2rem">
@@ -1258,7 +1258,7 @@ function tabImport() {
       <strong>${state.importFile ? esc(state.importFile.name) : 'Choose a file, or drop one here'}</strong>
       <span>${
         state.importFile
-          ? `${(state.importFile.size / 1024).toFixed(0)} KB — checking what it will do…`
+          ? `${(state.importFile.size / 1024).toFixed(0)} KB - checking what it will do…`
           : 'Spreadsheet or CSV, up to 5 MB'
       }</span>
       <input type="file" id="import-file" accept=".xlsx,.xls,.csv" style="display:none">
@@ -1285,7 +1285,7 @@ function tabImport() {
                  .map(
                    (r) =>
                      `<div><b>Row ${r.row}:</b> ${esc(r.error)}${
-                       r.text ? ` — “${esc(r.text)}”` : ''
+                       r.text ? ` - “${esc(r.text)}”` : ''
                      }</div>`
                  )
                  .join('')}
@@ -1355,7 +1355,7 @@ function feedbackSection(f) {
       <div class="panel" style="margin-bottom:1.6rem">
         <p class="hint" style="margin:0">
           Nothing yet. Couples are asked this after they mark a card completed, and
-          answering is optional — so expect this to fill slowly.
+          answering is optional - so expect this to fill slowly.
         </p>
       </div>`;
   }
@@ -1366,7 +1366,7 @@ function feedbackSection(f) {
     <h2 class="section-title">How questions landed</h2>
     <p class="hint" style="margin:-0.4rem 0 0.9rem">
       ${grandTotal} response${grandTotal === 1 ? '' : 's'} so far. Recorded against the question
-      only — never against a couple — so none of this can be traced back to anyone.
+      only - never against a couple - so none of this can be traced back to anyone.
     </p>
 
     <div class="table-wrap" style="margin-bottom:1.2rem">
@@ -1408,7 +1408,7 @@ function feedbackSection(f) {
               <td>
                 <strong>${esc(q.text)}</strong>
                 <div class="row-sub" style="color:var(--text-faint);font-size:0.78rem">
-                  ${esc(q.ref || '')} &middot; ${esc(q.domainName || '—')} &middot; D${esc(q.depth)}
+                  ${esc(q.ref || '')} &middot; ${esc(q.domainName || '-')} &middot; D${esc(q.depth)}
                   ${q.hidden ? ' &middot; hidden' : ''}
                 </div>
               </td>
@@ -1431,7 +1431,7 @@ function tabInsights() {
   return `
     <div class="notice">
       The app never records what anyone actually said, so quality has to be inferred.
-      There are two signals. A <strong>skip</strong> is one bit and it is ambiguous — badly
+      There are two signals. A <strong>skip</strong> is one bit and it is ambiguous - badly
       worded, too similar to another, or simply not tonight. <strong>How a question landed</strong>,
       asked after a card is completed, says which. Only questions answered at least
       ${d.minAnswers} times are ranked below.
@@ -1582,7 +1582,7 @@ function tabPeople() {
                 ${u.isOwner ? '<span class="pill">owner</span>' : ''}
                 ${u.isActive ? '' : '<span class="pill pill-off">deactivated</span>'}
                 <span class="row-sub">${esc(u.email)}</span></td>
-              <td>${u.coupleId ? esc(u.coupleName || 'In a couple') : '—'}</td>
+              <td>${u.coupleId ? esc(u.coupleName || 'In a couple') : '-'}</td>
               <td>${esc(fmtDate(u.createdAt))}</td>
               <td>${esc(fmtDate(u.lastLoginAt))}</td>
               <td class="actions">
@@ -1610,12 +1610,12 @@ function tabCouples() {
 
   return `
     <div class="notice">
-      A code <strong>is</strong> a couple, and this is the whole list — from the moment
+      A code <strong>is</strong> a couple, and this is the whole list - from the moment
       somebody asks to the day their code is refunded. <strong>Requested</strong> means they
       registered and are waiting on you; issuing turns that same row into a working code
       without creating anybody new. Both people use the one code, because this is done
       sitting together with one screen between them. Suspending stops a code working and
-      keeps the record — deleting takes their history with it.
+      keeps the record - deleting takes their history with it.
     </div>
 
     <div class="admin-grid two" style="margin-bottom:1.2rem">
@@ -1661,7 +1661,7 @@ function tabCouples() {
                                title="Copy this code">${esc(c.code)}</button>`
                     : c.codeStatus === 'requested'
                       ? '<span class="row-sub">not issued yet</span>'
-                      : '<span class="row-sub">none — pre-dates codes</span>'
+                      : '<span class="row-sub">none - pre-dates codes</span>'
                 }
               </td>
               <td>
@@ -1711,7 +1711,7 @@ function tabAudit() {
   return `
     <div class="notice">
       Everything done in this admin area, newest first. Kept even after an account is
-      deleted — the email is recorded at the time, not looked up later.
+      deleted - the email is recorded at the time, not looked up later.
     </div>
 
     ${
@@ -1723,7 +1723,7 @@ function tabAudit() {
                <div class="log-line">
                  <div class="log-when">${esc(fmtWhen(e.createdAt))}</div>
                  <div class="log-what">
-                   <strong>${esc(e.actor)}</strong> — ${esc(e.action)}
+                   <strong>${esc(e.actor)}</strong> - ${esc(e.action)}
                    ${e.targetLabel ? ` · ${esc(e.targetLabel)}` : ''}
                  </div>
                  ${e.detail ? `<div class="log-detail">${esc(e.detail)}</div>` : ''}
@@ -1763,7 +1763,7 @@ function paletteEditor(b) {
   return `
     <h2 class="section-title" style="margin-top:2rem">Brand colours</h2>
     <p class="hint" style="margin:-0.4rem 0 0.9rem">
-      These drive the whole app — both this admin area and the couple's screens.
+      These drive the whole app - both this admin area and the couple's screens.
       Clear a field and save to put that colour back to its built-in value.
     </p>
     ${groups
@@ -1814,7 +1814,7 @@ function domainColours() {
     <form id="domain-colours-form">
       <h2 class="section-title" style="margin-top:2rem">Topic colours</h2>
       <p class="hint" style="margin:-0.4rem 0 0.9rem">
-        Held at one luminance on purpose — every topic sits at roughly the same lightness,
+        Held at one luminance on purpose - every topic sits at roughly the same lightness,
         so none looks more important than another. No green for Money, no red for Sex:
         a colour that editorialises tells a couple which conversations are the dangerous
         ones before they have had any of them.
@@ -1927,7 +1927,7 @@ function brandAssets(b) {
         'favicon',
         'Favicon',
         'The small icon in the browser tab, and the icon used when the app is installed '
-          + 'to a phone. This one wants a SOLID background — it is placed on whatever '
+          + 'to a phone. This one wants a SOLID background - it is placed on whatever '
           + 'colour the phone chooses, so a transparent logo disappears into it.',
         !!assets.favicon,
         assets.faviconUrl,
@@ -1976,7 +1976,7 @@ function brandAssets(b) {
         </p>
       </div>
       <p class="hint" style="margin-top:0.8rem">
-        Uploads save immediately — no need to press Save branding.
+        Uploads save immediately - no need to press Save branding.
         These are stored in the database, so they survive a redeploy.
         The installed app icon comes from the <strong>favicon</strong> above; after changing
         it, the app has to be uninstalled and re-installed before a phone will show the new
@@ -2013,7 +2013,7 @@ function brandAssets(b) {
       </div>
       <p class="hint" style="margin-top:0.7rem">
         Drag the strength slider and watch this. The question has to stay the easiest
-        thing to read on the card — if your eye goes to the mark first, it is too strong.
+        thing to read on the card - if your eye goes to the mark first, it is too strong.
       </p>
     </div>
     </div>`;
@@ -2055,14 +2055,14 @@ function tabSettings() {
           <p class="hint">
             Shown under the Start button as &ldquo;Don't have a code? Register here&rdquo;.
             Point it at wherever codes are bought. <strong>Leave it blank to hide the
-            link</strong> — better nothing than a link that goes nowhere useful.
+            link</strong> - better nothing than a link that goes nowhere useful.
           </p>
         </div>
         <div class="field">
           <label for="b-mark">Logo character</label>
           <input class="input" id="b-mark" name="brand_mark" type="text" maxlength="2"
                  value="${esc(b.branding.brand_mark)}">
-          <p class="hint">One or two characters shown in the logo tile — an emoji works well.
+          <p class="hint">One or two characters shown in the logo tile - an emoji works well.
           Ignored if you upload a logo below. The installed app icon is a PNG and is not
           changed by this.</p>
         </div>
@@ -2103,7 +2103,7 @@ function tabSettings() {
       <div class="panel">
         <p class="hint" style="margin-bottom:0.9rem">
           launchyourlife.co.za calls this app to mint a code when somebody buys one, and
-          emails it out itself. It authenticates with a key generated here — a server
+          emails it out itself. It authenticates with a key generated here - a server
           talking to a server, holding no admin session of its own.
           ${
             s.shop && s.shop.configured
@@ -2146,7 +2146,7 @@ function tabSettings() {
         <div class="field">
           <label for="s-pass">Password</label>
           <input class="input" id="s-pass" name="password" type="password" autocomplete="new-password"
-                 placeholder="${e.hasPassword ? 'Stored — leave blank to keep it' : 'Not set'}">
+                 placeholder="${e.hasPassword ? 'Stored - leave blank to keep it' : 'Not set'}">
           <p class="hint">Encrypted at rest, never sent back to the browser.</p>
         </div>
         ${
@@ -2812,7 +2812,7 @@ async function depthEdit(id) {
   const v = await formDialog({
     title: `Edit D${d.n}`,
     intro: `<strong>${plural(d.questions, 'question sits', 'questions sit')}</strong> on this rung.
-            The number itself cannot be changed — every one of them stores it.`,
+            The number itself cannot be changed - every one of them stores it.`,
     fields: DEPTH_FIELDS(d),
     confirmLabel: 'Save',
   });
@@ -2904,7 +2904,7 @@ async function lensNew() {
     intro:
       'You are describing a <strong>way of looking at a relationship</strong>, so that '
       + 'questions can be written to it. Never a book, a deck, or anybody’s published '
-      + 'material — everything written here is original.',
+      + 'material - everything written here is original.',
     fields: [
       {
         name: 'code',
@@ -2933,7 +2933,7 @@ async function lensEdit(id) {
   if (!l) return;
   const v = await formDialog({
     title: `Edit ${l.code}`,
-    intro: `The code cannot be changed — ${plural(
+    intro: `The code cannot be changed - ${plural(
       l.questions,
       'question carries',
       'questions carry'
@@ -3031,7 +3031,7 @@ async function onGenerate(e) {
     state.data.drafts = null;
     await loadTab();
     toast(
-      `${plural(res.drafted, 'draft', 'drafts')} — ${res.clean} clean`
+      `${plural(res.drafted, 'draft', 'drafts')} - ${res.clean} clean`
         + `${res.flagged ? `, ${res.flagged} to look at` : ''}`
         + `${res.rejected ? `, ${res.rejected} refused` : ''}.`
     );
@@ -3099,7 +3099,7 @@ async function draftEdit(id) {
         value: d.volatile ? '1' : '0',
         options: [
           { value: '0', label: 'No' },
-          { value: '1', label: 'Yes — both partners must consent first' },
+          { value: '1', label: 'Yes - both partners must consent first' },
         ],
       },
     ],
@@ -3119,7 +3119,7 @@ async function draftEdit(id) {
     await loadTab();
     toast(
       res.verdict === 'ok'
-        ? 'Saved — it passes.'
+        ? 'Saved - it passes.'
         : res.verdict === 'review'
         ? 'Saved, still worth a look.'
         : 'Saved, but it still cannot be served.'
@@ -3231,7 +3231,7 @@ async function codeNew() {
   const v = await formDialog({
     title: 'Issue a code',
     intro:
-      'Both names, because the welcome screen greets them by name — '
+      'Both names, because the welcome screen greets them by name - '
       + '&ldquo;Welcome Mark and Nikki&rdquo;.',
     fields: CODE_FIELDS(null),
     confirmLabel: 'Issue it',
@@ -3285,7 +3285,7 @@ async function codeSuspend(id) {
   if (suspending) {
     const yes = await uiConfirm(
       'Suspend this code?',
-      'It stops working immediately — including for anyone using it right now. Their '
+      'It stops working immediately - including for anyone using it right now. Their '
         + 'progress is kept and reinstating it puts everything back.',
       'Suspend',
       true
@@ -3421,7 +3421,7 @@ async function shopKey() {
       bodyHtml:
         `<p style="font-family:ui-monospace,monospace;font-size:0.9rem;word-break:break-all;`
         + `margin:1rem 0">${esc(res.shopKey)}</p>`
-        + '<p class="hint">Paste it into the shop now. It is not shown again — losing it means '
+        + '<p class="hint">Paste it into the shop now. It is not shown again - losing it means '
         + 'generating another one.</p>'
         + '<p class="hint" style="margin-top:0.8rem"><strong>How the shop uses it:</strong> '
         + 'POST to <code>/api/shop/codes</code> with the header <code>x-shop-key</code> and a body '
@@ -3526,7 +3526,7 @@ async function chainDelete(id) {
   if (!c) return;
   const ok = await uiConfirm(
     `Delete “${esc(c.name)}”?`,
-    `The ${plural(c.members, 'card', 'cards')} in it are <strong>not</strong> deleted — they go `
+    `The ${plural(c.members, 'card', 'cards')} in it are <strong>not</strong> deleted - they go `
       + 'back to being dealt on their own. Only the running order is thrown away.',
     'Delete the sequence',
     true
@@ -3627,7 +3627,7 @@ async function groupNew() {
   const v = await formDialog({
     title: 'New topic',
     intro:
-      'A subject couples can tick on the start screen. It carries no depth of its own — '
+      'A subject couples can tick on the start screen. It carries no depth of its own - '
       + 'depth belongs to each question and is chosen separately.',
     fields: GROUP_FIELDS(null),
     confirmLabel: 'Create',
@@ -3667,7 +3667,7 @@ async function groupToggle(id) {
     const yes = await uiConfirm(
       `Hide ${esc(l.name)}?`,
       `Couples will stop seeing this group and its ${plural(l.questions, 'question', 'questions')}. ` +
-        'Nothing is deleted and any progress is kept — you can show it again at any time.',
+        'Nothing is deleted and any progress is kept - you can show it again at any time.',
       'Hide it'
     );
     if (!yes) return;
@@ -3767,14 +3767,14 @@ const QUESTION_FIELDS = (q, levelOptions) => [
     type: 'textarea',
     value: q ? q.text : '',
     placeholder: 'What would you like to ask?',
-    hint: 'It has to read on its own, on a card, with nothing else visible — and it cannot be answered yes or no.',
+    hint: 'It has to read on its own, on a card, with nothing else visible - and it cannot be answered yes or no.',
   },
   {
     name: 'context',
     label: 'Context line',
     type: 'textarea',
     value: q ? q.context : '',
-    hint: 'Revealed when they tap Expand. Under 18 words, and never an example answer — an example anchors every couple to the same reply.',
+    hint: 'Revealed when they tap Expand. Under 18 words, and never an example answer - an example anchors every couple to the same reply.',
   },
   {
     name: 'level',
@@ -3804,7 +3804,7 @@ const QUESTION_FIELDS = (q, levelOptions) => [
     value: q && q.volatile ? '1' : '0',
     options: [
       { value: '0', label: 'No' },
-      { value: '1', label: 'Yes — both partners must consent first' },
+      { value: '1', label: 'Yes - both partners must consent first' },
     ],
   },
 ];
@@ -3899,7 +3899,7 @@ async function questionDelete(id) {
     q.timesUsed
       ? `<strong>${plural(q.timesUsed, 'couple has', 'couples have')}</strong> already answered this. ` +
         'Deleting erases it from their history. <strong>Hiding</strong> stops it being served and ' +
-        'keeps the record — that is usually what you want.'
+        'keeps the record - that is usually what you want.'
       : 'Nobody has answered this yet, so nothing else goes with it.',
     'Delete',
     true
@@ -4041,7 +4041,7 @@ async function userResetLink(id) {
         <p>${
           res.emailed
             ? `Emailed to <strong>${esc(u.email)}</strong>.`
-            : `<strong>Not emailed</strong> — ${esc(res.emailError || 'email is not set up')}. ` +
+            : `<strong>Not emailed</strong> - ${esc(res.emailError || 'email is not set up')}. ` +
               'Send them this link yourself.'
         }</p>
         <div class="code-display" style="word-break:break-all">
