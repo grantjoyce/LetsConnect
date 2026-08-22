@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.17.2';
+const APP_VERSION = '1.18.0';
 
 const state = {
   ready: false,
@@ -2034,6 +2034,17 @@ function tabSettings() {
           <p class="hint">A hex colour. Used for buttons and highlights across the app.</p>
         </div>
         <div class="field">
+          <label for="b-register">Register link</label>
+          <input class="input" id="b-register" name="register_url" type="url"
+                 value="${esc(b.branding.register_url || '')}"
+                 placeholder="https://launchyourlife.co.za/shop">
+          <p class="hint">
+            Shown under the Start button as &ldquo;Don't have a code? Register here&rdquo;.
+            Point it at wherever codes are bought. <strong>Leave it blank to hide the
+            link</strong> — better nothing than a link that goes nowhere useful.
+          </p>
+        </div>
+        <div class="field">
           <label for="b-mark">Logo character</label>
           <input class="input" id="b-mark" name="brand_mark" type="text" maxlength="2"
                  value="${esc(b.branding.brand_mark)}">
@@ -4020,6 +4031,7 @@ async function onSaveBranding(e) {
       app_tagline: f.app_tagline.value,
       brand_accent: f.brand_accent.value,
       brand_mark: f.brand_mark.value,
+      register_url: f.register_url.value,
       palette,
     });
     state.branding = res.branding;

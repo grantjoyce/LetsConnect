@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.17.2';
+const APP_VERSION = '1.18.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -337,6 +337,21 @@ function viewGate() {
             ${state.busy ? 'Checking…' : 'Start'}
           </button>
         </form>
+
+        ${
+          // For the person who arrived without a code. Inside the panel, under
+          // the button, because that is the moment they discover they cannot
+          // get in - not in a footer they have already scrolled past.
+          //
+          // rel="noopener" on a new tab: without it the opened page gets a
+          // handle on this one through window.opener and can navigate it.
+          registerUrl()
+            ? `<p class="gate-register">
+                 Don&rsquo;t have a code?
+                 <a href="${esc(registerUrl())}" target="_blank" rel="noopener noreferrer">Register here</a>
+               </p>`
+            : ''
+        }
       </div>
 
       <div class="footer-note">
@@ -1571,6 +1586,15 @@ function cardWatermark() {
 
   return `<img class="qcard-watermark" src="${esc(b.assets.watermarkUrl)}" alt=""
                aria-hidden="true" style="${style}">`;
+}
+
+/** Where to send somebody who has no code. Blank means show nothing. */
+function registerUrl() {
+  const b = state.branding || {};
+  const url = String(b.register_url || '').trim();
+  // Only ever an absolute http(s) link. Anything else is ignored rather than
+  // rendered, so a bad value in settings cannot turn into a javascript: href.
+  return /^https?:\/\//i.test(url) ? url : '';
 }
 
 /** Whether the owner has uploaded a logo. */

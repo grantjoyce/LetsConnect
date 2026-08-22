@@ -317,6 +317,14 @@ const BRAND_DEFAULTS = {
   app_tagline: 'Questions for couples, one card at a time.',
   brand_accent: '#D8327C',
   brand_mark: '❤',
+  // Where somebody without a code goes to buy one. Shown under the code field.
+  // A setting rather than a constant because it will move: today it points at
+  // this app, and the moment the shop exists it should point there instead -
+  // and that should not need a deploy.
+  //
+  // Blank hides the link entirely, which is the right state for an install that
+  // has nowhere to send people yet.
+  register_url: 'https://connect.launchyourlife.co.za/',
 };
 
 /**
@@ -452,7 +460,12 @@ async function getBranding() {
       keys
     );
     for (const r of rows) {
-      if (r.setting_value !== null && r.setting_value !== '') stored[r.setting_key] = r.setting_value;
+      if (r.setting_value === null) continue;
+      // An empty value normally means "not set" and falls back to the built-in.
+      // register_url is the exception: blank there is a DECISION - hide the
+      // link - and discarding it would silently put the default back.
+      if (r.setting_value === '' && r.setting_key !== 'register_url') continue;
+      stored[r.setting_key] = r.setting_value;
     }
   } catch (err) {
     // Branding is cosmetic. A settings table that cannot be read should leave
@@ -461,7 +474,11 @@ async function getBranding() {
   }
 
   const out = {};
-  for (const key of Object.keys(BRAND_DEFAULTS)) out[key] = stored[key] || BRAND_DEFAULTS[key];
+  for (const key of Object.keys(BRAND_DEFAULTS)) {
+    // `undefined` means no row, so use the built-in. An empty string is a
+    // stored choice and is kept - see the note above.
+    out[key] = stored[key] === undefined ? BRAND_DEFAULTS[key] : stored[key];
+  }
 
   out.palette = {};
   for (const t of PALETTE) out.palette[t.css] = stored[t.key] || t.hex;
@@ -4823,6 +4840,15 @@ owner.put(
       const v = String(b.brand_accent).trim();
       if (!/^#[0-9a-f]{6}$/i.test(v)) return fail(res, 400, 'The accent must be a colour like #D8327C.');
       await setSetting('brand_accent', v);
+    }
+    if (b.register_url !== undefined) {
+      const v = String(b.register_url).trim();
+      if (v && !/^https?:\/\/.+/i.test(v)) {
+        return fail(res, 400, 'The register link must start with http:// or https://');
+      }
+      // Empty string, not null: null reads as "never set" and would bring the
+      // built-in link back on the next load.
+      await setSetting('register_url', v);
     }
     if (b.brand_mark !== undefined) {
       // One or two characters: this sits in a 30px circle and anything longer

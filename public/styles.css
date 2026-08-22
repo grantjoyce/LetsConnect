@@ -1919,3 +1919,20 @@ code {
   color: var(--lv-accent, var(--accent));
   white-space: nowrap;
 }
+
+/* "Don't have a code?" under the Start button.
+ *
+ * Quiet, and inside the panel rather than in a footer: the moment somebody
+ * needs it is the moment they realise they cannot get in, which is right there
+ * at the button - not somewhere they have already scrolled past. */
+.gate-register {
+  margin: 1rem 0 0;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+
+.gate-register a {
+  color: var(--lamplight);
+  font-weight: 600;
+}

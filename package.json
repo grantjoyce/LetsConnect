@@ -1,6 +1,6 @@
 {
   "name": "lets-connect",
-  "version": "1.17.2",
+  "version": "1.18.0",
   "private": true,
   "description": "Let's Connect - a PWA that gives couples curated questions to discuss, one card at a time.",
   "main": "server.js",
