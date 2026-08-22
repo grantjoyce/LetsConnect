@@ -9,6 +9,30 @@
 <meta name="color-scheme" content="dark">
 <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
 
+<script>
+// Night or day, applied before either stylesheet is fetched. Same trick as the
+// couple app's index.html, and the same reason: the loader at the end of <body>
+// appends the CSS, so anything running after it can only re-theme a page that
+// has already been painted.
+//
+// A DIFFERENT key from the app on purpose. Same origin, so one key would mean
+// choosing dark at a desk also darkened the couple app on that device - and the
+// two are not the same room. A laptop under office lighting and a phone in a
+// dim bedroom want opposite answers.
+(function () {
+  try {
+    if (localStorage.getItem('lc-admin-theme') !== 'day') return;
+    document.documentElement.setAttribute('data-theme', 'day');
+    var themeColor = document.querySelector('meta[name="theme-color"]');
+    if (themeColor) themeColor.setAttribute('content', '#F2EFE9');
+    var colorScheme = document.querySelector('meta[name="color-scheme"]');
+    if (colorScheme) colorScheme.setAttribute('content', 'light');
+  } catch (err) {
+    // Storage blocked. Night is the default and is already in the stylesheet.
+  }
+})();
+</script>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">

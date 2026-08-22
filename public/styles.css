@@ -109,6 +109,17 @@
   --radius-lg: 24px;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
 
+  /* The fixed footer's upward lift. Its own token rather than --shadow because
+     it points the other way and, unlike a card's shadow, is laid directly over
+     content that scrolls under it. */
+  --shadow-lift: 0 -12px 28px rgba(0, 0, 0, 0.45);
+
+  /* The ink for faint washes - hover tints, dotted grids, thin dividers. Held
+     as an rgb TRIPLE rather than a colour so each use keeps its own alpha:
+     rgba(var(--wash-ink), 0.07). White is right on the night ground and
+     invisible on a pale one, which is the whole reason this is a token. */
+  --wash-ink: 255, 255, 255;
+
   --font: 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
     'Helvetica Neue', Arial, sans-serif;
 
@@ -154,6 +165,8 @@
   --faint: #7c8493;
   --bg-sunk: #e7e2d8;
   --shadow: 0 18px 50px rgba(32, 36, 44, 0.12);
+  --shadow-lift: 0 -10px 22px rgba(32, 36, 44, 0.10);
+  --wash-ink: 32, 36, 44;
 
   /* The interaction layer has to invert. "Primary is warm white" is a fact
      about a DARK ground - it is the highest-contrast object available on one.
@@ -203,6 +216,32 @@
 :root[data-theme='day'] .qcard-watermark {
   filter: brightness(0) opacity(0.86);
 }
+
+/* ...unless a day version was uploaded, which is the proper answer to the
+ * problem above rather than the automatic one. It is already drawn for a pale
+ * ground, so touching it would be the bug. */
+:root[data-theme='day'] .is-day-asset {
+  filter: none;
+}
+
+/* Which of the pair is on screen is decided here rather than in JS, so a theme
+ * change needs no re-render - it reaches the boot screen and the code gate,
+ * neither of which re-renders at all.
+ *
+ * The :root prefix is load-bearing, not decoration. .brand-logo sets
+ * display:block further down the file, and at equal specificity the later rule
+ * wins - so a bare .brand-logo--day{display:none} lost, and BOTH marks rendered
+ * side by side at night. :root takes this to (0,2,0) and settles it by weight
+ * rather than by position, which is what a rule this far from its counterpart
+ * needs. */
+:root .brand-logo--day,
+:root .qcard-watermark--day { display: none; }
+
+:root[data-theme='day'] .brand-logo--night,
+:root[data-theme='day'] .qcard-watermark--night { display: none; }
+
+:root[data-theme='day'] .brand-logo--day { display: block; }
+:root[data-theme='day'] .qcard-watermark--day { display: block; }
 
 *,
 *::before,
@@ -843,7 +882,7 @@ a:hover { text-decoration-color: var(--lamplight); }
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(var(--wash-ink), 0.16);
 }
 
 .depth-dots .dot.on { background: var(--lv-accent, var(--accent)); }
@@ -861,7 +900,7 @@ a:hover { text-decoration-color: var(--lamplight); }
   margin-top: 0.85rem;
   height: 5px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(var(--wash-ink), 0.09);
   overflow: hidden;
 }
 
@@ -1061,7 +1100,11 @@ a:hover { text-decoration-color: var(--lamplight); }
   /* Darker than the page, not lighter. A footer is the floor of the screen. */
   background: var(--bg-sunk);
   border-top: 1px solid var(--line-strong);
-  box-shadow: 0 -12px 28px rgba(0, 0, 0, 0.45);
+  /* Tokenised because a shadow is a statement about the LIGHT, not about the
+     component. 45% black lifts the bar off a dark page and reads as a grey
+     smear laid over the topic cards on a pale one - the floor stopped looking
+     like a floor and started looking like dirt on the glass. */
+  box-shadow: var(--shadow-lift);
 }
 
 .start-bar > * {
@@ -1251,7 +1294,7 @@ a:hover { text-decoration-color: var(--lamplight); }
 .lens-badge:hover {
   color: var(--text);
   border-color: var(--lv-accent, var(--accent));
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--wash-ink), 0.05);
 }
 
 /* The card watermark.
@@ -1325,7 +1368,7 @@ a:hover { text-decoration-color: var(--lamplight); }
 .qcard-expand:hover {
   color: var(--text);
   border-color: var(--lv-accent, var(--accent));
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--wash-ink), 0.04);
 }
 
 .qcard-expand span {
@@ -1434,7 +1477,7 @@ a:hover { text-decoration-color: var(--lamplight); }
 .qcard-help:hover {
   color: var(--text);
   border-color: var(--lv-accent, var(--accent));
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--wash-ink), 0.05);
 }
 
 .qcard-help span {
@@ -1862,7 +1905,7 @@ a:hover { text-decoration-color: var(--lamplight); }
 }
 
 .pill-off {
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(var(--wash-ink), 0.09);
   color: var(--text-faint);
 }
 
@@ -1915,7 +1958,7 @@ select.input {
 code {
   font-family: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace;
   font-size: 0.88em;
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(var(--wash-ink), 0.07);
   padding: 0.1rem 0.3rem;
   border-radius: 4px;
 }

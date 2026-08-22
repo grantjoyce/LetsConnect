@@ -397,6 +397,17 @@ const BRAND_ASSETS = {
     maxBytes: 512 * 1024,
     types: ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'],
   },
+  // The same mark drawn for a pale ground. Optional: without it, day mode
+  // flattens the night logo to black with a filter, which is right for line art
+  // and wrong for anything with colour in it. Keyed 'logo-day' with a hyphen so
+  // the object key, the URL segment and the data-which attribute are all one
+  // string - there is no third spelling to keep in step.
+  'logo-day': {
+    key: 'brand_logo_day',
+    typeKey: 'brand_logo_day_type',
+    maxBytes: 512 * 1024,
+    types: ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml'],
+  },
   favicon: {
     key: 'brand_favicon',
     typeKey: 'brand_favicon_type',
@@ -485,17 +496,21 @@ async function getBranding() {
 
   // Which images exist, asked as LENGTH() rather than by selecting them: this
   // runs on every deck load and the values are hundreds of kilobytes each.
-  const present = { logo: false, favicon: false, watermark: false };
+  //
+  // Driven off BRAND_ASSETS rather than a hand-written list of three: adding a
+  // slot above should not require remembering to widen a query here as well.
+  const slots = Object.entries(BRAND_ASSETS);
+  const present = {};
+  for (const [name] of slots) present[name] = false;
   try {
     const rows = await query(
       `SELECT setting_key, LENGTH(setting_value) AS n FROM settings
-        WHERE setting_key IN (?, ?, ?)`,
-      [BRAND_ASSETS.logo.key, BRAND_ASSETS.favicon.key, BRAND_ASSETS.watermark.key]
+        WHERE setting_key IN (${slots.map(() => '?').join(', ')})`,
+      slots.map(([, spec]) => spec.key)
     );
     for (const r of rows) {
-      if (r.setting_key === BRAND_ASSETS.logo.key) present.logo = r.n > 0;
-      if (r.setting_key === BRAND_ASSETS.favicon.key) present.favicon = r.n > 0;
-      if (r.setting_key === BRAND_ASSETS.watermark.key) present.watermark = r.n > 0;
+      const hit = slots.find(([, spec]) => spec.key === r.setting_key);
+      if (hit) present[hit[0]] = r.n > 0;
     }
   } catch (err) {
     console.error('[branding] asset check failed:', err.message);
@@ -504,17 +519,26 @@ async function getBranding() {
   // The stamp changes whenever an image is replaced, and rides in the URL so a
   // new logo is not hidden behind a cached copy of the old one.
   const stamp = stored.brand_asset_stamp || '0';
+  const at = (which) => `/api/brand/${which}?v=${encodeURIComponent(stamp)}`;
   out.assets = {
     logo: present.logo,
+    logoDay: present['logo-day'],
     favicon: present.favicon,
     watermark: present.watermark,
-    logoUrl: `/api/brand/logo?v=${encodeURIComponent(stamp)}`,
-    faviconUrl: `/api/brand/favicon?v=${encodeURIComponent(stamp)}`,
+    logoUrl: at('logo'),
+    logoDayUrl: at('logo-day'),
+    faviconUrl: at('favicon'),
     // Falls back to the logo, so switching the watermark on does not also
     // require uploading a second image before anything appears.
-    watermarkUrl: present.watermark
-      ? `/api/brand/watermark?v=${encodeURIComponent(stamp)}`
-      : `/api/brand/logo?v=${encodeURIComponent(stamp)}`,
+    watermarkUrl: present.watermark ? at('watermark') : at('logo'),
+    // ...and in day mode it falls back to the DAY logo instead, for the same
+    // reason: a mark drawn for a pale ground beats the same mark auto-flattened
+    // to black. A watermark uploaded on purpose still wins over both.
+    watermarkDayUrl: present.watermark
+      ? at('watermark')
+      : present['logo-day']
+      ? at('logo-day')
+      : at('logo'),
   };
 
   for (const [field, spec] of Object.entries(WATERMARK_NUMS)) {
@@ -874,7 +898,7 @@ app.get(
  * scripts/migrate-add-brand-assets.js for why that trade was made.
  */
 app.get(
-  '/api/brand/:which(logo|favicon|watermark)',
+  '/api/brand/:which(logo|logo-day|favicon|watermark)',
   wrap(async (req, res) => {
     const spec = BRAND_ASSETS[req.params.which];
     const row = await queryOne(
@@ -4947,17 +4971,15 @@ owner.get(
         use: t.use,
         default: t.hex,
       })),
-      assetLimits: {
-        logo: { maxKb: Math.round(BRAND_ASSETS.logo.maxBytes / 1024), types: BRAND_ASSETS.logo.types },
-        favicon: {
-          maxKb: Math.round(BRAND_ASSETS.favicon.maxBytes / 1024),
-          types: BRAND_ASSETS.favicon.types,
-        },
-        watermark: {
-          maxKb: Math.round(BRAND_ASSETS.watermark.maxBytes / 1024),
-          types: BRAND_ASSETS.watermark.types,
-        },
-      },
+      // Same reasoning as the palette above: derived from BRAND_ASSETS, so a
+      // new slot arrives in the admin with its real size cap and file types
+      // instead of an empty object and a silently missing limit.
+      assetLimits: Object.fromEntries(
+        Object.entries(BRAND_ASSETS).map(([name, spec]) => [
+          name,
+          { maxKb: Math.round(spec.maxBytes / 1024), types: spec.types },
+        ])
+      ),
     });
   })
 );
@@ -5048,7 +5070,7 @@ owner.put(
 // configuration rather than user data.
 
 owner.post(
-  '/branding/:which(logo|favicon|watermark)',
+  '/branding/:which(logo|logo-day|favicon|watermark)',
   upload.single('file'),
   wrap(async (req, res) => {
     const spec = BRAND_ASSETS[req.params.which];
@@ -5095,7 +5117,7 @@ owner.post(
 );
 
 owner.delete(
-  '/branding/:which(logo|favicon|watermark)',
+  '/branding/:which(logo|logo-day|favicon|watermark)',
   wrap(async (req, res) => {
     const spec = BRAND_ASSETS[req.params.which];
     await setSetting(spec.key, null);

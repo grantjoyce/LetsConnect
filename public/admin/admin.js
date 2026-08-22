@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.21.0';
+const APP_VERSION = '1.22.0';
 
 const state = {
   ready: false,
@@ -352,6 +352,12 @@ function brandLockup(size) {
   const b = state.branding || {};
   const name = b.app_name || "Let's Connect";
   if (b.assets && b.assets.logo) {
+    // Both marks when a day logo exists, one shown by CSS - the same shape the
+    // couple app uses, and for the same reason: no re-render on a theme flip.
+    if (b.assets.logoDay) {
+      return `<img class="brand-logo brand-logo--${size} brand-logo--night" src="${esc(b.assets.logoUrl)}" alt="${esc(name)}">
+              <img class="brand-logo brand-logo--${size} brand-logo--day is-day-asset" src="${esc(b.assets.logoDayUrl)}" alt="${esc(name)}">`;
+    }
     return `<img class="brand-logo brand-logo--${size}" src="${esc(b.assets.logoUrl)}" alt="${esc(name)}">`;
   }
   return size === 'hero'
@@ -1874,7 +1880,14 @@ function brandAssets(b) {
 
   const row = (which, title, hint, has, url, limit) => `
     <div class="asset-row">
-      <div class="asset-preview${has ? '' : ' is-empty'}">
+      <!-- The day logo previews on a PALE tile whatever theme the admin is in.
+           Dark artwork on the dark checkerboard everything else uses is
+           invisible, and an owner who uploads a day logo and sees an empty
+           square concludes the upload failed. The tile has to be the ground
+           the asset was drawn for. -->
+      <div class="asset-preview${has ? '' : ' is-empty'}${
+        which === 'logo-day' ? ' asset-preview--day' : ''
+      }">
         ${has ? `<img src="${esc(url)}" alt="${esc(title)}">` : '<span>None</span>'}
       </div>
       <div class="asset-meta">
@@ -1922,6 +1935,17 @@ function brandAssets(b) {
         !!assets.logo,
         assets.logoUrl,
         limits.logo || {}
+      )}
+      ${row(
+        'logo-day',
+        'Logo (light mode)',
+        'Optional. The same mark drawn for a pale background, used when someone '
+          + 'switches the app to light. Leave it empty and the night logo is flattened '
+          + 'to black automatically - which is right for line art and wrong for a logo '
+          + 'with colour in it.',
+        !!assets.logoDay,
+        assets.logoDayUrl,
+        limits['logo-day'] || {}
       )}
       ${row(
         'favicon',
@@ -2215,6 +2239,10 @@ function render() {
             <a href="/" class="btn-quiet" style="text-decoration:none">Open the app</a>
             <a href="/register" target="_blank" rel="noopener noreferrer"
                class="btn-quiet" style="text-decoration:none">Register page</a>
+            <button class="btn-quiet" data-action="theme"
+                    title="${currentTheme() === 'day' ? 'Switch to dark' : 'Switch to light'}"
+                    aria-label="${currentTheme() === 'day' ? 'Switch to dark' : 'Switch to light'}"
+            >${currentTheme() === 'day' ? '&#9789; Dark' : '&#9788; Light'}</button>
             <button class="btn-quiet" data-action="logout">Sign out</button>
           </div>
         </div>
@@ -2474,6 +2502,14 @@ async function handleAction(action, el) {
       render();
       loadTab();
       break;
+    // One button that flips, not a pair: this lives in the header rather than
+    // in Settings because it is a display preference used WHILE working, and a
+    // header has room for a state, not for a choice.
+    case 'theme':
+      applyTheme(currentTheme() === 'day' ? 'night' : 'day');
+      render();
+      break;
+
     case 'logout':
       await api.post('/api/auth/logout');
       state.me = null;
@@ -4273,6 +4309,53 @@ async function testEmail() {
 // Boot
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Night or day
+// ---------------------------------------------------------------------------
+
+/**
+ * The admin's own theme, under its own key.
+ *
+ * Deliberately NOT the couple app's 'lc-theme'. They share an origin, so one
+ * key would mean switching the admin to light also switched the app on that
+ * device - and a laptop under office lighting is not the room a phone is in at
+ * ten at night. Two surfaces, two answers.
+ *
+ * admin/index.html applies the stored value before the stylesheets are
+ * fetched. The key name and the string 'day' are the contract between them.
+ */
+const THEME_KEY = 'lc-admin-theme';
+
+function currentTheme() {
+  try {
+    return localStorage.getItem(THEME_KEY) === 'day' ? 'day' : 'night';
+  } catch (err) {
+    return 'night';
+  }
+}
+
+function applyTheme(theme) {
+  const day = theme === 'day';
+
+  // Night is the ABSENCE of the attribute: the stylesheet's :root block already
+  // is the night palette, so removing it returns to the default rather than
+  // stacking another override on top.
+  if (day) document.documentElement.setAttribute('data-theme', 'day');
+  else document.documentElement.removeAttribute('data-theme');
+
+  const meta = (name) => document.querySelector(`meta[name="${name}"]`);
+  const themeColor = meta('theme-color');
+  if (themeColor) themeColor.setAttribute('content', day ? '#F2EFE9' : '#11141B');
+  const colorScheme = meta('color-scheme');
+  if (colorScheme) colorScheme.setAttribute('content', day ? 'light' : 'dark');
+
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch (err) {
+    // Nothing to do. It still applies for as long as this tab is open.
+  }
+}
+
 function applyBranding() {
   const b = state.branding;
   if (!b) return;
@@ -4280,10 +4363,16 @@ function applyBranding() {
   // The admin shares the couple app's stylesheet, so it shares the palette.
   // That is deliberate: an owner tuning colours here should be able to see what
   // they did without switching apps.
+  //
+  // Written as --brand-<name>, never as the token itself. These are INLINE
+  // styles on :root and an inline declaration beats any stylesheet rule, so
+  // setting --night here would outrank :root[data-theme='day'] and snap the
+  // admin back to dark as soon as branding loaded. The stylesheet reads every
+  // token as var(--brand-x, <default>) for exactly this reason.
   if (b.palette) {
     for (const [prop, value] of Object.entries(b.palette)) {
       if (/^--[a-z0-9-]+$/i.test(prop) && /^#[0-9a-f]{6}$/i.test(value)) {
-        document.documentElement.style.setProperty(prop, value);
+        document.documentElement.style.setProperty('--brand-' + prop.slice(2), value);
       }
     }
   }

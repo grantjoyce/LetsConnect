@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.21.0';
+const APP_VERSION = '1.22.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -1775,6 +1775,17 @@ function cardWatermark() {
     `top:${Number.isFinite(y) ? y : 50}%`,
   ].join(';');
 
+  // Two marks, one shown by CSS - same reasoning as the header lockup. Only
+  // when the day fallback actually differs: with no day logo uploaded both URLs
+  // are the same image and a second copy would be pure waste.
+  const day = b.assets.watermarkDayUrl;
+  if (day && day !== b.assets.watermarkUrl) {
+    return `<img class="qcard-watermark qcard-watermark--night" src="${esc(b.assets.watermarkUrl)}" alt=""
+                 aria-hidden="true" style="${style}">
+            <img class="qcard-watermark qcard-watermark--day is-day-asset" src="${esc(day)}" alt=""
+                 aria-hidden="true" style="${style}">`;
+  }
+
   return `<img class="qcard-watermark" src="${esc(b.assets.watermarkUrl)}" alt=""
                aria-hidden="true" style="${style}">`;
 }
@@ -1824,8 +1835,17 @@ function hasLogo() {
 function brandLockup(size) {
   const name = brand().name;
   if (hasLogo()) {
-    const url = (state.branding.assets || {}).logoUrl;
-    return `<img class="brand-logo brand-logo--${size}" src="${esc(url)}" alt="${esc(name)}">`;
+    const a = state.branding.assets || {};
+    // BOTH marks are emitted when a day logo exists, and CSS shows one. Picking
+    // in JS here would mean re-rendering every screen that carries the lockup
+    // on a theme change - including the boot screen and the code gate, which do
+    // not re-render at all. The unused one costs a request the browser caches
+    // for a year, and only when a day logo has actually been uploaded.
+    if (a.logoDay) {
+      return `<img class="brand-logo brand-logo--${size} brand-logo--night" src="${esc(a.logoUrl)}" alt="${esc(name)}">
+              <img class="brand-logo brand-logo--${size} brand-logo--day is-day-asset" src="${esc(a.logoDayUrl)}" alt="${esc(name)}">`;
+    }
+    return `<img class="brand-logo brand-logo--${size}" src="${esc(a.logoUrl)}" alt="${esc(name)}">`;
   }
   return size === 'hero'
     ? `<div class="hero-mark" aria-hidden="true">${esc(brand().mark)}</div>

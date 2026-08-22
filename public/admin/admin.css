@@ -203,7 +203,7 @@ table.data td.actions { white-space: nowrap; text-align: right; }
   margin-left: 0.3rem;
 }
 
-.mini:hover { background: rgba(255, 255, 255, 0.07); color: var(--text); }
+.mini:hover { background: rgba(var(--wash-ink), 0.07); color: var(--text); }
 
 /* Ember, and outline only - a filled red button gets pressed by accident. */
 .mini.danger { border-color: var(--destruct); color: var(--destruct); }
@@ -229,7 +229,7 @@ table.data td.actions { white-space: nowrap; text-align: right; }
   flex: 1;
   height: 6px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(var(--wash-ink), 0.1);
   overflow: hidden;
   min-width: 60px;
 }
@@ -316,7 +316,7 @@ table.data td.actions { white-space: nowrap; text-align: right; }
   line-height: 1;
 }
 
-.order-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.08); color: var(--text); }
+.order-btn:hover:not(:disabled) { background: rgba(var(--wash-ink), 0.08); color: var(--text); }
 .order-btn:disabled { opacity: 0.25; cursor: not-allowed; }
 
 /* Import ------------------------------------------------------------------ */
@@ -361,7 +361,7 @@ table.data td.actions { white-space: nowrap; text-align: right; }
   font-size: 0.85rem;
 }
 
-.problem-list div { padding: 0.3rem 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+.problem-list div { padding: 0.3rem 0; border-bottom: 1px solid rgba(var(--wash-ink), 0.06); }
 .problem-list div:last-child { border-bottom: none; }
 .problem-list b { color: var(--destruct); font-weight: 700; }
 
@@ -585,13 +585,26 @@ table.data td.actions { white-space: nowrap; text-align: right; }
   overflow: hidden;
   background-color: var(--bg-raised);
   background-image:
-    linear-gradient(45deg, rgba(255, 255, 255, 0.05) 25%, transparent 25%),
-    linear-gradient(-45deg, rgba(255, 255, 255, 0.05) 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, rgba(255, 255, 255, 0.05) 75%),
-    linear-gradient(-45deg, transparent 75%, rgba(255, 255, 255, 0.05) 75%);
+    linear-gradient(45deg, rgba(var(--wash-ink), 0.05) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(var(--wash-ink), 0.05) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(var(--wash-ink), 0.05) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(var(--wash-ink), 0.05) 75%);
   background-size: 14px 14px;
   background-position: 0 0, 0 7px, 7px -7px, -7px 0;
 }
+
+/* Always the day ground, in both themes - see the comment in admin.js. The
+ * checkerboard still shows through so transparency is still visible. */
+.asset-preview--day {
+  /* The checkerboard reads var(--wash-ink) at use time, so overriding it on
+     this element alone flips those four gradients to dark. Left white they
+     would be white-on-white and transparency would stop being visible. */
+  --wash-ink: 32, 36, 44;
+  background-color: var(--day-card);
+  border-color: #ddd6c9;
+}
+
+.asset-preview--day.is-empty span { color: var(--day-muted); }
 
 .asset-preview img {
   max-width: 100%;
