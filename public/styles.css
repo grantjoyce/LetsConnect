@@ -21,27 +21,27 @@
      what makes a system like this stop working.
      ------------------------------------------------------------------------- */
 
-  --night: #11141b;      /* App ground. Everything sits on this. */
-  --slate: #1a1e27;      /* Card surface. */
-  --raised: #232833;     /* Controls, ladder rungs, inputs. */
-  --hairline: #2e3440;   /* Every border in the system. */
+  --night: var(--brand-night, #11141b);      /* App ground. Everything sits on this. */
+  --slate: var(--brand-slate, #1a1e27);      /* Card surface. */
+  --raised: var(--brand-raised, #232833);     /* Controls, ladder rungs, inputs. */
+  --hairline: var(--brand-hairline, #2e3440);   /* Every border in the system. */
 
-  --lamplight: #e9e4da;  /* Question text. Warm, never pure white. */
-  --muted: #98a0ae;      /* Context line, secondary copy. */
-  --faint: #6b7382;      /* Labels, IDs, metadata. */
+  --lamplight: var(--brand-lamplight, #e9e4da);  /* Question text. Warm, never pure white. */
+  --muted: var(--brand-muted, #98a0ae);      /* Context line, secondary copy. */
+  --faint: var(--brand-faint, #6b7382);      /* Labels, IDs, metadata. */
 
-  --brass: #c6a15b;      /* Stakes only. Appears nowhere else. */
+  --brass: var(--brand-brass, #c6a15b);      /* Stakes only. Appears nowhere else. */
 
-  --d1: #a6b7c6;         /* Open */
-  --d2: #9bb0a6;         /* Reflective */
-  --d3: #c2ae8c;         /* Personal */
-  --d4: #c48d5f;         /* Exposed */
-  --d5: #a6604b;         /* Unspoken */
+  --d1: var(--brand-d1, #a6b7c6);         /* Open */
+  --d2: var(--brand-d2, #9bb0a6);         /* Reflective */
+  --d3: var(--brand-d3, #c2ae8c);         /* Personal */
+  --d4: var(--brand-d4, #c48d5f);         /* Exposed */
+  --d5: var(--brand-d5, #a6604b);         /* Unspoken */
 
-  --day-ground: #f2efe9;
-  --day-card: #fbfaf7;
-  --day-ink: #20242c;
-  --day-muted: #5e6673;
+  --day-ground: var(--brand-day-ground, #f2efe9);
+  --day-card: var(--brand-day-card, #fbfaf7);
+  --day-ink: var(--brand-day-ink, #20242c);
+  --day-muted: var(--brand-day-muted, #5e6673);
 
   /* -------------------------------------------------------------------------
      Interaction layer.
@@ -61,18 +61,18 @@
      is enforced by review, not by the palette.
      ------------------------------------------------------------------------- */
 
-  --edge: #3a414f;
-  --edge-hi: #5a6472;
+  --edge: var(--brand-edge, #3a414f);
+  --edge-hi: var(--brand-edge-hi, #5a6472);
 
-  --act-fill: #e9e4da;
-  --act-ink: #14171e;
-  --act-hover: #fffcf4;
-  --act-press: #cfc9be;
-  --act-off-fill: #262b36;
-  --act-off-ink: #59616f;
+  --act-fill: var(--brand-act-fill, #e9e4da);
+  --act-ink: var(--brand-act-ink, #14171e);
+  --act-hover: var(--brand-act-hover, #fffcf4);
+  --act-press: var(--brand-act-press, #cfc9be);
+  --act-off-fill: var(--brand-act-off-fill, #262b36);
+  --act-off-ink: var(--brand-act-off-ink, #59616f);
 
-  --focus: #8fb3d9;
-  --destruct: #cf5a52;
+  --focus: var(--brand-focus, #8fb3d9);
+  --destruct: var(--brand-destruct, #cf5a52);
 
   /* -------------------------------------------------------------------------
      Aliases.
@@ -133,12 +133,15 @@
    The three tokens Grant specified are the ground, the card and the ink. The
    rest are derived from them: a light theme still needs a raised surface, a
    border and two tiers of secondary text, and the palette has no light values
-   for those. Depth and brass are unchanged - they read on both grounds, which
-   is what makes them meaningful rather than decorative.
+   for those. The depth ramp is unchanged - it is used as fills and edges, and
+   reads on both grounds, which is what makes it meaningful rather than
+   decorative. Brass is the exception and is handled below.
 
-   NOTE: nothing in the UI sets this attribute yet. There is no day/night
-   toggle, because one was not asked for. The tokens are live and settable, so
-   adding the switch later is a one-line change.
+   The switch lives in the app's own settings, under "How it looks", and the
+   choice is kept per device in localStorage - it is a fact about the room you
+   are sitting in, not about the couple, so it does not belong in the database.
+   index.html sets the attribute before the stylesheet loads, otherwise a day
+   user gets a dark flash on every launch.
    --------------------------------------------------------------------------- */
 
 :root[data-theme='day'] {
@@ -151,6 +154,54 @@
   --faint: #7c8493;
   --bg-sunk: #e7e2d8;
   --shadow: 0 18px 50px rgba(32, 36, 44, 0.12);
+
+  /* The interaction layer has to invert. "Primary is warm white" is a fact
+     about a DARK ground - it is the highest-contrast object available on one.
+     On a pale ground that same warm white IS the ground, and the primary
+     action vanishes. A near-black fill is the same idea pointed the other way:
+     hover moves further from the ground, press recedes toward it, exactly as
+     they do at night. */
+  --act-fill: var(--day-ink);
+  --act-ink: var(--day-card);
+  --act-hover: #14171e;
+  --act-press: #454c59;
+  --act-off-fill: #e2ddd2;
+  --act-off-ink: #9aa2ae;
+  --edge: #cfc7b8;
+  --edge-hi: #b3aa99;
+
+  /* Three colours are darkened rather than replaced, because each is chosen
+     for a dark ground and none of them reads on a pale one: focus blue falls
+     to roughly 1.6:1 against the day ground, and brass - which is TEXT on a
+     16% brass tint in the Stakes pill - to roughly 2.2:1. Mixing toward black
+     keeps whatever the owner has set in Settings > Brand and moves it only far
+     enough to be legible, so the meaning survives the theme. */
+  --focus: color-mix(in srgb, var(--brand-focus, #8fb3d9) 55%, #16324f);
+  --destruct: color-mix(in srgb, var(--brand-destruct, #cf5a52) 78%, #000);
+  --brass: color-mix(in srgb, var(--brand-brass, #c6a15b) 62%, #000);
+}
+
+/* The one thing tokens cannot re-theme: the uploaded artwork.
+ *
+ * The logo and the card watermark are images, drawn as pale line art on
+ * transparency because they were made for the night ground. On a pale one they
+ * all but disappear - the wordmark in the header goes first, which is the most
+ * visible thing in the app to lose.
+ *
+ * brightness(0) flattens every non-transparent pixel to black and leaves the
+ * alpha channel alone, so line art comes back as line art rather than as a
+ * filled block. It is the right answer for the artwork actually uploaded here
+ * and a blunt one for a logo with colour in it - that would come out solid
+ * black rather than inverted. The honest fix for that case is a second upload
+ * slot for a day-mode logo; this keeps day mode legible without asking the
+ * owner for another asset first.
+ *
+ * The watermark carries its own opacity from settings, so the extra opacity()
+ * here compounds with it - deliberately. Black on a pale card reads stronger
+ * than white on a dark one at the same percentage. */
+:root[data-theme='day'] .brand-logo,
+:root[data-theme='day'] .qcard-watermark {
+  filter: brightness(0) opacity(0.86);
 }
 
 *,
@@ -425,6 +476,16 @@ a:hover { text-decoration-color: var(--lamplight); }
 }
 
 .btn-block { width: 100%; }
+
+/* The appearance switch. Two buttons side by side rather than a list, because
+ * the choice is between exactly two things and seeing both at once is the
+ * point - the unselected one is a ghost, so the pair reads as one control with
+ * a state rather than as two separate actions. */
+.theme-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
 
 /* Secondary: the reasonable alternative. Outline on --edge, brightening to
  * --edge-hi rather than filling, so it never reads as a second primary. */
@@ -1331,8 +1392,20 @@ a:hover { text-decoration-color: var(--lamplight); }
 
 .deck-actions .btn { min-height: 58px; }
 
+/* The only primary button whose fill is NOT the action layer: it takes the
+ * topic's colour, so the deck's subject stays visible at the moment of
+ * committing to it.
+ *
+ * Which means its ink cannot come from the theme. Inheriting --act-ink was
+ * harmless at night, where that ink is near-black anyway, and wrong the moment
+ * day mode flipped it to near-white: white on a topic swatch measures about
+ * 2.5:1, against 5.2-7.0:1 for dark ink on all eleven. The topics are held at
+ * one luminance on purpose, so "dark ink" is a fact about the swatch rather
+ * than a preference - which is exactly what --ink-on-light exists for, and what
+ * the depth chips above already do with --depth-ink. */
 .btn-complete {
   background: var(--lv-accent, var(--accent));
+  color: var(--ink-on-light);
 }
 
 /* The context helper.

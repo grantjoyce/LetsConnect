@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.20.2';
+const APP_VERSION = '1.21.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -459,6 +459,7 @@ function viewGate() {
 function viewAccount() {
   const c = state.couple;
   const v = state.volatile || {};
+  const theme = currentTheme();
 
   return `
     <div class="screen">
@@ -497,6 +498,23 @@ function viewAccount() {
         <button class="btn btn-ghost btn-block" data-action="reset-all">
           Clear our progress
         </button>
+      </div>
+
+      <div class="panel">
+        <h2 class="panel-title">How it looks</h2>
+        <p class="hint" style="margin-bottom:0.9rem">
+          Dark is the default. It is easier on the eyes in a dim room, which is
+          where most of these conversations happen - but a bright one asks for
+          the opposite. Kept on this phone, so you each choose your own.
+        </p>
+        <div class="theme-switch" role="group" aria-label="Appearance">
+          <button class="btn${theme === 'day' ? ' btn-ghost' : ''}"
+                  data-action="theme" data-mode="night"
+                  aria-pressed="${theme === 'night'}">Dark</button>
+          <button class="btn${theme === 'day' ? '' : ' btn-ghost'}"
+                  data-action="theme" data-mode="day"
+                  aria-pressed="${theme === 'day'}">Light</button>
+        </div>
       </div>
 
       <div class="panel">
@@ -944,6 +962,13 @@ async function handleAction(action, el) {
 
     case 'report-question':
       await reportQuestion();
+      break;
+
+    // Re-rendered so the pair of buttons shows which one is on. Safe here in a
+    // way it would not be on a form screen: settings holds nothing typed.
+    case 'theme':
+      applyTheme(el.dataset.mode === 'day' ? 'day' : 'night');
+      render();
       break;
 
     case 'back-to-topics':
@@ -1615,6 +1640,58 @@ async function doInstall() {
  * the entire change. Values are written onto the root element, where they
  * override the stylesheet's own :root defaults by specificity.
  */
+// ---------------------------------------------------------------------------
+// Night or day
+// ---------------------------------------------------------------------------
+
+/**
+ * The theme is kept on the DEVICE, not against the couple.
+ *
+ * It describes the room the phone is in rather than the pair using it: the same
+ * code redeemed at a bright kitchen table and in a dark bedroom wants two
+ * different answers, and a couple with two phones should not have to agree
+ * about brightness. localStorage also means it survives closing the code, which
+ * a server-side preference tied to the session would not.
+ *
+ * index.html applies the stored value before the stylesheet is fetched. The key
+ * name and the string 'day' are the contract between that copy and this one.
+ */
+const THEME_KEY = 'lc-theme';
+
+function currentTheme() {
+  try {
+    return localStorage.getItem(THEME_KEY) === 'day' ? 'day' : 'night';
+  } catch (err) {
+    // Private browsing, or storage switched off. Night is the default anyway.
+    return 'night';
+  }
+}
+
+function applyTheme(theme) {
+  const day = theme === 'day';
+
+  // Night is the ABSENCE of the attribute, not data-theme="night". The
+  // stylesheet's :root block is already the night palette, so removing it is
+  // what returns the app to its default rather than layering another override.
+  if (day) document.documentElement.setAttribute('data-theme', 'day');
+  else document.documentElement.removeAttribute('data-theme');
+
+  // The chrome AROUND the app - the status bar on an installed PWA, the address
+  // bar on Android - is painted from these meta tags and not from the CSS. Left
+  // alone, a day-mode app keeps a black bar above a pale screen.
+  const meta = (name) => document.querySelector(`meta[name="${name}"]`);
+  const themeColor = meta('theme-color');
+  if (themeColor) themeColor.setAttribute('content', day ? '#F2EFE9' : '#11141B');
+  const colorScheme = meta('color-scheme');
+  if (colorScheme) colorScheme.setAttribute('content', day ? 'light' : 'dark');
+
+  try {
+    localStorage.setItem(THEME_KEY, theme);
+  } catch (err) {
+    // Nothing to do. The theme still applies for as long as this tab is open.
+  }
+}
+
 function applyBranding() {
   const b = state.branding;
   if (!b) return;
@@ -1623,8 +1700,17 @@ function applyBranding() {
     for (const [prop, value] of Object.entries(b.palette)) {
       // Guarded: these go straight into the CSSOM, and a value from the
       // database should not be able to smuggle in a declaration.
+      //
+      // Written as --brand-<name>, NOT as the token itself.
+      //
+      // These land as INLINE styles on :root, and an inline declaration beats
+      // any stylesheet rule no matter how specific. Setting --night here would
+      // therefore outrank :root[data-theme='day'] { --night: ... } and snap the
+      // app back to dark the instant branding loaded. The stylesheet reads each
+      // token as var(--brand-x, <default>), so this feeds the palette without
+      // being able to overrule a theme.
       if (/^--[a-z0-9-]+$/i.test(prop) && /^#[0-9a-f]{6}$/i.test(value)) {
-        document.documentElement.style.setProperty(prop, value);
+        document.documentElement.style.setProperty('--brand-' + prop.slice(2), value);
       }
     }
   }

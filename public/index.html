@@ -13,6 +13,30 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Let's Connect">
 
+<script>
+// Night or day, applied BEFORE the stylesheet is fetched.
+//
+// The loader at the end of <body> appends styles.css, so anything that runs
+// after it can only re-theme a page the person has already seen. Setting the
+// attribute here means the first paint is already right - do this in app.js
+// instead and a day-mode user watches the app flash dark on every launch.
+//
+// Deliberately duplicates two values from app.js: the storage key and the
+// string 'day'. Those two are the contract between the copies.
+(function () {
+  try {
+    if (localStorage.getItem('lc-theme') !== 'day') return;
+    document.documentElement.setAttribute('data-theme', 'day');
+    var themeColor = document.querySelector('meta[name="theme-color"]');
+    if (themeColor) themeColor.setAttribute('content', '#F2EFE9');
+    var colorScheme = document.querySelector('meta[name="color-scheme"]');
+    if (colorScheme) colorScheme.setAttribute('content', 'light');
+  } catch (err) {
+    // Storage blocked. Night is the default and is already in the stylesheet.
+  }
+})();
+</script>
+
 <link rel="manifest" href="/manifest.webmanifest">
 <!-- Served by the app, not from disk: /api/brand/favicon returns the uploaded
      favicon and falls back to the built-in one, so this is correct before
