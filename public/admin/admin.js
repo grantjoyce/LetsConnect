@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.18.0';
+const APP_VERSION = '1.19.0';
 
 const state = {
   ready: false,
@@ -1604,6 +1604,48 @@ function tabPeople() {
     </div>`;
 }
 
+/**
+ * Registration requests, at the top of Codes.
+ *
+ * Here rather than in a tab of their own because the only thing anyone ever
+ * does with a request is issue a code, and that is this screen. A separate tab
+ * would mean spotting a badge elsewhere and navigating over to press one button.
+ */
+function registrationRequests() {
+  const d = state.data.registrations;
+  if (!d || !d.registrations.length) return '';
+
+  return `
+    <div class="notice" style="margin-bottom:1rem">
+      <strong>${d.registrations.length} registration request${d.registrations.length === 1 ? '' : 's'}</strong>
+      waiting. Issuing a code creates the couple from their own names and email —
+      you still have to send it to them.
+    </div>
+    <div class="table-wrap" style="margin-bottom:1.6rem">
+      <table class="data">
+        <thead>
+          <tr><th>Who</th><th>Email</th><th>Asked</th><th>Note</th><th class="actions">&nbsp;</th></tr>
+        </thead>
+        <tbody>
+          ${d.registrations
+            .map(
+              (r) => `<tr>
+              <td><strong>${esc(r.partnerA)} and ${esc(r.partnerB)}</strong></td>
+              <td>${esc(r.email)}</td>
+              <td>${esc(fmtDate(r.createdAt))}</td>
+              <td>${r.note ? esc(r.note) : '<span class="row-sub">—</span>'}</td>
+              <td class="actions">
+                <button class="mini go" data-action="reg-issue" data-id="${r.id}">Issue a code</button>
+                <button class="mini danger" data-action="reg-decline" data-id="${r.id}">Decline</button>
+              </td>
+            </tr>`
+            )
+            .join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
 function tabCouples() {
   const d = state.data.couples;
   if (!d) return loading();
@@ -1617,6 +1659,8 @@ function tabCouples() {
     </div>
 
     <div class="admin-grid two" style="margin-bottom:1.2rem">
+      ${registrationRequests()}
+
       <button class="btn btn-ghost" data-action="code-new">Issue a code by hand</button>
       <div class="field" style="margin:0">
         <label for="code-search">Search</label>
@@ -2549,6 +2593,9 @@ async function handleAction(action, el) {
     case 'clear-asset': await clearAsset(el.dataset.which); break;
     case 'wm-centre': await watermarkCentre(); break;
 
+    case 'reg-issue': await regIssue(id); break;
+    case 'reg-decline': await regDecline(id); break;
+
     default: break;
   }
 }
@@ -2700,10 +2747,16 @@ async function loadTab() {
       state.data.reports = await api.get(`/api/owner/reports?status=${state.reportStatus}`);
     } else if (t === 'people' && !state.data.people) {
       state.data.people = await api.get('/api/owner/users');
-    } else if (t === 'couples' && !state.data.couples) {
-      state.data.couples = await api.get(
-        `/api/owner/couples?q=${encodeURIComponent(state.codeQuery)}`
-      );
+    } else if (t === 'couples') {
+      if (!state.data.couples) {
+        state.data.couples = await api.get(
+          `/api/owner/couples?q=${encodeURIComponent(state.codeQuery)}`
+        );
+      }
+      // Always alongside the codes list - a request is only ever acted on here.
+      if (!state.data.registrations) {
+        state.data.registrations = await api.get('/api/owner/registrations');
+      }
     } else if (t === 'audit' && !state.data.audit) {
       state.data.audit = await api.get('/api/owner/audit');
     } else if (t === 'settings') {
@@ -3139,6 +3192,73 @@ const CODE_FIELDS = (c) => [
  * The shop mints its own through /api/shop/codes; this is for the cases that
  * never touch it - a replacement, a gift, a sale taken over the phone.
  */
+/**
+ * Issue a code from a registration request.
+ *
+ * The code is SHOWN, not toasted, and the email is shown beside it - this is
+ * the thing that has to reach a customer, and a message that vanishes in two
+ * seconds is not where you put it. Copying is one tap because the next step is
+ * pasting it into an email.
+ */
+async function regIssue(id) {
+  const r = state.data.registrations.registrations.find((x) => x.id === id);
+  if (!r) return;
+
+  const ok = await uiConfirm(
+    `Issue a code to ${r.partnerA} and ${r.partnerB}?`,
+    `This creates their couple and a code. You still have to email it to ${esc(r.email)}.`,
+    'Issue it'
+  );
+  if (!ok) return;
+
+  try {
+    const res = await api.post(`/api/owner/registrations/${id}/issue`);
+    state.data.registrations = null;
+    state.data.couples = null;
+    await loadTab();
+    await dialog({
+      title: `Code for ${esc(r.partnerA)} and ${esc(r.partnerB)}`,
+      bodyHtml:
+        `<p style="font-family:ui-monospace,monospace;font-size:1.4rem;letter-spacing:0.12em;`
+        + `text-align:center;margin:1rem 0">${esc(res.code)}</p>`
+        + `<p class="hint">Send it to <strong>${esc(res.email)}</strong>. It is stored under Codes too, so it cannot be lost.</p>`,
+      actions: [
+        { label: 'Copy the code', value: 'copy', className: 'btn' },
+        { label: 'Done', value: true, className: 'btn-ghost' },
+      ],
+    }).then(async (v) => {
+      if (v === 'copy') {
+        if (await copyText(res.code)) toast(`${res.code} copied.`);
+        else uiAlert('Copy it by hand', res.code);
+      }
+    });
+  } catch (err) {
+    uiAlert('Could not issue it', err.message);
+  }
+  return undefined;
+}
+
+async function regDecline(id) {
+  const r = state.data.registrations.registrations.find((x) => x.id === id);
+  if (!r) return;
+  const ok = await uiConfirm(
+    'Decline this request?',
+    `${esc(r.partnerA)} and ${esc(r.partnerB)} will not be issued a code. The request is kept so it cannot come back.`,
+    'Decline',
+    true
+  );
+  if (!ok) return;
+  try {
+    await api.post(`/api/owner/registrations/${id}/decline`);
+    state.data.registrations = null;
+    await loadTab();
+    toast('Request declined.');
+  } catch (err) {
+    uiAlert('Could not decline it', err.message);
+  }
+  return undefined;
+}
+
 async function codeNew() {
   const v = await formDialog({
     title: 'Issue a code',

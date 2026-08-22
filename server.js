@@ -324,7 +324,7 @@ const BRAND_DEFAULTS = {
   //
   // Blank hides the link entirely, which is the right state for an install that
   // has nowhere to send people yet.
-  register_url: 'https://connect.launchyourlife.co.za/',
+  register_url: '/register',
 };
 
 /**
@@ -909,6 +909,55 @@ app.get(
     // them hard is safe and saves refetching a logo on every page load.
     res.set('Cache-Control', 'public, max-age=31536000, immutable');
     res.send(buf);
+  })
+);
+
+/**
+ * A registration request from the public /register page.
+ *
+ * Public, unauthenticated, and therefore the most abusable endpoint in the app.
+ * Three things keep it sane:
+ *
+ *   - it writes to `registrations`, never to `couples`. Nothing here creates a
+ *     licence, so the worst a flood can do is fill a list the owner can empty.
+ *   - one request per email per day. A couple pressing the button twice does not
+ *     want two entries, and someone hammering it gets one row either way.
+ *   - every field is length-capped on the way in, so a megabyte of text in the
+ *     note box is truncated rather than stored.
+ *
+ * It deliberately answers the same way whether the request was stored or
+ * silently ignored as a duplicate. Telling a stranger "you already registered"
+ * would confirm which email addresses are in the system.
+ */
+app.post(
+  '/api/register',
+  wrap(async (req, res) => {
+    const a = String(req.body.partnerA || '').trim().slice(0, 60);
+    const b = String(req.body.partnerB || '').trim().slice(0, 60);
+    const email = normaliseEmail(req.body.email);
+    const note = String(req.body.note || '').trim().slice(0, 500);
+
+    if (!a || !b) return fail(res, 400, 'Both names, please.');
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return fail(res, 400, 'Enter a valid email address.');
+    }
+
+    // Same answer either way - see the note above.
+    const recent = await queryOne(
+      `SELECT id FROM registrations
+        WHERE email = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 DAY)`,
+      [email]
+    );
+
+    if (!recent) {
+      await query(
+        `INSERT INTO registrations (partner_a, partner_b, email, note, ip)
+         VALUES (?, ?, ?, ?, ?)`,
+        [a, b, email, note || null, String(req.ip || '').slice(0, 64)]
+      );
+    }
+
+    res.status(201).json({ ok: true });
   })
 );
 
@@ -3193,6 +3242,105 @@ owner.put(
   })
 );
 
+// ---- Registration requests -------------------------------------------------
+//
+// Requests from the public /register page. A request is NOT a couple: nothing
+// here has paid, and a couple only exists once a code does.
+
+owner.get(
+  '/registrations',
+  wrap(async (req, res) => {
+    const status = ['new', 'issued', 'declined'].includes(String(req.query.status))
+      ? req.query.status
+      : 'new';
+    const rows = await query(
+      `SELECT r.id, r.partner_a, r.partner_b, r.email, r.note, r.status,
+              r.created_at, r.handled_at, r.couple_id, c.access_code
+         FROM registrations r
+         LEFT JOIN couples c ON c.id = r.couple_id
+        WHERE r.status = ?
+        ORDER BY r.created_at DESC
+        LIMIT 200`,
+      [status]
+    );
+    const counts = await query('SELECT status, COUNT(*) AS n FROM registrations GROUP BY status');
+    res.json({
+      status,
+      registrations: rows.map((r) => ({
+        id: r.id,
+        partnerA: r.partner_a,
+        partnerB: r.partner_b,
+        email: r.email,
+        note: r.note,
+        status: r.status,
+        createdAt: r.created_at,
+        handledAt: r.handled_at,
+        code: r.access_code || null,
+      })),
+      counts: counts.reduce((acc, r) => ({ ...acc, [r.status]: Number(r.n) }), {}),
+    });
+  })
+);
+
+/**
+ * Turn a request into a real code.
+ *
+ * The couple is built from the request's own names and email, so the greeting
+ * on the welcome screen is right without anybody retyping them. The request is
+ * marked issued and keeps a link to the couple, so the history survives.
+ *
+ * Refuses a request that has already been handled rather than minting a second
+ * code for the same people - a double click here costs a paying customer.
+ */
+owner.post(
+  '/registrations/:id/issue',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const r = await queryOne('SELECT * FROM registrations WHERE id = ?', [id]);
+    if (!r) return fail(res, 404, 'No such request.');
+    if (r.status !== 'new') {
+      return fail(res, 409, `That request was already ${r.status}.`);
+    }
+
+    const issued = await issueCode({
+      partnerA: r.partner_a,
+      partnerB: r.partner_b,
+      buyerEmail: r.email,
+      orderRef: `REG-${r.id}`,
+    });
+
+    await query(
+      "UPDATE registrations SET status = 'issued', couple_id = ?, handled_at = NOW() WHERE id = ?",
+      [issued.id, id]
+    );
+
+    await audit(req, 'registration.issue', {
+      targetType: 'couple',
+      targetId: issued.id,
+      targetLabel: `${r.partner_a} and ${r.partner_b}`,
+      detail: `${issued.code} for ${r.email}`,
+    });
+
+    res.status(201).json({ ok: true, code: issued.code, email: r.email });
+  })
+);
+
+owner.post(
+  '/registrations/:id/decline',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const r = await queryOne('SELECT id, status, partner_a, partner_b FROM registrations WHERE id = ?', [id]);
+    if (!r) return fail(res, 404, 'No such request.');
+    if (r.status !== 'new') return fail(res, 409, `That request was already ${r.status}.`);
+
+    await query("UPDATE registrations SET status = 'declined', handled_at = NOW() WHERE id = ?", [id]);
+    await audit(req, 'registration.decline', {
+      targetLabel: `${r.partner_a} and ${r.partner_b}`,
+    });
+    res.json({ ok: true });
+  })
+);
+
 /** Reorder groups. Takes the full ordered list of ids in one go. */
 owner.put(
   '/domains/order',
@@ -4843,8 +4991,19 @@ owner.put(
     }
     if (b.register_url !== undefined) {
       const v = String(b.register_url).trim();
-      if (v && !/^https?:\/\/.+/i.test(v)) {
-        return fail(res, 400, 'The register link must start with http:// or https://');
+      // A full URL, or a path on this site such as /register. Rejecting
+      // everything else keeps javascript: and data: out of an href that ends up
+      // on a public page.
+      // A full URL, or a path on this site such as /register. Everything
+      // else is refused, which keeps javascript: and data: out of an href
+      // that ends up on a public page. A leading double slash is refused
+      // too: that is a protocol-relative URL and would look local while
+      // sending people elsewhere. 92 is a backslash, used for the same trick.
+      const lower = v.toLowerCase();
+      const isAbsolute = lower.startsWith('http://') || lower.startsWith('https://');
+      const isPath = v.length > 1 && v[0] === '/' && v[1] !== '/' && v.charCodeAt(1) !== 92;
+      if (v && !isAbsolute && !isPath) {
+        return fail(res, 400, 'The register link must be a full URL or a path like /register.');
       }
       // Empty string, not null: null reads as "never set" and would bring the
       // built-in link back on the next load.

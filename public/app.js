@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.18.0';
+const APP_VERSION = '1.19.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -61,6 +61,11 @@ const state = {
 
   // App name, tagline and accent, set by the owner in the admin area.
   branding: null,
+
+  // Set once a registration has been accepted, so /register shows the
+  // "we will email you" panel instead of the form again.
+  registered: false,
+  registeredEmail: null,
 
   // The "how did that land?" list, from /api/data. Empty until the bootstrap
   // returns, and empty for good on a database that has not run the feedback
@@ -308,6 +313,89 @@ function showHowItWorks() {
  *
  * The code arrives by email from the shop. Either of them can type it.
  */
+/**
+ * The registration page.
+ *
+ * There is no payment here and it does not pretend otherwise. It takes two
+ * names and an email, and says plainly that a code will be sent - because
+ * over-promising at this step is how you get somebody sitting waiting for an
+ * instant download that was never coming.
+ */
+function viewRegister() {
+  const f = state.form;
+  if (state.registered) {
+    return `
+      <div class="screen screen--centred">
+        <div class="hero">
+          ${brandLockup('hero')}
+        </div>
+        <div class="panel">
+          <h2 class="panel-title">Thank you — that is with us</h2>
+          <p class="hint" style="margin-bottom:1.1rem">
+            We will email your code to <strong>${esc(state.registeredEmail || 'you')}</strong>.
+            When it arrives, come back here and enter it.
+          </p>
+          <a class="btn btn-block" href="/" style="text-align:center;text-decoration:none">
+            Back to the start
+          </a>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <div class="screen screen--centred">
+      <div class="hero">
+        ${brandLockup('hero')}
+        <p>${esc(brand().tagline)}</p>
+      </div>
+
+      <div class="panel">
+        <h2 class="panel-title">Register</h2>
+        <p class="hint" style="margin-bottom:1.1rem">
+          Tell us who the two of you are and we will send a code to your email.
+          One code covers both of you — this is done sitting together, with one
+          phone between you.
+        </p>
+
+        <form id="register-form" autocomplete="on">
+          ${state.error ? `<div class="form-error" role="alert">${esc(state.error)}</div>` : ''}
+          <div class="field">
+            <label for="r-a">Your name</label>
+            <input class="input" id="r-a" name="partnerA" type="text" autocomplete="given-name"
+                   maxlength="60" value="${esc(f.partnerA || '')}" required>
+          </div>
+          <div class="field">
+            <label for="r-b">Your partner&rsquo;s name</label>
+            <input class="input" id="r-b" name="partnerB" type="text"
+                   maxlength="60" value="${esc(f.partnerB || '')}" required>
+          </div>
+          <div class="field">
+            <label for="r-email">Email</label>
+            <input class="input" id="r-email" name="email" type="email" autocomplete="email"
+                   maxlength="191" value="${esc(f.email || '')}" required>
+            <p class="hint">Where we send the code. We do not send anything else.</p>
+          </div>
+          <div class="field">
+            <label for="r-note">Anything you want to tell us <span class="hint">(optional)</span></label>
+            <textarea class="input" id="r-note" name="note" rows="3"
+                      maxlength="500">${esc(f.note || '')}</textarea>
+          </div>
+          <button class="btn btn-block" type="submit" ${state.busy ? 'disabled' : ''}>
+            ${state.busy ? 'Sending…' : 'Register'}
+          </button>
+        </form>
+
+        <p class="gate-register">
+          Already have a code? <a href="/">Enter it here</a>
+        </p>
+      </div>
+
+      <div class="footer-note">
+        <button class="btn-quiet" data-action="how">How it works</button>
+      </div>
+    </div>`;
+}
+
 function viewGate() {
   const f = state.form;
   return `
@@ -780,10 +868,24 @@ function deckFinished() {
 // render / wire
 // ---------------------------------------------------------------------------
 
+/**
+ * /register is its own screen, decided by the URL rather than by state.
+ *
+ * It sits ABOVE the code gate in this chain deliberately: somebody arriving
+ * here has no code, and being shown the "enter your code" screen first is
+ * exactly the dead end the page exists to fix. It is reachable while a couple
+ * is signed in too - there is no reason to hide it from them.
+ */
+function isRegisterPath() {
+  return /^\/register\/?$/i.test(location.pathname);
+}
+
 function render() {
   let html;
   if (!state.ready) {
     html = '<div class="boot"><div class="boot-mark"></div><p class="boot-text">Loading…</p></div>';
+  } else if (isRegisterPath()) {
+    html = viewRegister();
   } else if (!state.couple) {
     // One gate, one field. There is nothing to be signed in AS - the code is
     // the whole identity, so there is no half-authenticated state to render.
@@ -809,6 +911,9 @@ function wire() {
     e.preventDefault();
     handleAction(el.dataset.action, el);
   };
+
+  const regForm = document.getElementById('register-form');
+  if (regForm) regForm.onsubmit = onRegister;
 
   const gateForm = document.getElementById('gate-form');
   if (gateForm) {
@@ -1592,10 +1697,27 @@ function cardWatermark() {
 function registerUrl() {
   const b = state.branding || {};
   const url = String(b.register_url || '').trim();
-  // Only ever an absolute http(s) link. Anything else is ignored rather than
-  // rendered, so a bad value in settings cannot turn into a javascript: href.
-  return /^https?:\/\//i.test(url) ? url : '';
+  const lower = url.toLowerCase();
+
+  // An absolute http(s) link, or a path on this site such as /register.
+  //
+  // Anything else is ignored rather than rendered. This href comes from a
+  // database value and is shown on a page anyone can reach, so javascript:
+  // and data: must never survive it.
+  //
+  // A leading double slash is excluded: that is a protocol-relative URL,
+  // which looks like a local path and sends people off-site. Character 92
+  // is a backslash, tested by code point because some browsers treat it as
+  // a slash and it can be used for the same trick.
+  if (lower.startsWith('http://') || lower.startsWith('https://')) return url;
+  if (url.length > 1 && url[0] === '/' && url[1] !== '/' && url.charCodeAt(1) !== 92) {
+    return url;
+  }
+  return '';
 }
+
+
+
 
 /** Whether the owner has uploaded a logo. */
 function hasLogo() {
@@ -1629,6 +1751,44 @@ function brandLockup(size) {
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
+
+/**
+ * Send a registration request.
+ *
+ * The values are mirrored into state.form BEFORE the request, because a
+ * re-render on error would otherwise empty every box and make the person type
+ * it all again just to find out what was wrong.
+ */
+async function onRegister(e) {
+  e.preventDefault();
+  if (state.busy) return;
+  const f = e.target;
+  const values = {
+    partnerA: f.partnerA.value.trim(),
+    partnerB: f.partnerB.value.trim(),
+    email: f.email.value.trim(),
+    note: f.note.value.trim(),
+  };
+
+  state.form = values;
+  state.error = null;
+  state.busy = true;
+  render();
+
+  try {
+    await api.post('/api/register', values);
+    state.registered = true;
+    state.registeredEmail = values.email;
+    state.form = {};
+    state.busy = false;
+    render();
+  } catch (err) {
+    state.busy = false;
+    state.error = err.message;
+    render();
+  }
+  return undefined;
+}
 
 /**
  * Redeem a code.

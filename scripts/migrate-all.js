@@ -84,6 +84,10 @@ const MIGRATIONS = [
   // How a question landed, recorded against the question and NOT the couple.
   // References `questions`, so it runs after the seed.
   'migrate-add-question-feedback',
+
+  // Requests from the public /register page. References `couples`, so it runs
+  // after the table exists.
+  'migrate-add-registrations',
 ];
 
 const SCRIPTS_DIR = __dirname;
