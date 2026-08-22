@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.17.0';
+const APP_VERSION = '1.17.1';
 
 // ---------------------------------------------------------------------------
 // State
@@ -273,6 +273,10 @@ function showHowItWorks() {
     ['Talk about the card', 'One question fills the screen. There is no timer and nothing to type - the app never records a single answer, only whether you dealt with the card.'],
     ['Completed or Skip', '<strong>Completed</strong> retires the question for good. <strong>Skip</strong> means &ldquo;not this time&rdquo; - it drops out of the deck and comes back around in a couple of weeks.'],
     ['Come back to it', 'Your code keeps your place. Close the app, sit down again next month, and it carries on from where the two of you left off.'],
+    // Last on purpose: it is the only step that is about the phone rather than
+    // the conversation, and it only makes sense once someone knows the app is
+    // worth keeping.
+    ['Keep it on your phone', 'Open this page in <strong>Chrome</strong> on Android or <strong>Safari</strong> on iPhone, then choose <strong>Install app</strong> or <strong>Add to Home Screen</strong>. It gets its own icon and opens full screen, so it is there the next time you sit down without hunting for a link.'],
   ];
   return dialog({
     title: 'How it works',
