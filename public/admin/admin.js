@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.20.0';
+const APP_VERSION = '1.20.1';
 
 const state = {
   ready: false,
@@ -2213,6 +2213,8 @@ function render() {
           <div class="admin-who">
             <span>${esc(state.me.displayName)}</span>
             <a href="/" class="btn-quiet" style="text-decoration:none">Open the app</a>
+            <a href="/register" target="_blank" rel="noopener noreferrer"
+               class="btn-quiet" style="text-decoration:none">Register page</a>
             <button class="btn-quiet" data-action="logout">Sign out</button>
           </div>
         </div>
