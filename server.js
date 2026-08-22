@@ -938,22 +938,28 @@ app.post(
     const note = String(req.body.note || '').trim().slice(0, 500);
 
     if (!a || !b) return fail(res, 400, 'Both names, please.');
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!email || !/^[^s@]+@[^s@]+.[^s@]+$/.test(email)) {
       return fail(res, 400, 'Enter a valid email address.');
     }
 
-    // Same answer either way - see the note above.
+    // Same answer whether this was stored or dropped as a duplicate. Telling a
+    // stranger "you already registered" confirms which addresses are in here.
     const recent = await queryOne(
-      `SELECT id FROM registrations
-        WHERE email = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 DAY)`,
+      `SELECT id FROM couples
+        WHERE buyer_email = ? AND code_status = 'requested'
+          AND created_at > DATE_SUB(NOW(), INTERVAL 1 DAY)`,
       [email]
     );
 
     if (!recent) {
+      // A couple row with no code yet. The seed is set now because the deck
+      // order derives from it the moment a code is issued.
       await query(
-        `INSERT INTO registrations (partner_a, partner_b, email, note, ip)
-         VALUES (?, ?, ?, ?, ?)`,
-        [a, b, email, note || null, String(req.ip || '').slice(0, 64)]
+        `INSERT INTO couples
+           (access_code, partner_a, partner_b, buyer_email, signup_note,
+            code_status, shuffle_seed, status)
+         VALUES (NULL, ?, ?, ?, ?, 'requested', ?, 'active')`,
+        [a, b, email, note || null, crypto.randomBytes(8).toString('hex')]
       );
     }
 
@@ -2348,7 +2354,11 @@ owner.get(
          (SELECT COUNT(*) FROM users WHERE is_owner = 1)                 AS owners,
          (SELECT COUNT(*) FROM question_reports WHERE status = 'open')   AS openReports,
          (SELECT COUNT(*) FROM domains WHERE is_active = 1)               AS groups,
-         (SELECT COUNT(*) FROM couples WHERE status = 'active')          AS couples,
+         -- Only couples that actually hold a code. 'requested' and 'declined'
+         -- are people who asked, not customers, and counting them here would
+         -- overstate the number on the dashboard.
+         (SELECT COUNT(*) FROM couples
+           WHERE status = 'active' AND code_status IN ('active','suspended')) AS couples,
          (SELECT COUNT(*) FROM questions WHERE is_active = 1 AND admin_hidden = 0) AS liveQuestions,
          (SELECT COUNT(*) FROM questions WHERE source = 'admin')         AS adminQuestions,
          (SELECT COUNT(*) FROM questions WHERE admin_hidden = 1)         AS hiddenQuestions,
@@ -2590,7 +2600,7 @@ owner.get(
 
     const rows = await query(
       `SELECT c.id, c.access_code, c.couple_name, c.partner_a, c.partner_b,
-              c.buyer_email, c.order_ref, c.code_status, c.status,
+              c.buyer_email, c.order_ref, c.signup_note, c.code_status, c.status,
               c.issued_at, c.activated_at, c.last_used_at, c.created_at,
               c.volatile_unlocked,
               (SELECT COUNT(*) FROM couple_question_status s
@@ -2600,7 +2610,10 @@ owner.get(
          FROM couples c
         ${q ? `WHERE c.partner_a LIKE ? OR c.partner_b LIKE ? OR c.buyer_email LIKE ?
                   OR c.access_code LIKE ? OR c.order_ref LIKE ?` : ''}
-        ORDER BY c.created_at DESC
+        -- Requests first: they are the only rows that need a decision, and
+        -- burying them under every code ever issued is how one sits unanswered
+        -- for a week.
+        ORDER BY (c.code_status = 'requested') DESC, c.created_at DESC
         LIMIT 300`,
       q ? [like, like, like, like, like] : []
     );
@@ -2614,6 +2627,7 @@ owner.get(
         partnerB: r.partner_b,
         buyerEmail: r.buyer_email,
         orderRef: r.order_ref,
+        signupNote: r.signup_note,
         codeStatus: r.code_status,
         status: r.status,
         issuedAt: r.issued_at,
@@ -3242,100 +3256,76 @@ owner.put(
   })
 );
 
-// ---- Registration requests -------------------------------------------------
-//
-// Requests from the public /register page. A request is NOT a couple: nothing
-// here has paid, and a couple only exists once a code does.
-
-owner.get(
-  '/registrations',
-  wrap(async (req, res) => {
-    const status = ['new', 'issued', 'declined'].includes(String(req.query.status))
-      ? req.query.status
-      : 'new';
-    const rows = await query(
-      `SELECT r.id, r.partner_a, r.partner_b, r.email, r.note, r.status,
-              r.created_at, r.handled_at, r.couple_id, c.access_code
-         FROM registrations r
-         LEFT JOIN couples c ON c.id = r.couple_id
-        WHERE r.status = ?
-        ORDER BY r.created_at DESC
-        LIMIT 200`,
-      [status]
-    );
-    const counts = await query('SELECT status, COUNT(*) AS n FROM registrations GROUP BY status');
-    res.json({
-      status,
-      registrations: rows.map((r) => ({
-        id: r.id,
-        partnerA: r.partner_a,
-        partnerB: r.partner_b,
-        email: r.email,
-        note: r.note,
-        status: r.status,
-        createdAt: r.created_at,
-        handledAt: r.handled_at,
-        code: r.access_code || null,
-      })),
-      counts: counts.reduce((acc, r) => ({ ...acc, [r.status]: Number(r.n) }), {}),
-    });
-  })
-);
-
 /**
- * Turn a request into a real code.
+ * Issue a code to a couple that asked for one.
  *
- * The couple is built from the request's own names and email, so the greeting
- * on the welcome screen is right without anybody retyping them. The request is
- * marked issued and keeps a link to the couple, so the history survives.
+ * The row already exists - it was created by /register as 'requested' - so this
+ * fills in the code rather than creating anybody. Their names and email are
+ * already right, which is why the welcome screen greets them properly without
+ * anyone retyping anything.
  *
- * Refuses a request that has already been handled rather than minting a second
- * code for the same people - a double click here costs a paying customer.
+ * Refuses anything not still 'requested', so a double click cannot mint a
+ * second code for the same people. That mistake costs a paying customer.
  */
 owner.post(
-  '/registrations/:id/issue',
+  '/couples/:id/issue',
   wrap(async (req, res) => {
     const id = Number(req.params.id);
-    const r = await queryOne('SELECT * FROM registrations WHERE id = ?', [id]);
-    if (!r) return fail(res, 404, 'No such request.');
-    if (r.status !== 'new') {
-      return fail(res, 409, `That request was already ${r.status}.`);
+    const c = await queryOne(
+      'SELECT id, partner_a, partner_b, buyer_email, code_status FROM couples WHERE id = ?',
+      [id]
+    );
+    if (!c) return fail(res, 404, 'No such request.');
+    if (c.code_status !== 'requested') {
+      return fail(res, 409, `That one is already ${c.code_status}.`);
     }
 
-    const issued = await issueCode({
-      partnerA: r.partner_a,
-      partnerB: r.partner_b,
-      buyerEmail: r.email,
-      orderRef: `REG-${r.id}`,
-    });
+    let code = null;
+    for (let i = 0; i < 8; i += 1) {
+      const candidate = makeAccessCode();
+      // eslint-disable-next-line no-await-in-loop
+      const clash = await queryOne('SELECT id FROM couples WHERE access_code = ?', [candidate]);
+      if (!clash) {
+        code = candidate;
+        break;
+      }
+    }
+    if (!code) return fail(res, 500, 'Could not generate a unique code. Try again.');
 
     await query(
-      "UPDATE registrations SET status = 'issued', couple_id = ?, handled_at = NOW() WHERE id = ?",
-      [issued.id, id]
+      "UPDATE couples SET access_code = ?, code_status = 'active', issued_at = NOW() WHERE id = ?",
+      [code, id]
     );
 
-    await audit(req, 'registration.issue', {
+    await audit(req, 'code.issue.request', {
       targetType: 'couple',
-      targetId: issued.id,
-      targetLabel: `${r.partner_a} and ${r.partner_b}`,
-      detail: `${issued.code} for ${r.email}`,
+      targetId: id,
+      targetLabel: `${c.partner_a} and ${c.partner_b}`,
+      detail: `${code} for ${c.buyer_email || 'no email'}`,
     });
 
-    res.status(201).json({ ok: true, code: issued.code, email: r.email });
+    res.status(201).json({ ok: true, code, email: c.buyer_email });
   })
 );
 
+/** Answer no. Kept rather than deleted so the request cannot quietly return. */
 owner.post(
-  '/registrations/:id/decline',
+  '/couples/:id/decline',
   wrap(async (req, res) => {
     const id = Number(req.params.id);
-    const r = await queryOne('SELECT id, status, partner_a, partner_b FROM registrations WHERE id = ?', [id]);
-    if (!r) return fail(res, 404, 'No such request.');
-    if (r.status !== 'new') return fail(res, 409, `That request was already ${r.status}.`);
-
-    await query("UPDATE registrations SET status = 'declined', handled_at = NOW() WHERE id = ?", [id]);
-    await audit(req, 'registration.decline', {
-      targetLabel: `${r.partner_a} and ${r.partner_b}`,
+    const c = await queryOne(
+      'SELECT id, partner_a, partner_b, code_status FROM couples WHERE id = ?',
+      [id]
+    );
+    if (!c) return fail(res, 404, 'No such request.');
+    if (c.code_status !== 'requested') {
+      return fail(res, 409, `That one is already ${c.code_status}.`);
+    }
+    await query("UPDATE couples SET code_status = 'declined' WHERE id = ?", [id]);
+    await audit(req, 'code.decline', {
+      targetType: 'couple',
+      targetId: id,
+      targetLabel: `${c.partner_a} and ${c.partner_b}`,
     });
     res.json({ ok: true });
   })

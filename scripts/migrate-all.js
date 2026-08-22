@@ -88,6 +88,11 @@ const MIGRATIONS = [
   // Requests from the public /register page. References `couples`, so it runs
   // after the table exists.
   'migrate-add-registrations',
+
+  // ...and folds that table straight back into `couples`. Both are kept in the
+  // list: a database that already ran the first one needs the second, and a
+  // fresh install runs them in order and lands in the same place.
+  'migrate-merge-registrations',
 ];
 
 const SCRIPTS_DIR = __dirname;

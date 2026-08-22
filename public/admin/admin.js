@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.19.0';
+const APP_VERSION = '1.20.0';
 
 const state = {
   ready: false,
@@ -1604,63 +1604,21 @@ function tabPeople() {
     </div>`;
 }
 
-/**
- * Registration requests, at the top of Codes.
- *
- * Here rather than in a tab of their own because the only thing anyone ever
- * does with a request is issue a code, and that is this screen. A separate tab
- * would mean spotting a badge elsewhere and navigating over to press one button.
- */
-function registrationRequests() {
-  const d = state.data.registrations;
-  if (!d || !d.registrations.length) return '';
-
-  return `
-    <div class="notice" style="margin-bottom:1rem">
-      <strong>${d.registrations.length} registration request${d.registrations.length === 1 ? '' : 's'}</strong>
-      waiting. Issuing a code creates the couple from their own names and email —
-      you still have to send it to them.
-    </div>
-    <div class="table-wrap" style="margin-bottom:1.6rem">
-      <table class="data">
-        <thead>
-          <tr><th>Who</th><th>Email</th><th>Asked</th><th>Note</th><th class="actions">&nbsp;</th></tr>
-        </thead>
-        <tbody>
-          ${d.registrations
-            .map(
-              (r) => `<tr>
-              <td><strong>${esc(r.partnerA)} and ${esc(r.partnerB)}</strong></td>
-              <td>${esc(r.email)}</td>
-              <td>${esc(fmtDate(r.createdAt))}</td>
-              <td>${r.note ? esc(r.note) : '<span class="row-sub">—</span>'}</td>
-              <td class="actions">
-                <button class="mini go" data-action="reg-issue" data-id="${r.id}">Issue a code</button>
-                <button class="mini danger" data-action="reg-decline" data-id="${r.id}">Decline</button>
-              </td>
-            </tr>`
-            )
-            .join('')}
-        </tbody>
-      </table>
-    </div>`;
-}
-
 function tabCouples() {
   const d = state.data.couples;
   if (!d) return loading();
 
   return `
     <div class="notice">
-      A code <strong>is</strong> a couple. One is minted per sale and emailed by the shop;
-      both people use the same one, because this is done sitting together with one screen
-      between them. Suspending a code stops it working and keeps the record — deleting it
-      takes their history with it.
+      A code <strong>is</strong> a couple, and this is the whole list — from the moment
+      somebody asks to the day their code is refunded. <strong>Requested</strong> means they
+      registered and are waiting on you; issuing turns that same row into a working code
+      without creating anybody new. Both people use the one code, because this is done
+      sitting together with one screen between them. Suspending stops a code working and
+      keeps the record — deleting takes their history with it.
     </div>
 
     <div class="admin-grid two" style="margin-bottom:1.2rem">
-      ${registrationRequests()}
-
       <button class="btn btn-ghost" data-action="code-new">Issue a code by hand</button>
       <div class="field" style="margin:0">
         <label for="code-search">Search</label>
@@ -1672,8 +1630,8 @@ function tabCouples() {
     <div class="table-wrap">
       <table class="data">
         <thead>
-          <tr><th>Couple</th><th>Code</th><th>Bought</th><th class="num">Discussed</th>
-              <th>Used</th><th class="actions">Actions</th></tr>
+          <tr><th>Couple</th><th>Status</th><th>Code</th><th>Asked / bought</th>
+              <th class="num">Discussed</th><th>Used</th><th class="actions">Actions</th></tr>
         </thead>
         <tbody>
           ${
@@ -1687,10 +1645,11 @@ function tabCouples() {
                     ? `${c.partnerA} and ${c.partnerB}`
                     : c.partnerA || c.partnerB || c.name || 'Unnamed'
                 )}</strong>
-                ${c.codeStatus === 'suspended' ? '<span class="pill pill-off">suspended</span>' : ''}
                 ${c.volatileUnlocked ? '<span class="pill">volatile on</span>' : ''}
                 <span class="row-sub">${esc(c.buyerEmail || 'No email on file')}</span>
+                ${c.signupNote ? `<span class="row-sub">&ldquo;${esc(c.signupNote)}&rdquo;</span>` : ''}
               </td>
+              <td><span class="code-status is-${esc(c.codeStatus)}">${esc(c.codeStatus)}</span></td>
               <td>
                 ${
                   // The code itself copies. It is the thing you are looking at
@@ -1700,7 +1659,9 @@ function tabCouples() {
                   c.code
                     ? `<button class="code-chip" data-action="code-copy" data-id="${c.id}"
                                title="Copy this code">${esc(c.code)}</button>`
-                    : '<span class="row-sub">none — pre-dates codes</span>'
+                    : c.codeStatus === 'requested'
+                      ? '<span class="row-sub">not issued yet</span>'
+                      : '<span class="row-sub">none — pre-dates codes</span>'
                 }
               </td>
               <td>
@@ -1716,17 +1677,26 @@ function tabCouples() {
                 }
               </td>
               <td class="actions">
-                ${c.code ? `<button class="mini" data-action="code-copy" data-id="${c.id}">Copy</button>` : ''}
-                <button class="mini" data-action="code-edit" data-id="${c.id}">Edit</button>
-                <button class="mini" data-action="code-suspend" data-id="${c.id}">
-                  ${c.codeStatus === 'suspended' ? 'Reinstate' : 'Suspend'}
-                </button>
-                <button class="mini danger" data-action="code-delete" data-id="${c.id}">Delete</button>
+                ${
+                  // A request has one decision attached to it, so it gets those
+                  // two buttons and nothing else. Offering Suspend on something
+                  // that was never issued is an invitation to a confusing click.
+                  c.codeStatus === 'requested'
+                    ? `<button class="mini go" data-action="reg-issue" data-id="${c.id}">Issue a code</button>
+                       <button class="mini danger" data-action="reg-decline" data-id="${c.id}">Decline</button>
+                       <button class="mini" data-action="code-edit" data-id="${c.id}">Edit</button>`
+                    : `${c.code ? `<button class="mini" data-action="code-copy" data-id="${c.id}">Copy</button>` : ''}
+                       <button class="mini" data-action="code-edit" data-id="${c.id}">Edit</button>
+                       <button class="mini" data-action="code-suspend" data-id="${c.id}">
+                         ${c.codeStatus === 'suspended' ? 'Reinstate' : 'Suspend'}
+                       </button>
+                       <button class="mini danger" data-action="code-delete" data-id="${c.id}">Delete</button>`
+                }
               </td>
             </tr>`
                   )
                   .join('')
-              : '<tr><td colspan="6">No codes yet.</td></tr>'
+              : '<tr><td colspan="7">No codes yet.</td></tr>'
           }
         </tbody>
       </table>
@@ -2753,10 +2723,7 @@ async function loadTab() {
           `/api/owner/couples?q=${encodeURIComponent(state.codeQuery)}`
         );
       }
-      // Always alongside the codes list - a request is only ever acted on here.
-      if (!state.data.registrations) {
-        state.data.registrations = await api.get('/api/owner/registrations');
-      }
+
     } else if (t === 'audit' && !state.data.audit) {
       state.data.audit = await api.get('/api/owner/audit');
     } else if (t === 'settings') {
@@ -3201,19 +3168,18 @@ const CODE_FIELDS = (c) => [
  * pasting it into an email.
  */
 async function regIssue(id) {
-  const r = state.data.registrations.registrations.find((x) => x.id === id);
+  const r = state.data.couples.couples.find((x) => x.id === id);
   if (!r) return;
 
   const ok = await uiConfirm(
     `Issue a code to ${r.partnerA} and ${r.partnerB}?`,
-    `This creates their couple and a code. You still have to email it to ${esc(r.email)}.`,
+    `A code will be generated for them. You still have to email it to ${esc(r.buyerEmail || 'them')}.`,
     'Issue it'
   );
   if (!ok) return;
 
   try {
-    const res = await api.post(`/api/owner/registrations/${id}/issue`);
-    state.data.registrations = null;
+    const res = await api.post(`/api/owner/couples/${id}/issue`);
     state.data.couples = null;
     await loadTab();
     await dialog({
@@ -3239,7 +3205,7 @@ async function regIssue(id) {
 }
 
 async function regDecline(id) {
-  const r = state.data.registrations.registrations.find((x) => x.id === id);
+  const r = state.data.couples.couples.find((x) => x.id === id);
   if (!r) return;
   const ok = await uiConfirm(
     'Decline this request?',
@@ -3249,8 +3215,8 @@ async function regDecline(id) {
   );
   if (!ok) return;
   try {
-    await api.post(`/api/owner/registrations/${id}/decline`);
-    state.data.registrations = null;
+    await api.post(`/api/owner/couples/${id}/decline`);
+    state.data.couples = null;
     await loadTab();
     toast('Request declined.');
   } catch (err) {

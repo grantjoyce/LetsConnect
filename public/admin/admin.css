@@ -826,3 +826,30 @@ table.data--feedback td:first-child strong { font-weight: 600; line-height: 1.45
   .wm-pos { flex-direction: column; align-items: stretch; }
   .wm-centre { align-self: flex-start; }
 }
+
+/* The one lifecycle column: requested → active → suspended, or declined.
+ *
+ * Deliberately quiet. Only "requested" carries any colour, because it is the
+ * only one that needs somebody to do something - the others are just facts. */
+.code-status {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 0.16rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--raised);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.code-status.is-requested {
+  border-color: var(--d3);
+  color: var(--d3);
+}
+
+.code-status.is-active { color: var(--text-dim); }
+.code-status.is-suspended,
+.code-status.is-declined { opacity: 0.7; }

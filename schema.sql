@@ -60,9 +60,16 @@ CREATE TABLE IF NOT EXISTS couples (
   partner_b          VARCHAR(60) NULL,
   buyer_email        VARCHAR(191) NULL,
   order_ref          VARCHAR(60) NULL,
+  -- Whatever they typed in the optional box on the registration form.
+  signup_note        VARCHAR(500) NULL,
   -- suspended, not deleted: a refund has to stop the code working without
   -- erasing that it existed.
-  code_status        ENUM('active','suspended') NOT NULL DEFAULT 'active',
+  -- The whole lifecycle in one column:
+  --   requested  they asked through /register, no code exists yet
+  --   active     a code was issued and works
+  --   suspended  the code exists but is refused - what a refund looks like
+  --   declined   asked, answered no. Kept so it cannot quietly come back.
+  code_status        ENUM('requested','active','suspended','declined') NOT NULL DEFAULT 'active',
   issued_at          DATETIME NULL,
   activated_at       DATETIME NULL,
   last_used_at       DATETIME NULL,
@@ -469,32 +476,3 @@ CREATE TABLE IF NOT EXISTS `question_feedback` (
   CONSTRAINT `fk_feedback_option` FOREIGN KEY (`option_id`) REFERENCES `feedback_options` (`id`),
   CONSTRAINT `fk_feedback_question` FOREIGN KEY (`question_id`) REFERENCES `questions` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
--- ---------------------------------------------------------------------------
--- Registration requests
---
--- Two people asking for a code from the public /register page. Deliberately NOT
--- rows in `couples`: a request that is never issued anything should not appear
--- in any count of couples, and a couple does not exist until a code does.
---
--- couple_id is filled in when a request is converted, so the history survives.
--- See scripts/migrate-add-registrations.js.
--- ---------------------------------------------------------------------------
-
-CREATE TABLE IF NOT EXISTS `registrations` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `partner_a` varchar(60) NOT NULL,
-  `partner_b` varchar(60) NOT NULL,
-  `email` varchar(191) NOT NULL,
-  `note` varchar(500) DEFAULT NULL,
-  `status` enum('new','issued','declined') NOT NULL DEFAULT 'new',
-  `couple_id` int(11) DEFAULT NULL,
-  `ip` varchar(64) DEFAULT NULL,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  `handled_at` datetime DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  KEY `idx_registrations_status` (`status`,`created_at`),
-  KEY `idx_registrations_email` (`email`),
-  KEY `fk_registrations_couple` (`couple_id`),
-  CONSTRAINT `fk_registrations_couple` FOREIGN KEY (`couple_id`) REFERENCES `couples` (`id`) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-

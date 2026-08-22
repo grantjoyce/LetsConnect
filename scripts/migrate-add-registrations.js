@@ -36,6 +36,20 @@ async function hasTable(table) {
 async function run() {
   if (await hasTable('registrations')) return 'already present';
 
+  // Superseded by migrate-merge-registrations, which folds this table into
+  // `couples` and drops it. Without this check the pair would fight on every
+  // deploy: this one recreating an empty table, that one dropping it again.
+  //
+  // Kept rather than deleted because a database that ran this before the merge
+  // existed still needs the merge to find its rows, and deleting a migration
+  // that has already run somewhere is how histories stop being reproducible.
+  const merged = await queryOne(
+    `SELECT COLUMN_TYPE t FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'couples' AND COLUMN_NAME = 'code_status'`,
+    [DB]
+  );
+  if (merged && String(merged.t).includes('requested')) return 'superseded by the merge';
+
   await query(
     `CREATE TABLE registrations (
        id          INT AUTO_INCREMENT PRIMARY KEY,
