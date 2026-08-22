@@ -1187,16 +1187,49 @@ app.post(
         },
       });
     };
-    if (req.session && req.session.regenerate) req.session.regenerate(() => start());
-    else start();
+    // Regenerating the session id on redeem defends against session fixation:
+    // otherwise somebody could hand over a link carrying a session id they
+    // already know, wait for a code to be redeemed on it, and ride it.
+    //
+    // But regenerate() empties the WHOLE session, and the owner's login lives
+    // there too - so redeeming a code used to sign the owner out of /admin in
+    // the same browser. That is invisible until you are the person doing both,
+    // which is every developer and every owner testing their own app.
+    //
+    // The owner is carried across deliberately. The two identities are
+    // independent by design; a couple starting a session is no reason to end
+    // somebody else's.
+    const ownerId = req.session ? req.session.userId : null;
+    if (req.session && req.session.regenerate) {
+      req.session.regenerate(() => {
+        if (ownerId) req.session.userId = ownerId;
+        start();
+      });
+    } else {
+      start();
+    }
     return undefined;
   })
 );
 
-/** End the session. The code itself is untouched and can be used again. */
+/**
+ * End the couple's session. The code itself is untouched and can be used again.
+ *
+ * Regenerates rather than destroys, for the same reason as redeem: destroying
+ * would take the owner's login with it, and "we are done for tonight" is not a
+ * request to be signed out of the admin area.
+ */
 app.post('/api/access/leave', (req, res) => {
-  if (req.session) req.session.destroy(() => {});
-  res.json({ ok: true });
+  if (!req.session) return res.json({ ok: true });
+  const ownerId = req.session.userId;
+  if (!req.session.regenerate) {
+    req.session.destroy(() => {});
+    return res.json({ ok: true });
+  }
+  return req.session.regenerate(() => {
+    if (ownerId) req.session.userId = ownerId;
+    res.json({ ok: true });
+  });
 });
 
 /**
