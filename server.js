@@ -132,9 +132,21 @@ class MySQLSessionStore extends session.Store {
   }
 }
 
-// 30 days. This is a personal app people open occasionally - being logged out
-// between sessions would be the single most annoying thing about it.
-const SESSION_MAX_AGE = 1000 * 60 * 60 * 24 * 30;
+// 60 days, and rolling, so it is 60 days of INACTIVITY rather than 60 days from
+// redeeming. A couple who opens the app every few weeks is never asked for the
+// code again; one who leaves it alone for two months is.
+//
+// This is a personal app people open occasionally, and a couple has no account
+// to log back into - the code IS the couple. Being asked to find a twelve
+// character code again, on a Friday night, is the single most annoying thing
+// this app could do.
+//
+// NOTE: owner sessions share this cookie, so signing in to the admin also lasts
+// 60 days. That is deliberate rather than overlooked - it is a single-owner app
+// and being logged out of the backend has been a real irritation - but it is
+// the trade. If the admin should expire sooner than the couple, it needs a
+// separate freshness stamp on the owner identity, not a shorter cookie.
+const SESSION_MAX_AGE = 1000 * 60 * 60 * 24 * 60;
 
 app.use(
   session({
@@ -143,7 +155,7 @@ app.use(
     store: new MySQLSessionStore(),
     resave: false,
     saveUninitialized: false,
-    // Re-issue the cookie on every response so the 30 days is a sliding window
+    // Re-issue the cookie on every response so the 60 days is a sliding window
     // of inactivity rather than a hard deadline stamped once at login.
     rolling: true,
     cookie: {
@@ -154,6 +166,31 @@ app.use(
     },
   })
 );
+
+/**
+ * Adopt the current window on sessions that predate it.
+ *
+ * A session's cookie options are SERIALISED INTO the session, so one created
+ * under the old 30 day setting keeps 30 days forever - being touched on every
+ * request slides that stored window rather than replacing it. Verified: an
+ * existing session used a moment after the constant changed still reported 29
+ * days left.
+ *
+ * Which would have made this change apply only to codes redeemed after the
+ * deploy, and left every couple already using the app being asked again at 30
+ * days - precisely the thing it exists to prevent. rolling:true then re-issues
+ * the cookie and touch() writes the longer expiry, so the upgrade costs one
+ * request.
+ *
+ * Only ever extends. A shorter window set deliberately elsewhere would be a
+ * decision, and this must not quietly overrule it.
+ */
+app.use((req, res, next) => {
+  if (req.session && req.session.cookie && req.session.cookie.maxAge < SESSION_MAX_AGE) {
+    req.session.cookie.maxAge = SESSION_MAX_AGE;
+  }
+  next();
+});
 
 // Never cache an API response.
 app.use('/api', (req, res, next) => {
