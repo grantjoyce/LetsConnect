@@ -164,9 +164,23 @@
 
 /* The measure. Long prose in a 1600px-wide paragraph is unreadable, so text
  * blocks and forms are capped independently of the shell - tables and lists
- * are what actually want the full width. */
+ * are what actually want the full width.
+ *
+ * A control that sits OUTSIDE a form still belongs to that form's column.
+ * "Send a test email to myself" is the only one in the admin - every other
+ * .btn-block is a submit inside a form and was already capped - and it ran
+ * 961px against the form's 761px. It had been doing that at the bottom of
+ * Settings all along; Email becoming its own short page is just where it
+ * stopped being lost in the scroll.
+ *
+ * It gets a .measure WRAPPER rather than the cap going on the button itself,
+ * because ch is relative to the element's OWN font-size. Putting 78ch on the
+ * button produced 821px against the form's 761px - capped, still not aligned,
+ * and a nearly-right width looks more like a bug than an obviously wrong one.
+ * A plain div inherits the body's font-size, so its 78ch is the same 78ch. */
 .admin-main > .notice,
 .admin-main > form,
+.admin-main > .measure,
 .admin-main > p.hint { max-width: 78ch; }
 
 @media (min-width: 1000px) {

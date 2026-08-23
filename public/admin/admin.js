@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.24.1';
+const APP_VERSION = '1.25.0';
 
 const state = {
   ready: false,
@@ -68,6 +68,7 @@ const TABS = [
 
   // Machinery
   ['audit', 'Audit'],
+  ['email', 'Email'],
   ['settings', 'Settings'],
 ];
 
@@ -520,7 +521,7 @@ function tabOverview() {
         ? `<div class="notice" style="margin-top:1.2rem">
              <strong>Email is not set up.</strong> Codes cannot be emailed to couples,
              and password reset links cannot be sent.
-             <button class="btn-quiet" data-action="tab" data-tab="settings">Set it up</button>
+             <button class="btn-quiet" data-action="tab" data-tab="email">Set it up</button>
            </div>`
         : ''
     }
@@ -2080,7 +2081,7 @@ function tabSettings() {
   const b = state.data.branding;
   if (!s || !b) return loading();
   const v = s.settings;
-  const e = s.email;
+  // s.email is deliberately not read here any more - it belongs to tabEmail().
 
   return `
     <form id="branding-form">
@@ -2174,13 +2175,52 @@ function tabSettings() {
         </button>
       </div>
 
-      <h2 class="section-title" style="margin-top:1.6rem">Email (SMTP)</h2>
-      ${
-        e.passwordUnreadable
-          ? `<div class="notice"><strong>The stored password cannot be read.</strong>
-               Type it again below and save.</div>`
-          : ''
-      }
+      <button class="btn btn-block" type="submit" style="margin-top:1rem" ${state.busy ? 'disabled' : ''}>
+        ${state.busy ? 'Saving…' : 'Save settings'}
+      </button>
+    </form>`;
+}
+
+/**
+ * Email, on its own.
+ *
+ * It used to sit at the very bottom of Settings, below branding, the palette,
+ * three image uploads, four watermark controls, deck behaviour and the shop key
+ * - the last thing on the longest page in the admin. Nothing about SMTP belongs
+ * at the end of a scroll: it is the setting most likely to be wrong, the one an
+ * error message sends you to, and now the thing standing between a code and the
+ * couple waiting for it.
+ *
+ * The fields moved rather than being copied. Two forms writing the same six
+ * settings is how one of them quietly stops matching the other.
+ */
+function tabEmail() {
+  const s = state.data.settings;
+  if (!s) return loading();
+  const e = s.email;
+
+  return `
+    <h2 class="section-title">Email (SMTP)</h2>
+    <p class="hint" style="max-width:70ch;margin-bottom:1rem">
+      Used to email a code to a couple when you issue one, and to send password reset
+      links. Until this is filled in, both of those are unavailable - the app says so
+      rather than failing quietly, but nothing goes out.
+    </p>
+    ${
+      e.configured
+        ? ''
+        : '<div class="notice"><strong>Not set up yet.</strong> Fill this in, save, then send '
+          + 'yourself a test before relying on it with a real customer.</div>'
+    }
+    ${
+      e.passwordUnreadable
+        ? `<div class="notice"><strong>The stored password cannot be read.</strong>
+             This happens when SECRET_KEY or SESSION_SECRET changed on the server, because
+             the password is encrypted at rest under it. Type it again below and save.</div>`
+        : ''
+    }
+
+    <form id="email-form">
       <div class="panel">
         <div class="field">
           <label for="s-host">SMTP host</label>
@@ -2216,17 +2256,21 @@ function tabSettings() {
           <label for="s-from">From address</label>
           <input class="input" id="s-from" name="from" type="text" value="${esc(e.from)}"
                  placeholder="Let's Connect &lt;hello@example.com&gt;">
+          <p class="hint">What a couple sees in their inbox. Most providers insist this
+            matches the account above, or the message is refused or lands in spam.</p>
         </div>
       </div>
 
       <button class="btn btn-block" type="submit" style="margin-top:1rem" ${state.busy ? 'disabled' : ''}>
-        ${state.busy ? 'Saving…' : 'Save settings'}
+        ${state.busy ? 'Saving…' : 'Save email settings'}
       </button>
     </form>
 
-    <button class="btn btn-block btn-ghost" data-action="test-email" style="margin-top:0.6rem">
-      Send a test email to myself
-    </button>`;
+    <div class="measure">
+      <button class="btn btn-block btn-ghost" data-action="test-email" style="margin-top:0.6rem">
+        Send a test email to myself
+      </button>
+    </div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -2252,6 +2296,7 @@ function render() {
       people: tabPeople,
       couples: tabCouples,
       audit: tabAudit,
+      email: tabEmail,
       settings: tabSettings,
     }[state.tab];
     // A tab key that no longer exists (an old bookmark, a renamed section) must
@@ -2321,6 +2366,9 @@ function wire() {
 
   const login = document.getElementById('login-form');
   if (login) login.onsubmit = onLogin;
+
+  const emailForm = document.getElementById('email-form');
+  if (emailForm) emailForm.onsubmit = onSaveEmail;
 
   const settings = document.getElementById('settings-form');
   if (settings) settings.onsubmit = onSaveSettings;
@@ -2812,6 +2860,11 @@ async function loadTab() {
 
     } else if (t === 'audit' && !state.data.audit) {
       state.data.audit = await api.get('/api/owner/audit');
+    } else if (t === 'email') {
+      // Email reads the same payload Settings does, and shares state.data.settings
+      // with it - saving on either tab clears that cache, so the two can never
+      // show different values for the same stored setting.
+      if (!state.data.settings) state.data.settings = await api.get('/api/owner/settings');
     } else if (t === 'settings') {
       if (!state.data.settings) state.data.settings = await api.get('/api/owner/settings');
       if (!state.data.branding) state.data.branding = await api.get('/api/owner/branding');
@@ -4284,7 +4337,19 @@ async function userResetLink(id) {
 
 // ---- Settings -------------------------------------------------------------
 
-async function onSaveSettings(e) {
+/**
+ * Save the SMTP settings alone.
+ *
+ * Its own PUT rather than sharing the settings form's: the route guards every
+ * field with !== undefined, so sending only { email } leaves deck size and the
+ * app URL exactly as they were. Clearing state.data.settings afterwards is what
+ * keeps the Settings tab - which reads the same payload - from showing a stale
+ * copy of anything saved here.
+ *
+ * state.data.overview is cleared too, because the "Email is not set up" notice
+ * on the front page is computed from this.
+ */
+async function onSaveEmail(e) {
   e.preventDefault();
   if (state.busy) return;
   const f = e.target;
@@ -4293,9 +4358,6 @@ async function onSaveSettings(e) {
 
   try {
     await api.put('/api/owner/settings', {
-      skip_cooloff_days: f.skip_cooloff_days.value,
-      deck_size: f.deck_size.value,
-      app_url: f.app_url.value,
       email: {
         host: f.host.value,
         port: f.port.value,
@@ -4305,6 +4367,34 @@ async function onSaveSettings(e) {
         password: f.password.value,
         clearPassword: f.clearPassword ? f.clearPassword.checked : false,
       },
+    });
+    state.busy = false;
+    state.data.settings = null;
+    state.data.overview = null;
+    await loadTab();
+    toast('Email settings saved.');
+  } catch (err) {
+    state.busy = false;
+    render();
+    uiAlert('Could not save', err.message);
+  }
+}
+
+async function onSaveSettings(e) {
+  e.preventDefault();
+  if (state.busy) return;
+  const f = e.target;
+  state.busy = true;
+  render();
+
+  try {
+    // No `email` key any more - those fields live on their own tab now. The
+    // route guards every field with !== undefined, so a partial body updates
+    // only what it carries and leaves SMTP untouched.
+    await api.put('/api/owner/settings', {
+      skip_cooloff_days: f.skip_cooloff_days.value,
+      deck_size: f.deck_size.value,
+      app_url: f.app_url.value,
     });
     state.busy = false;
     state.data.settings = null;
