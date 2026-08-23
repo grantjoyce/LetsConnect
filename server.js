@@ -141,11 +141,15 @@ class MySQLSessionStore extends session.Store {
 // character code again, on a Friday night, is the single most annoying thing
 // this app could do.
 //
-// NOTE: owner sessions share this cookie, so signing in to the admin also lasts
-// 60 days. That is deliberate rather than overlooked - it is a single-owner app
-// and being logged out of the backend has been a real irritation - but it is
-// the trade. If the admin should expire sooner than the couple, it needs a
-// separate freshness stamp on the owner identity, not a shorter cookie.
+// Owner sessions share this cookie, so signing in to the admin lasts 60 days
+// too. Raised with Grant as the trade this change carried, and confirmed by him
+// on 2026-08-23: leave the admin at 60 days as well. It is a single-owner app
+// and being logged out of the backend has been a real irritation.
+//
+// So this is a settled decision, not an oversight to tidy up later. Should it
+// ever need revisiting, the answer is a separate freshness stamp on the owner
+// identity - one cookie cannot hold two deadlines, and shortening this one
+// would take the couple down with it, which is the opposite of the point.
 const SESSION_MAX_AGE = 1000 * 60 * 60 * 24 * 60;
 
 app.use(
