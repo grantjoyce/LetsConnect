@@ -47,6 +47,119 @@
 
 .admin-nav .tab { flex: none; }
 
+/* The phone nav ------------------------------------------------------------
+ *
+ * Twelve sections as a wrapping pill strip cost four rows - 176px - and the
+ * header's five utility links wrapped into stacked two-word stubs for another
+ * 165px. That was 341px of an 812px phone, 42% of the screen, before a single
+ * number of the thing you came to look at.
+ *
+ * So below the desk breakpoint the strip becomes a drawer behind one button,
+ * and the button carries the CURRENT section's name - closed, it still answers
+ * "where am I", which a bare hamburger does not. The utility links move inside
+ * it rather than being dropped, because "Sign out" and "Open the app" are not
+ * less useful on a phone, they were just in the wrong place.
+ *
+ * Everything here is scoped to max-width 999px, one pixel below the 1000px
+ * desk layout, so the rail on a laptop is untouched by any of it. */
+
+.nav-toggle { display: none; }
+
+@media (max-width: 999px) {
+  .admin-top { flex-wrap: nowrap; gap: 0.5rem; }
+
+  /* The header's copy of the links. Hidden, not deleted - the drawer renders
+     the same markup from the same function.
+     Written .admin-top .admin-who, not .admin-who: the base rule sets
+     display:flex further down this file, and at equal specificity the later
+     rule wins regardless of the media query. A bare .admin-who lost, and the
+     links stayed on screen and ran off the right edge. */
+  .admin-top .admin-who { display: none; }
+
+  .nav-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+    flex: none;
+    max-width: 62%;
+    padding: 0.55rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid var(--edge);
+    background: var(--bg-raised);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .nav-toggle:hover { border-color: var(--edge-hi); }
+
+  .nav-toggle-bars { font-size: 1.05rem; line-height: 1; }
+
+  /* The section name is the part that gives way when it is long - the icon has
+     to stay, and a wrapped button is what this whole block exists to avoid. */
+  .nav-toggle-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .admin-nav { display: none; }
+
+  .admin-nav.is-open {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    margin-bottom: 1.2rem;
+    padding: 0.5rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-raised);
+  }
+
+  /* Full-width rows, left-aligned: a list you read down, not pills you hunt
+     through. 44px is the smallest thing a thumb hits reliably. */
+  .admin-nav.is-open .tab {
+    width: 100%;
+    text-align: left;
+    min-height: 44px;
+    border-radius: 10px;
+    padding: 0.6rem 0.8rem;
+  }
+
+  .admin-nav-extra {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.15rem;
+    margin-top: 0.5rem;
+    padding-top: 0.6rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .admin-nav-extra .btn-quiet {
+    text-align: left;
+    min-height: 44px;
+    padding: 0.6rem 0.8rem;
+    border-radius: 10px;
+  }
+
+  /* Who you are is a label here, not an action - it should not look tappable
+     sitting in a column of things that are. */
+  .admin-nav-extra .who-name {
+    padding: 0.2rem 0.8rem 0.4rem;
+    font-size: 0.8rem;
+    color: var(--text-faint);
+  }
+}
+
+/* Above the breakpoint the drawer's copy of the links is the one that hides. */
+@media (min-width: 1000px) {
+  .admin-nav-extra { display: none; }
+}
+
 .admin-main { min-width: 0; }
 
 /* The measure. Long prose in a 1600px-wide paragraph is unreadable, so text

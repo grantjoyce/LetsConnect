@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.22.0';
+const APP_VERSION = '1.23.0';
 
 const state = {
   ready: false,
@@ -22,6 +22,9 @@ const state = {
   needsSetup: false,
   serverVersion: null,
   tab: 'overview',
+  // The phone nav drawer. Closed on load, and closed again the moment a section
+  // is chosen. Irrelevant above 1000px, where the rail is always on screen.
+  navOpen: false,
   error: null,
   busy: false,
   form: {},
@@ -348,6 +351,33 @@ function formDialog({ title, intro, fields, confirmLabel }) {
  * could upload a logo, see it applied to the couple app, and still be met by a
  * heart character every time they signed in here.
  */
+/** A tab's own label, for the collapsed nav button. */
+function tabLabel(key) {
+  const hit = TABS.find(([k]) => k === key);
+  return hit ? hit[1] : 'Menu';
+}
+
+/**
+ * The header's utility links.
+ *
+ * Rendered in TWO places - top right on a desk, inside the drawer on a phone -
+ * and written once here because two copies of a Sign out button is exactly the
+ * sort of thing that drifts. CSS decides which copy is on screen; only one ever
+ * is, so the duplicate ids-free markup and the delegated handlers are harmless.
+ */
+function whoLinks() {
+  const day = currentTheme() === 'day';
+  const swap = day ? 'Switch to dark' : 'Switch to light';
+  return `
+    <span class="who-name">${esc(state.me.displayName)}</span>
+    <a href="/" class="btn-quiet" style="text-decoration:none">Open the app</a>
+    <a href="/register" target="_blank" rel="noopener noreferrer"
+       class="btn-quiet" style="text-decoration:none">Register page</a>
+    <button class="btn-quiet" data-action="theme" title="${swap}" aria-label="${swap}"
+    >${day ? '&#9789; Dark' : '&#9788; Light'}</button>
+    <button class="btn-quiet" data-action="logout">Sign out</button>`;
+}
+
 function brandLockup(size) {
   const b = state.branding || {};
   const name = b.app_name || "Let's Connect";
@@ -2234,21 +2264,17 @@ function render() {
             ${brandLockup('bar')}
             <span class="admin-badge">Admin</span>
           </div>
-          <div class="admin-who">
-            <span>${esc(state.me.displayName)}</span>
-            <a href="/" class="btn-quiet" style="text-decoration:none">Open the app</a>
-            <a href="/register" target="_blank" rel="noopener noreferrer"
-               class="btn-quiet" style="text-decoration:none">Register page</a>
-            <button class="btn-quiet" data-action="theme"
-                    title="${currentTheme() === 'day' ? 'Switch to dark' : 'Switch to light'}"
-                    aria-label="${currentTheme() === 'day' ? 'Switch to dark' : 'Switch to light'}"
-            >${currentTheme() === 'day' ? '&#9789; Dark' : '&#9788; Light'}</button>
-            <button class="btn-quiet" data-action="logout">Sign out</button>
-          </div>
+          <button class="nav-toggle" data-action="nav" aria-controls="admin-nav"
+                  aria-expanded="${state.navOpen ? 'true' : 'false'}">
+            <span class="nav-toggle-bars" aria-hidden="true">${state.navOpen ? '&#10005;' : '&#9776;'}</span>
+            <span class="nav-toggle-label">${esc(tabLabel(state.tab))}</span>
+          </button>
+          <div class="admin-who">${whoLinks()}</div>
         </div>
 
         <div class="admin-body">
-          <nav class="tabs admin-nav" role="tablist" aria-label="Admin sections">
+          <nav class="tabs admin-nav${state.navOpen ? ' is-open' : ''}" id="admin-nav"
+               role="tablist" aria-label="Admin sections">
             ${TABS.map(
               ([key, label]) => `
               <button class="tab${key === state.tab ? ' is-on' : ''}" role="tab"
@@ -2258,6 +2284,7 @@ function render() {
               }${key === 'develop' && state.pendingDrafts ? ` (${state.pendingDrafts})` : ''}
               </button>`
             ).join('')}
+            <div class="admin-nav-extra">${whoLinks()}</div>
           </nav>
 
           <div class="tab-body admin-main">${body}</div>
@@ -2499,8 +2526,18 @@ async function handleAction(action, el) {
   switch (action) {
     case 'tab':
       state.tab = el.dataset.tab;
+      // Choosing a section closes the phone drawer. Leaving it open would put
+      // the thing you just asked for underneath a full screen of menu.
+      state.navOpen = false;
       render();
       loadTab();
+      break;
+
+    // The phone drawer. Never opens on a desk - the rail is always on screen
+    // there and the button that sets this is display:none above 1000px.
+    case 'nav':
+      state.navOpen = !state.navOpen;
+      render();
       break;
     // One button that flips, not a pair: this lives in the header rather than
     // in Settings because it is a display preference used WHILE working, and a
