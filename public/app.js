@@ -17,7 +17,7 @@
 
 // Must match "version" in package.json. Bump BOTH or the footer badge will
 // show `vX ⚠ server vY` after a deploy - see the README.
-const APP_VERSION = '1.23.0';
+const APP_VERSION = '1.24.0';
 
 // ---------------------------------------------------------------------------
 // State
@@ -374,6 +374,12 @@ function viewRegister() {
             <input class="input" id="r-email" name="email" type="email" autocomplete="email"
                    maxlength="191" value="${esc(f.email || '')}" required>
             <p class="hint">Where we send the code. We do not send anything else.</p>
+          </div>
+          <div class="field">
+            <label for="r-phone">WhatsApp number <span class="hint">(optional)</span></label>
+            <input class="input" id="r-phone" name="phone" type="tel" autocomplete="tel"
+                   maxlength="32" value="${esc(f.phone || '')}">
+            <p class="hint">Include the country code, like +27 82 765 4321. If you would rather have the code on WhatsApp than by email.</p>
           </div>
           <div class="field">
             <label for="r-note">Anything you want to tell us <span class="hint">(optional)</span></label>
@@ -1873,6 +1879,7 @@ async function onRegister(e) {
     partnerA: f.partnerA.value.trim(),
     partnerB: f.partnerB.value.trim(),
     email: f.email.value.trim(),
+    phone: f.phone.value.trim(),
     note: f.note.value.trim(),
   };
 

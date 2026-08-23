@@ -561,6 +561,23 @@ async function appUrl(req) {
 /** Wraps an async route so a rejection becomes a 500 instead of a hung request. */
 const wrap = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
+/**
+ * Escape for an HTML email body.
+ *
+ * Partner names are typed by strangers on the public register page and land in
+ * a message the owner sends out under their own domain. Interpolating them raw
+ * into HTML is the same mistake as doing it into a page, minus the browser's
+ * help - a mail client renders the markup happily.
+ */
+function escapeHtml(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function normaliseEmail(v) {
   return String(v || '').trim().toLowerCase();
 }
@@ -960,6 +977,11 @@ app.post(
     const b = String(req.body.partnerB || '').trim().slice(0, 60);
     const email = normaliseEmail(req.body.email);
     const note = String(req.body.note || '').trim().slice(0, 500);
+    // Optional, and stored as typed - see scripts/migrate-add-buyer-phone.js.
+    // Not validated beyond a length cap: a number is only ever read by a human
+    // deciding whether to WhatsApp it, so a strict format check here would
+    // reject real numbers to protect nothing.
+    const phone = String(req.body.phone || '').trim().slice(0, 32);
 
     if (!a || !b) return fail(res, 400, 'Both names, please.');
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -980,10 +1002,10 @@ app.post(
       // order derives from it the moment a code is issued.
       await query(
         `INSERT INTO couples
-           (access_code, partner_a, partner_b, buyer_email, signup_note,
+           (access_code, partner_a, partner_b, buyer_email, buyer_phone, signup_note,
             code_status, shuffle_seed, status)
-         VALUES (NULL, ?, ?, ?, ?, 'requested', ?, 'active')`,
-        [a, b, email, note || null, crypto.randomBytes(8).toString('hex')]
+         VALUES (NULL, ?, ?, ?, ?, ?, 'requested', ?, 'active')`,
+        [a, b, email, phone || null, note || null, crypto.randomBytes(8).toString('hex')]
       );
     }
 
@@ -2278,7 +2300,7 @@ async function generateCandidates({ key, model, lens, domain, depths, ladder, co
 // drift until one of them forgets to set issued_at.
 // ---------------------------------------------------------------------------
 
-async function issueCode({ partnerA, partnerB, buyerEmail, orderRef, coupleName }) {
+async function issueCode({ partnerA, partnerB, buyerEmail, buyerPhone, orderRef, coupleName }) {
   const a = String(partnerA || '').trim().slice(0, 60) || null;
   const b = String(partnerB || '').trim().slice(0, 60) || null;
 
@@ -2299,15 +2321,16 @@ async function issueCode({ partnerA, partnerB, buyerEmail, orderRef, coupleName 
 
   const result = await query(
     `INSERT INTO couples
-       (access_code, couple_name, partner_a, partner_b, buyer_email, order_ref,
-        code_status, issued_at, shuffle_seed, status)
-     VALUES (?, ?, ?, ?, ?, ?, 'active', NOW(), ?, 'active')`,
+       (access_code, couple_name, partner_a, partner_b, buyer_email, buyer_phone,
+        order_ref, code_status, issued_at, shuffle_seed, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), ?, 'active')`,
     [
       code,
       String(coupleName || '').trim().slice(0, 120) || null,
       a,
       b,
       String(buyerEmail || '').trim().slice(0, 191) || null,
+      String(buyerPhone || '').trim().slice(0, 32) || null,
       String(orderRef || '').trim().slice(0, 60) || null,
       crypto.randomBytes(16).toString('hex'),
     ]
@@ -2624,7 +2647,7 @@ owner.get(
 
     const rows = await query(
       `SELECT c.id, c.access_code, c.couple_name, c.partner_a, c.partner_b,
-              c.buyer_email, c.order_ref, c.signup_note, c.code_status, c.status,
+              c.buyer_email, c.buyer_phone, c.order_ref, c.signup_note, c.code_status, c.status,
               c.issued_at, c.activated_at, c.last_used_at, c.created_at,
               c.volatile_unlocked,
               (SELECT COUNT(*) FROM couple_question_status s
@@ -2650,6 +2673,7 @@ owner.get(
         partnerA: r.partner_a,
         partnerB: r.partner_b,
         buyerEmail: r.buyer_email,
+        buyerPhone: r.buyer_phone,
         orderRef: r.order_ref,
         signupNote: r.signup_note,
         codeStatus: r.code_status,
@@ -2680,6 +2704,7 @@ owner.post(
       partnerA: a,
       partnerB: b,
       buyerEmail: req.body.buyerEmail,
+      buyerPhone: req.body.buyerPhone,
       orderRef: req.body.orderRef,
       coupleName: req.body.coupleName,
     });
@@ -2710,6 +2735,7 @@ owner.patch(
       ['partnerA', 'partner_a', 60],
       ['partnerB', 'partner_b', 60],
       ['buyerEmail', 'buyer_email', 191],
+      ['buyerPhone', 'buyer_phone', 32],
       ['orderRef', 'order_ref', 60],
     ]) {
       if (req.body[field] !== undefined) {
@@ -3329,6 +3355,138 @@ owner.post(
     });
 
     res.status(201).json({ ok: true, code, email: c.buyer_email });
+  })
+);
+
+/**
+ * The one message a couple actually needs, in both formats.
+ *
+ * Built here rather than in the admin so the email and the WhatsApp text cannot
+ * drift apart, and so the wording is not a thing somebody retypes at eleven at
+ * night. The admin asks for `whatsappText` and pastes it into a wa.me link; the
+ * email route below sends `text` and `html`.
+ *
+ * Deliberately short. It carries the code, where to type it, and the one fact
+ * that surprises people - ONE code between two of you, not one each.
+ */
+function codeMessage({ partnerA, partnerB, code, url, appName }) {
+  const name = appName || "Let's Connect";
+  const greeting = partnerA && partnerB ? `${partnerA} and ${partnerB}` : 'Hello';
+
+  const text =
+    `Hi ${greeting},\n\n`
+    + `Here is your ${name} code:\n\n`
+    + `${code}\n\n`
+    + `Open ${url} and enter it to start.\n\n`
+    + `One code covers both of you - it is meant to be done sitting together, `
+    + `with one phone between you. Keep it somewhere you can find it again; `
+    + `entering it later picks up where you left off.\n`;
+
+  const html =
+    `<p>Hi ${escapeHtml(greeting)},</p>`
+    + `<p>Here is your ${escapeHtml(name)} code:</p>`
+    + `<p style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:20px;`
+    + `letter-spacing:2px;font-weight:700">${escapeHtml(code)}</p>`
+    + `<p><a href="${escapeHtml(url)}">Open ${escapeHtml(name)}</a> and enter it to start.</p>`
+    + `<p>One code covers both of you - it is meant to be done sitting together, with one `
+    + `phone between you. Keep it somewhere you can find it again; entering it later picks `
+    + `up where you left off.</p>`;
+
+  return { subject: `Your ${name} code`, text, html, whatsappText: text };
+}
+
+/**
+ * Email an already-issued code to the buyer.
+ *
+ * Separate from issuing on purpose. Issuing writes a code to the database and
+ * must not fail because SMTP is misconfigured - a couple with a code and no
+ * email is recoverable, a lost code is not. So the admin issues first, then
+ * chooses how to deliver, and a bounced send can be retried without minting
+ * anything new.
+ */
+owner.post(
+  '/couples/:id/send-code',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const c = await queryOne(
+      `SELECT id, partner_a, partner_b, buyer_email, access_code, code_status
+         FROM couples WHERE id = ?`,
+      [id]
+    );
+    if (!c) return fail(res, 404, 'No such code.');
+    if (!c.access_code) return fail(res, 409, 'That one has no code yet. Issue it first.');
+    if (!c.buyer_email) return fail(res, 409, 'There is no email address on file for them.');
+    // A suspended code would arrive and not work, which is worse than not
+    // arriving: they try it, it is refused, and they think the app is broken.
+    if (c.code_status !== 'active') {
+      return fail(res, 409, `That code is ${c.code_status} - it would not work if they used it.`);
+    }
+
+    const b = await getBranding();
+    const msg = codeMessage({
+      partnerA: c.partner_a,
+      partnerB: c.partner_b,
+      code: c.access_code,
+      url: await appUrl(req),
+      appName: b.app_name,
+    });
+
+    // Caught rather than left to wrap(), which answers every rejection with
+    // "Something went wrong on our side." The real messages here are the whole
+    // value - "Email is not set up yet", "the saved SMTP password cannot be
+    // read", a rejection from the server - and each one names its own fix. The
+    // generic 500 sends somebody hunting through logs for a setting they have
+    // simply not filled in. Same shape as /email/test above.
+    try {
+      await sendMail({
+        to: c.buyer_email,
+        subject: msg.subject,
+        text: msg.text,
+        html: msg.html,
+      });
+    } catch (err) {
+      return fail(res, 400, err.message);
+    }
+
+    await audit(req, 'code.email', {
+      targetType: 'couple',
+      targetId: id,
+      targetLabel: `${c.partner_a} and ${c.partner_b}`,
+      detail: `sent to ${c.buyer_email}`,
+    });
+
+    res.json({ ok: true, sentTo: c.buyer_email });
+  })
+);
+
+/**
+ * The same message as text, for the admin to hand to WhatsApp.
+ *
+ * The server owns the wording; the browser owns the sending. See the admin's
+ * whatsappLink() for why this is a click-to-chat link and not an API call.
+ */
+owner.get(
+  '/couples/:id/message',
+  wrap(async (req, res) => {
+    const id = Number(req.params.id);
+    const c = await queryOne(
+      `SELECT id, partner_a, partner_b, buyer_phone, access_code
+         FROM couples WHERE id = ?`,
+      [id]
+    );
+    if (!c) return fail(res, 404, 'No such code.');
+    if (!c.access_code) return fail(res, 409, 'That one has no code yet.');
+
+    const b = await getBranding();
+    const msg = codeMessage({
+      partnerA: c.partner_a,
+      partnerB: c.partner_b,
+      code: c.access_code,
+      url: await appUrl(req),
+      appName: b.app_name,
+    });
+
+    res.json({ ok: true, text: msg.whatsappText, phone: c.buyer_phone || null });
   })
 );
 

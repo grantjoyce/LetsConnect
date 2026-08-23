@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS couples (
   partner_a          VARCHAR(60) NULL,
   partner_b          VARCHAR(60) NULL,
   buyer_email        VARCHAR(191) NULL,
+  buyer_phone        VARCHAR(32) NULL,
   order_ref          VARCHAR(60) NULL,
   -- Whatever they typed in the optional box on the registration form.
   signup_note        VARCHAR(500) NULL,

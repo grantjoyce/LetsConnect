@@ -93,6 +93,10 @@ const MIGRATIONS = [
   // list: a database that already ran the first one needs the second, and a
   // fresh install runs them in order and lands in the same place.
   'migrate-merge-registrations',
+
+  // A phone number on the couple, so an issued code can go out on WhatsApp as
+  // well as by email. Extends `couples`, so it runs after the merge above.
+  'migrate-add-buyer-phone',
 ];
 
 const SCRIPTS_DIR = __dirname;

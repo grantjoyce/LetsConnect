@@ -11,7 +11,7 @@
  * they survive a re-render.
  */
 
-const APP_VERSION = '1.23.0';
+const APP_VERSION = '1.24.0';
 
 const state = {
   ready: false,
@@ -518,7 +518,8 @@ function tabOverview() {
     ${
       !d.email.configured
         ? `<div class="notice" style="margin-top:1.2rem">
-             <strong>Email is not set up.</strong> Password reset links cannot be sent.
+             <strong>Email is not set up.</strong> Codes cannot be emailed to couples,
+             and password reset links cannot be sent.
              <button class="btn-quiet" data-action="tab" data-tab="settings">Set it up</button>
            </div>`
         : ''
@@ -1721,7 +1722,8 @@ function tabCouples() {
                     ? `<button class="mini go" data-action="reg-issue" data-id="${c.id}">Issue a code</button>
                        <button class="mini danger" data-action="reg-decline" data-id="${c.id}">Decline</button>
                        <button class="mini" data-action="code-edit" data-id="${c.id}">Edit</button>`
-                    : `${c.code ? `<button class="mini" data-action="code-copy" data-id="${c.id}">Copy</button>` : ''}
+                    : `${c.code ? `<button class="mini" data-action="code-copy" data-id="${c.id}">Copy</button>
+                       <button class="mini" data-action="code-send" data-id="${c.id}">Send</button>` : ''}
                        <button class="mini" data-action="code-edit" data-id="${c.id}">Edit</button>
                        <button class="mini" data-action="code-suspend" data-id="${c.id}">
                          ${c.codeStatus === 'suspended' ? 'Reinstate' : 'Suspend'}
@@ -2624,6 +2626,15 @@ async function handleAction(action, el) {
     case 'code-delete': await codeDelete(id); break;
     case 'code-copy': await codeCopy(id); break;
 
+    // Re-opens the delivery dialog for a code that already exists, so a bounced
+    // email or a number added later does not need a second code minted to get
+    // a working one to somebody.
+    case 'code-send': {
+      const c = (state.data.couples && state.data.couples.couples || []).find((x) => x.id === id);
+      if (c && c.code) await deliverCode(id, c.code, `${c.partnerA} and ${c.partnerB}`);
+      break;
+    }
+
     case 'shop-key': await shopKey(); break;
 
     case 'test-email': await testEmail(); break;
@@ -3225,6 +3236,14 @@ const CODE_FIELDS = (c) => [
     value: c ? c.buyerEmail : '',
     hint: 'Where the code was sent, so a lost one can be found again.',
   },
+  {
+    name: 'buyerPhone',
+    label: 'WhatsApp number',
+    type: 'tel',
+    value: c ? c.buyerPhone : '',
+    placeholder: '+27 82 123 4567',
+    hint: 'Optional. Include the country code, or WhatsApp will not know who you mean.',
+  },
   { name: 'orderRef', label: 'Order reference', value: c ? c.orderRef : '', placeholder: 'LYL-1001' },
 ];
 
@@ -3248,7 +3267,9 @@ async function regIssue(id) {
 
   const ok = await uiConfirm(
     `Issue a code to ${r.partnerA} and ${r.partnerB}?`,
-    `A code will be generated for them. You still have to email it to ${esc(r.buyerEmail || 'them')}.`,
+    `A code is generated for them, and the next screen offers to email it${
+      r.buyerPhone ? ' or send it on WhatsApp' : ''
+    }.`,
     'Issue it'
   );
   if (!ok) return;
@@ -3257,26 +3278,153 @@ async function regIssue(id) {
     const res = await api.post(`/api/owner/couples/${id}/issue`);
     state.data.couples = null;
     await loadTab();
-    await dialog({
-      title: `Code for ${esc(r.partnerA)} and ${esc(r.partnerB)}`,
-      bodyHtml:
-        `<p style="font-family:ui-monospace,monospace;font-size:1.4rem;letter-spacing:0.12em;`
-        + `text-align:center;margin:1rem 0">${esc(res.code)}</p>`
-        + `<p class="hint">Send it to <strong>${esc(res.email)}</strong>. It is stored under Codes too, so it cannot be lost.</p>`,
-      actions: [
-        { label: 'Copy the code', value: 'copy', className: 'btn' },
-        { label: 'Done', value: true, className: 'btn-ghost' },
-      ],
-    }).then(async (v) => {
-      if (v === 'copy') {
-        if (await copyText(res.code)) toast(`${res.code} copied.`);
-        else uiAlert('Copy it by hand', res.code);
-      }
-    });
+    await deliverCode(id, res.code, `${r.partnerA} and ${r.partnerB}`);
   } catch (err) {
     uiAlert('Could not issue it', err.message);
   }
   return undefined;
+}
+
+/**
+ * A WhatsApp click-to-chat link.
+ *
+ * NOT an API call, and that is a decision rather than a shortcut. Sending a
+ * WhatsApp message from a server needs the WhatsApp Business Platform: a
+ * business account, a number that is not already on the normal app, a message
+ * template approved by Meta before any business-initiated message may be sent,
+ * and either Meta directly or a paid provider. Per message it costs money.
+ *
+ * wa.me opens WhatsApp with the message already typed and the right person
+ * selected; one tap sends it, from the owner's own number. For codes issued by
+ * hand, one at a time, that is the same outcome without an approval queue - and
+ * a person seeing the message before it goes is a feature, not a compromise.
+ *
+ * The number is reduced to digits HERE and not on the way into the database, so
+ * what the couple typed is never destroyed by a guess about their country.
+ */
+/**
+ * Judge a number BEFORE building a link out of it.
+ *
+ * wa.me needs a full international number with no leading zero. A South African
+ * typing "082 765 4321" - which is what almost everybody will type - produces
+ * wa.me/0827654321, and WhatsApp answers "phone number shared via url is
+ * invalid". The link looks fine, opens fine, and fails at the far end where
+ * nobody is watching. A hint asking for the country code does not stop this;
+ * people do not read hints, they type their own number.
+ *
+ * The rule: a leading + or 00 is explicitly international and trusted. A number
+ * starting with a single 0 is a national trunk prefix and cannot be resolved
+ * without knowing the country, so it is REFUSED with the reason. Anything else
+ * is assumed to already carry a country code.
+ *
+ * Refusing beats guessing. Prefixing 27 for everyone would send codes to
+ * strangers in South Africa the first time somebody registers from abroad.
+ */
+function whatsappTarget(phone) {
+  const raw = String(phone || '').trim();
+  if (!raw) return { ok: false, reason: 'none' };
+
+  const digits = raw.replace(/[^0-9]/g, '');
+  if (!digits) return { ok: false, reason: 'none' };
+
+  if (raw.startsWith('+')) return { ok: true, digits };
+  if (digits.startsWith('00')) return { ok: true, digits: digits.slice(2) };
+  if (digits.startsWith('0')) return { ok: false, reason: 'local' };
+  return { ok: true, digits };
+}
+
+function whatsappLink(phone, text) {
+  const t = whatsappTarget(phone);
+  if (!t.ok) return null;
+  return `https://wa.me/${t.digits}?text=${encodeURIComponent(text)}`;
+}
+
+/**
+ * Show a code and offer the two ways of getting it to somebody.
+ *
+ * Loops rather than resolving on the first choice: Grant asked for "email or
+ * WhatsApp, or both", and both means the dialog has to survive being used once.
+ * It closes on Done, or on Escape.
+ *
+ * The code is SHOWN large the whole time. Whatever else fails - no SMTP, no
+ * number, a typo in the address - the thing that has to reach a customer is on
+ * screen and copyable.
+ */
+async function deliverCode(id, code, who) {
+  let sentTo = null;
+
+  for (;;) {
+    let msg = null;
+    try {
+      // Asked for each time round: the wording lives on the server so the email
+      // and the WhatsApp text cannot drift, and re-fetching costs nothing next
+      // to a person reading a dialog.
+      msg = await api.get(`/api/owner/couples/${id}/message`);
+    } catch (err) {
+      msg = null;
+    }
+
+    const row = (state.data.couples && state.data.couples.couples || []).find((x) => x.id === id);
+    const email = row ? row.buyerEmail : null;
+    const phone = msg ? msg.phone : row && row.buyerPhone;
+    const link = msg ? whatsappLink(phone, msg.text) : null;
+
+    const actions = [];
+    if (email) actions.push({ label: sentTo ? 'Email it again' : 'Email it', value: 'email', className: 'btn' });
+    if (link) actions.push({ label: 'Send on WhatsApp', value: 'whatsapp', className: 'btn' });
+    actions.push({ label: 'Copy the code', value: 'copy', className: 'btn-ghost' });
+    actions.push({ label: 'Done', value: 'done', className: 'btn-ghost' });
+
+    const lines = [];
+    if (sentTo) lines.push(`<p class="hint" style="color:var(--ok)">Emailed to <strong>${esc(sentTo)}</strong>.</p>`);
+    lines.push(
+      email
+        ? `<p class="hint">Email on file: <strong>${esc(email)}</strong></p>`
+        : '<p class="hint">No email address on file - add one under Edit to send it that way.</p>'
+    );
+    const target = whatsappTarget(phone);
+    if (target.ok) {
+      lines.push(`<p class="hint">WhatsApp: <strong>${esc(phone)}</strong></p>`);
+    } else if (target.reason === 'local') {
+      // Said plainly, with the fix in it. The alternative is a button that
+      // opens WhatsApp and fails there, which reads as WhatsApp being broken.
+      lines.push(
+        `<p class="hint" style="color:var(--destruct)"><strong>${esc(phone)}</strong> has no country `
+        + `code, so WhatsApp cannot open it. Edit them and write it as +27 82 765 4321.</p>`
+      );
+    } else {
+      lines.push('<p class="hint">No WhatsApp number on file - add one under Edit to send it that way.</p>');
+    }
+
+    const choice = await dialog({
+      title: `Code for ${who}`,
+      bodyHtml:
+        `<p style="font-family:ui-monospace,monospace;font-size:1.4rem;letter-spacing:0.12em;`
+        + `text-align:center;margin:1rem 0">${esc(code)}</p>`
+        + lines.join('')
+        + `<p class="hint">It is stored under Codes too, so it cannot be lost.</p>`,
+      actions,
+    });
+
+    if (choice === 'email') {
+      try {
+        const out = await api.post(`/api/owner/couples/${id}/send-code`);
+        sentTo = out.sentTo;
+        toast(`Emailed to ${out.sentTo}.`);
+      } catch (err) {
+        await uiAlert('Could not send it', err.message);
+      }
+    } else if (choice === 'whatsapp') {
+      // A new tab rather than a redirect: losing the admin - and the dialog
+      // still offering the email - to a chat window would be a poor trade.
+      window.open(link, '_blank', 'noopener');
+    } else if (choice === 'copy') {
+      if (await copyText(code)) toast(`${code} copied.`);
+      else await uiAlert('Copy it by hand', code);
+    } else {
+      return undefined;
+    }
+  }
 }
 
 async function regDecline(id) {
@@ -3315,16 +3463,10 @@ async function codeNew() {
     const res = await api.post('/api/owner/couples', v);
     state.data.couples = null;
     await loadTab();
-    // Shown rather than toasted: this is the thing that has to reach a customer,
-    // and a toast that vanishes in two seconds is not where you put it.
-    await dialog({
-      title: `Code for ${esc(v.partnerA)} and ${esc(v.partnerB)}`,
-      bodyHtml:
-        `<p style="font-family:ui-monospace,monospace;font-size:1.4rem;letter-spacing:0.12em;`
-        + `text-align:center;margin:1rem 0">${esc(res.code)}</p>`
-        + '<p class="hint">Send this to them. It is stored here too, so it cannot be lost.</p>',
-      actions: [{ label: 'Done', value: true, className: 'btn' }],
-    });
+    // The same delivery dialog the request path uses. A code issued by hand
+    // still has to reach somebody, and having two different endings to the
+    // same job is how one of them quietly stops being maintained.
+    await deliverCode(res.id, res.code, `${v.partnerA} and ${v.partnerB}`);
   } catch (err) {
     uiAlert('Could not issue it', err.message);
   }
