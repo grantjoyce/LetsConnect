@@ -117,3 +117,19 @@ Older notes lag the code. Memory `lets-connect-app.md` still says there is no Gi
 ## 6. Backup and recovery
 
 The launchyourlife.co.za subscription has **no Plesk backup schedule**. The live database (couples, codes, buyer emails and phone numbers, owner accounts, every question and every setting) relies on NOIZ's own server backups, and a restore means asking NOIZ support. Grant decided not to change this. So the by-hand copies matter: **Admin → Import → Export everything to Excel** before risky deploys, and Plesk **Databases** → **Export Dump** when you want everything. On the laptop, this folder and the dev database `lets_connect` are in the nightly encrypted restic backup (`ClaudeCode\nightly-backup\README.md`), and Claude's memory is in the private `grantjoyce/dotclaude` repo. Step-by-step recovery for every scenario is in **`RECOVERY.md`**.
+
+---
+
+## 7. Passwords and logins (where they live)
+
+Never write a password, key or secret value in this file, in Claude's memory, in code or in a commit message: write where it lives instead. Local values sit in this project's `.env` (laptop only, never in git, covered by OneDrive and the nightly encrypted backup). Live values sit on the NOIZ server; keep a copy of each in Grant's password manager. The list for every project is in `ClaudeCode\Mapping Backup Ideas\where-passwords-live.md` on the laptop. When a password moves or changes, update this section and that list in the same change.
+
+| What | Username | Where the value lives |
+|---|---|---|
+| Local database | `root` (the shared local root login) | `.env` → `DB_PASSWORD`, the same value as `Appointment firm CRM app\.env` (works, checked 9 October 2026) |
+| Local secrets | none | `.env` → `SESSION_SECRET`, and `SECRET_KEY` (encrypts the SMTP password and Anthropic key) |
+| Local dev owner | the owner in the local `users` table | Not in any file: Grant's password manager |
+| Live server secrets | | Plesk → **connect.launchyourlife.co.za** → **Files** → `/connect.launchyourlife.co.za/.env`. Copy in Grant's password manager. The live `SECRET_KEY` cannot be replaced |
+| SMTP password and Anthropic key | | The live database, encrypted with `SECRET_KEY`. Copies in Grant's password manager |
+| Shop key | | The live database, and wherever the launchyourlife.co.za shop is set up to call this app. Copy in Grant's password manager |
+| Live owner login | | Grant's password manager. The reset link is broken today (parked task B) |
