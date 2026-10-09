@@ -102,7 +102,9 @@ Then on the new laptop:
 5. `.env`: OneDrive brings it back, or restore it from the nightly backup (`ClaudeCode\nightly-backup\README.md`):
    `restic -r <OneDrive>\Backups\claudecode-restic restore latest --target C:\Restore --include "*/Lets Connect/.env"`
 6. Dev database, either way:
-   - Import last night's dump: restore `*/staging/databases/lets_connect.sql` the same way, then `mariadb -u root -p < lets_connect.sql`.
+   - Import last night's dump: restore `*/staging/databases/lets_connect.sql` the same way, then import it in PowerShell (the dump recreates the `lets_connect` database itself; `-p` asks for the MariaDB root password):
+     `& "C:\Program Files\MariaDB 11.4\bin\mariadb.exe" -u root -p -e "source C:/Restore/C/Users/grant/AppData/Local/nightly-backup/staging/databases/lets_connect.sql"`
+     Keep the forward slashes. PowerShell can't use `< file.sql`, and `mariadb` alone isn't on the PATH.
    - Or start clean: `npm run init-db`, then `npm run migrate`, then create a new owner account at http://localhost:3200/admin/.
 7. Claude's memory: run `restore.ps1` in `ClaudeCode\dotclaude`. `CLAUDE.md` comes back with the code.
 8. Run `npm start` (or the `lets-connect` preview) and open http://localhost:3200.
